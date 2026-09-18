@@ -33,7 +33,6 @@ IMAP_PORTA = int(os.getenv("IMAP_PORTA", "993"))
 IMAP_USUARIO = _req("IMAP_USUARIO")
 IMAP_SENHA = _req("IMAP_SENHA")
 IMAP_PASTA_ENTRADA = os.getenv("IMAP_PASTA_ENTRADA", "INBOX")
-IMAP_PASTA_PROCESSADOS = os.getenv("IMAP_PASTA_PROCESSADOS", "Processados")
 
 # ── Privacidade ──
 # Chave do HMAC do hash de identidade. Se mudar, reenvios antigos deixam de ser detectados.

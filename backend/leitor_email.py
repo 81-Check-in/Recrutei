@@ -1,4 +1,9 @@
-"""Leitura da caixa de e-mail via IMAP (Locaweb)."""
+"""
+Leitura da caixa de e-mail via IMAP (Locaweb).
+
+Este módulo NUNCA apaga, move nem copia e-mails: não usa \\Deleted, EXPUNGE,
+CLOSE, MOVE nem COPY. A única alteração feita na caixa é marcar como lida (\\Seen).
+"""
 import imaplib
 import email
 import ssl
@@ -9,7 +14,7 @@ from contextlib import contextmanager
 
 from config import (
     IMAP_SERVIDOR, IMAP_PORTA, IMAP_USUARIO, IMAP_SENHA,
-    IMAP_PASTA_ENTRADA, IMAP_PASTA_PROCESSADOS,
+    IMAP_PASTA_ENTRADA,
     FORMATOS_ACEITOS, TAMANHO_MAXIMO_ANEXO, MAX_ANEXOS_POR_EMAIL,
     MODO_SIMULACAO, log,
 )
@@ -43,21 +48,12 @@ def conexao_imap() -> Iterator[imaplib.IMAP4_SSL]:
         log.info(f"Conectado a {IMAP_USUARIO}")
         yield conn
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        # Sem conn.close(): o CLOSE do IMAP remove em definitivo todas as
+        # mensagens marcadas \Deleted na pasta (inclusive por outros clientes)
         try:
             conn.logout()
         except Exception:
             pass
-
-
-def _garantir_pasta(conn: imaplib.IMAP4_SSL, pasta: str) -> None:
-    try:
-        conn.create(pasta)
-    except Exception:
-        pass  # já existe
 
 
 def _extrair_corpo(msg: email.message.Message) -> str:
@@ -158,7 +154,7 @@ def buscar_novos(limite: int = 0) -> List[Dict]:
     mensagens: List[Dict] = []
 
     with conexao_imap() as conn:
-        conn.select(IMAP_PASTA_ENTRADA)
+        conn.select(IMAP_PASTA_ENTRADA, readonly=True)
         status, dados = conn.uid("SEARCH", "UNSEEN")
         if status != "OK":
             log.error("Falha ao buscar mensagens")
@@ -201,49 +197,36 @@ def buscar_novos(limite: int = 0) -> List[Dict]:
     return mensagens
 
 
-def mover_para_processados(uids: List) -> None:
+def marcar_como_lidas(uids: List) -> None:
     """
-    Copia as mensagens tratadas para Processados e só então as remove da entrada.
-    Sem cópia confirmada a mensagem NUNCA é apagada (só marcada como lida).
+    Marca as mensagens tratadas como lidas. Os e-mails continuam na entrada:
+    nada é removido, movido nem copiado.
     """
     if not uids or MODO_SIMULACAO:
         return
 
     with conexao_imap() as conn:
         conn.select(IMAP_PASTA_ENTRADA)
-        _garantir_pasta(conn, IMAP_PASTA_PROCESSADOS)
-        movidas = 0
-        sem_copia = 0
+        marcadas = 0
         for uid in uids:
             try:
+                # Lida = não entra de novo no SEARCH UNSEEN da próxima execução.
                 # O imaplib não levanta exceção para respostas "NO": conferir o status
-                status, _ = conn.uid("COPY", uid, IMAP_PASTA_PROCESSADOS)
-                if status != "OK":
-                    conn.uid("STORE", uid, "+FLAGS", "(\\Seen)")
-                    sem_copia += 1
-                    continue
-                conn.uid("STORE", uid, "+FLAGS", "(\\Seen \\Deleted)")
-                movidas += 1
+                status, _ = conn.uid("STORE", uid, "+FLAGS", "(\\Seen)")
+                if status == "OK":
+                    marcadas += 1
+                else:
+                    log.error(f"  Servidor recusou marcar a mensagem {uid} como lida")
             except Exception as e:
-                log.error(f"  Falha ao mover mensagem: {e}")
-        if movidas:
-            try:
-                conn.expunge()
-            except Exception:
-                pass
-        log.info(f"{movidas} mensagem(ns) movida(s) para '{IMAP_PASTA_PROCESSADOS}'")
-        if sem_copia:
-            log.error(
-                f"{sem_copia} mensagem(ns) NÃO foram copiadas e permanecem na "
-                f"entrada. Confira IMAP_PASTA_PROCESSADOS (ex.: 'INBOX.Processados')."
-            )
+                log.error(f"  Falha ao marcar mensagem como lida: {e}")
+        log.info(f"{marcadas} mensagem(ns) marcada(s) como lida(s)")
 
 
 def testar_conexao() -> bool:
     """Valida credenciais antes de rodar o pipeline."""
     try:
         with conexao_imap() as conn:
-            conn.select(IMAP_PASTA_ENTRADA)
+            conn.select(IMAP_PASTA_ENTRADA, readonly=True)
             status, dados = conn.search(None, "ALL")
             total = len(dados[0].split()) if status == "OK" else 0
             log.info(f"Conexão OK — {total} mensagem(ns) na caixa")

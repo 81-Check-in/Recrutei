@@ -128,7 +128,7 @@ def faixa_segunda_avaliacao(cfg: Dict) -> Optional[Tuple[int, int]]:
 
 def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
                        stats: Estatisticas) -> bool:
-    """Processa um e-mail. Retorna True se pode ser movido para Processados."""
+    """Processa um e-mail. Retorna True se pode ser marcado como lido."""
     uid = msg["uid"].decode() if isinstance(msg["uid"], bytes) else msg["uid"]
     log.info(f"► mensagem UID {uid}")
 
@@ -364,7 +364,7 @@ def executar() -> Dict:
                     except Exception:
                         pass
 
-            mail.mover_para_processados(tratadas)
+            mail.marcar_como_lidas(tratadas)
 
         # Manutenção: inativação e expurgo
         log.info("-" * 60)
