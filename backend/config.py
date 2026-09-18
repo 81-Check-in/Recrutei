@@ -4,6 +4,7 @@ Lê variáveis de ambiente e parâmetros do banco.
 """
 import os
 import logging
+from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,6 +34,15 @@ IMAP_PORTA = int(os.getenv("IMAP_PORTA", "993"))
 IMAP_USUARIO = _req("IMAP_USUARIO")
 IMAP_SENHA = _req("IMAP_SENHA")
 IMAP_PASTA_ENTRADA = os.getenv("IMAP_PASTA_ENTRADA", "INBOX")
+# Só processa não lidos recebidos a partir desta data (AAAA-MM-DD). Vazio = todos.
+IMAP_DESDE = os.getenv("IMAP_DESDE", "").strip()
+if IMAP_DESDE:
+    try:
+        date.fromisoformat(IMAP_DESDE)
+    except ValueError:
+        raise RuntimeError(
+            f"IMAP_DESDE inválida: {IMAP_DESDE!r}. Use AAAA-MM-DD (ex.: 2026-09-18)."
+        )
 
 # ── Privacidade ──
 # Chave do HMAC do hash de identidade. Se mudar, reenvios antigos deixam de ser detectados.

@@ -88,6 +88,12 @@ Confira o resultado no sistema web antes de liberar o volume completo.
 python main.py
 ```
 
+**Caixa com e-mails antigos acumulados?** O pipeline lê os não lidos do mais
+antigo para o mais novo, então um acúmulo grande vai na frente dos candidatos
+novos (o `LIMITE_EMAILS` sozinho não resolve). Defina `IMAP_DESDE=AAAA-MM-DD`
+no `.env` para processar só o que chegou a partir dessa data. Os antigos
+continuam não lidos e podem ser tratados depois, recuando a data.
+
 ### Outros comandos
 
 ```bash

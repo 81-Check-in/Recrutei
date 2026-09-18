@@ -7,6 +7,7 @@ CLOSE, MOVE nem COPY. A única alteração feita na caixa é marcar como lida (\
 import imaplib
 import email
 import ssl
+from datetime import date
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import List, Dict, Optional, Iterator
@@ -14,7 +15,7 @@ from contextlib import contextmanager
 
 from config import (
     IMAP_SERVIDOR, IMAP_PORTA, IMAP_USUARIO, IMAP_SENHA,
-    IMAP_PASTA_ENTRADA,
+    IMAP_PASTA_ENTRADA, IMAP_DESDE,
     FORMATOS_ACEITOS, TAMANHO_MAXIMO_ANEXO, MAX_ANEXOS_POR_EMAIL,
     MODO_SIMULACAO, log,
 )
@@ -149,13 +150,25 @@ def _extrair_anexos(msg: email.message.Message) -> List[Dict]:
     return anexos
 
 
+_MESES_IMAP = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _criterio_busca() -> tuple:
+    """UNSEEN, limitado por IMAP_DESDE se definida. O IMAP exige DD-Mon-AAAA com mês em inglês."""
+    if not IMAP_DESDE:
+        return ("UNSEEN",)
+    d = date.fromisoformat(IMAP_DESDE)
+    return ("UNSEEN", "SINCE", f"{d.day:02d}-{_MESES_IMAP[d.month - 1]}-{d.year}")
+
+
 def buscar_novos(limite: int = 0) -> List[Dict]:
     """Lê os e-mails não lidos da caixa de entrada."""
     mensagens: List[Dict] = []
 
     with conexao_imap() as conn:
         conn.select(IMAP_PASTA_ENTRADA, readonly=True)
-        status, dados = conn.uid("SEARCH", "UNSEEN")
+        status, dados = conn.uid("SEARCH", *_criterio_busca())
         if status != "OK":
             log.error("Falha ao buscar mensagens")
             return []
@@ -163,7 +176,8 @@ def buscar_novos(limite: int = 0) -> List[Dict]:
         ids = dados[0].split()
         if limite > 0:
             ids = ids[:limite]
-        log.info(f"{len(ids)} mensagem(ns) não lida(s)")
+        desde = f" desde {IMAP_DESDE}" if IMAP_DESDE else ""
+        log.info(f"{len(ids)} mensagem(ns) não lida(s){desde}")
 
         for uid in ids:
             try:
