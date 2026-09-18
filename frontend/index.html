@@ -1715,7 +1715,8 @@ async function carregarCandidatos() {
     aprovado:            ['pill-green','Aprovado'],
     reprovado:           ['pill-red','Reprovado'],
     nao_compareceu:      ['pill-purple','Não compareceu'],
-    contratado:          ['pill-green','Contratado']
+    contratado:          ['pill-green','Contratado'],
+    descartado:          ['pill-red','Descartado']
   };
 
   el.innerHTML = data.map(c => {
@@ -1736,9 +1737,30 @@ async function carregarCandidatos() {
         ${precisaAgendar
           ? `<button class="btn-sm azul" data-id="${c.id}" data-nome="${escapeHtml(c.nome)}" data-tel="${escapeHtml(c.telefone_e164||'')}" onclick="abrirAgendamento(this.dataset.id, this.dataset.nome, this.dataset.tel)"><i class="ti ti-brand-whatsapp"></i>Agendar</button>`
           : `<button class="btn-sm" onclick="abrirAnalise('${c.id}')"><i class="ti ti-eye"></i>Ver</button>`}
+        ${precisaAgendar
+          ? `<button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome||'')}" onclick="removerCandidato(this.dataset.id, this.dataset.nome)" title="Remover da lista de candidatos"><i class="ti ti-trash"></i></button>`
+          : ''}
       </td>
     </tr>`;
   }).join('');
+}
+
+async function removerCandidato(id, nome) {
+  if (!confirm(`Remover ${nome || 'este candidato'} da lista de candidatos?\n\nO currículo continua no histórico, marcado como descartado.`)) return;
+
+  const { data, error } = await db.from('candidaturas').update({
+    status: 'descartado',
+    descartado_em: new Date().toISOString(),
+    descartado_por: app.usuario.id,
+    motivo_descarte: 'Removido da lista de candidatos'
+  }).eq('id', id).select('id');
+
+  if (error) { toast(error.message, 'erro'); return; }
+  // RLS que bloqueia o update não devolve erro, só zero linhas.
+  if (!data?.length) { toast('Sem permissão para remover este candidato.', 'erro'); return; }
+
+  toast(`${nome || 'Candidato'} removido dos candidatos`);
+  carregarCandidatos();
 }
 
 // ═══════════════════════════════════════════════════════════
