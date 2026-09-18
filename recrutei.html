@@ -366,6 +366,7 @@ tbody tr:hover td{background:#FAFAFA}
   border:1px solid var(--gray-border);border-radius:20px;cursor:pointer;background:#fff;transition:.15s}
 .chk-empresa:has(input:checked){background:var(--blue-light);border-color:var(--blue);color:var(--blue-mid)}
 .chk-empresa input{cursor:pointer}
+.chk-todas{font-weight:600}
 .req-row{display:flex;gap:7px;margin-bottom:7px;align-items:center}
 .req-input{flex:1;padding:8px 10px;border:1px solid var(--gray-border);border-radius:7px;
   font-size:12.5px;outline:none;background:#fff}
@@ -406,6 +407,12 @@ tbody tr:hover td{background:#FAFAFA}
 .config-input{width:220px;padding:7px 10px;border:1px solid var(--gray-border);border-radius:7px;
   font-size:12.5px;outline:none;background:var(--gray-bg);flex-shrink:0}
 .config-input:focus{border-color:var(--blue);background:#fff}
+.config-toggle{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
+  color:var(--navy);cursor:pointer;width:220px}
+.config-toggle input{width:16px;height:16px;cursor:pointer}
+.config-est{font-size:11.5px;color:var(--blue-mid);margin-top:3px}
+.config-total{margin-top:12px;padding:10px 12px;background:var(--blue-light);
+  border-radius:8px;font-size:12.5px;color:var(--blue-mid)}
 
 /* ══ TOAST ══ */
 .toast{position:fixed;bottom:24px;right:24px;background:#111827;color:#fff;padding:12px 18px;
@@ -866,8 +873,10 @@ function toast(msg, tipo = 'ok') {
 
 function iniciais(nome) {
   if (!nome) return '?';
-  return nome.trim().split(/\s+/).slice(0, 2)
-    .map(n => n[0]).join('').toUpperCase();
+  // só letras: o resultado é inserido via innerHTML e nunca pode conter marcação
+  const letras = nome.trim().split(/\s+/).slice(0, 2)
+    .map(n => (n.match(/\p{L}/u) || [''])[0]).join('').toUpperCase();
+  return letras || '?';
 }
 
 function classeNota(n) {
@@ -1018,13 +1027,22 @@ async function recuperarSenha() {
 //  DADOS BASE
 // ═══════════════════════════════════════════════════════════
 
+// Ordem de exibição das lojas; siglas novas (fora da lista) vão para o fim
+const ORDEM_EMPRESAS = ['CFS', 'CFR', 'CFVP', 'CFC', 'CFW3', 'CFT', 'CFG', 'CFJB', 'CFPA', 'CFBS'];
+const posicaoEmpresa = sigla => {
+  const i = ORDEM_EMPRESAS.indexOf(String(sigla).toUpperCase());
+  return i === -1 ? ORDEM_EMPRESAS.length : i;
+};
+
 async function carregarBase() {
   const [setores, empresas] = await Promise.all([
     db.from('setores').select('*').eq('ativo', true).order('ordem'),
     db.from('empresas').select('*').eq('ativo', true).order('sigla')
   ]);
   app.cache.setores  = setores.data  || [];
-  app.cache.empresas = empresas.data || [];
+  app.cache.empresas = (empresas.data || []).slice().sort((a, b) =>
+    posicaoEmpresa(a.sigla) - posicaoEmpresa(b.sigla) ||
+    String(a.sigla).localeCompare(String(b.sigla)));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1211,7 +1229,7 @@ async function carregarVagas() {
         <div class="vaga-actions">
           <button class="action-btn" title="Editar" onclick="abrirModalVaga('${v.id}')">
             <i class="ti ti-pencil"></i></button>
-          <button class="action-btn danger" title="Encerrar" onclick="encerrarVaga('${v.id}','${escapeHtml(v.titulo)}')">
+          <button class="action-btn danger" title="Encerrar" data-id="${v.id}" data-titulo="${escapeHtml(v.titulo)}" onclick="encerrarVaga(this.dataset.id, this.dataset.titulo)">
             <i class="ti ti-player-pause"></i></button>
         </div>
       </div>
@@ -1235,6 +1253,12 @@ function irTriagemVaga(vagaId) {
   setTimeout(() => { $('#filtro-vaga').value = vagaId; carregarTriagem(); }, 100);
 }
 
+// "TODAS" reflete o estado das lojas: marcada só quando todas estão marcadas
+function sincronizarTodasEmpresas() {
+  const itens = [...$$('#vaga-empresas input[data-empresa]')];
+  $('#vaga-empresas-todas').checked = itens.length > 0 && itens.every(c => c.checked);
+}
+
 async function abrirModalVaga(vagaId) {
   const ehEdicao = !!vagaId;
   $('#modal-vaga-titulo').textContent = ehEdicao ? 'Editar vaga' : 'Nova vaga';
@@ -1245,8 +1269,18 @@ async function abrirModalVaga(vagaId) {
 
   $('#vaga-empresas').innerHTML = app.cache.empresas.map(e => `
     <label class="chk-empresa">
-      <input type="checkbox" value="${e.id}"> ${escapeHtml(e.sigla)}
-    </label>`).join('');
+      <input type="checkbox" data-empresa value="${e.id}"> ${escapeHtml(e.sigla)}
+    </label>`).join('') + `
+    <label class="chk-empresa chk-todas">
+      <input type="checkbox" id="vaga-empresas-todas"> TODAS
+    </label>`;
+  $('#vaga-empresas').onchange = ev => {
+    if (ev.target.id === 'vaga-empresas-todas') {
+      $$('#vaga-empresas input[data-empresa]').forEach(c => { c.checked = ev.target.checked; });
+    } else {
+      sincronizarTodasEmpresas();
+    }
+  };
 
   $('#vaga-titulo').value = '';
   $('#vaga-descricao').value = '';
@@ -1271,6 +1305,7 @@ async function abrirModalVaga(vagaId) {
       const c = $(`#vaga-empresas input[value="${e.empresa_id}"]`);
       if (c) c.checked = true;
     });
+    sincronizarTodasEmpresas();
     (reqs || []).forEach(r => addRequisito(r.descricao, r.tipo, r.peso));
   }
   if (!$('#req-list').children.length) { addRequisito(); addRequisito(); }
@@ -1319,7 +1354,7 @@ async function salvarVaga() {
 
   // Empresas
   await db.from('vaga_empresas').delete().eq('vaga_id', vagaId);
-  const empresas = [...$$('#vaga-empresas input:checked')]
+  const empresas = [...$$('#vaga-empresas input[data-empresa]:checked')]
     .map(c => ({ vaga_id: vagaId, empresa_id: c.value }));
   if (empresas.length) await db.from('vaga_empresas').insert(empresas);
 
@@ -1697,7 +1732,7 @@ async function carregarCandidatos() {
       <td class="td-acoes">
         <button class="btn-sm" onclick="verCurriculo('${c.id}')" title="Ver currículo"><i class="ti ti-file-text"></i></button>
         ${precisaAgendar
-          ? `<button class="btn-sm azul" onclick="abrirAgendamento('${c.id}','${escapeHtml(c.nome)}','${c.telefone_e164||''}')"><i class="ti ti-brand-whatsapp"></i>Agendar</button>`
+          ? `<button class="btn-sm azul" data-id="${c.id}" data-nome="${escapeHtml(c.nome)}" data-tel="${escapeHtml(c.telefone_e164||'')}" onclick="abrirAgendamento(this.dataset.id, this.dataset.nome, this.dataset.tel)"><i class="ti ti-brand-whatsapp"></i>Agendar</button>`
           : `<button class="btn-sm" onclick="abrirAnalise('${c.id}')"><i class="ti ti-eye"></i>Ver</button>`}
       </td>
     </tr>`;
@@ -1801,7 +1836,7 @@ async function carregarEntrevistasDia() {
         <button class="btn-sm" onclick="verCurriculo('${e.candidatura_id}')" title="Ver currículo">
           <i class="ti ti-file-text"></i></button>
         ${e.resultado === 'agendada' || e.resultado === 'remarcada'
-          ? `<button class="btn-sm verde" onclick="abrirResultado('${e.id}','${escapeHtml(e.candidato_nome)}','${e.candidatura_id}','${e.candidato_telefone_e164||''}')">
+          ? `<button class="btn-sm verde" data-id="${e.id}" data-nome="${escapeHtml(e.candidato_nome)}" data-candidatura="${e.candidatura_id}" data-tel="${escapeHtml(e.candidato_telefone_e164||'')}" onclick="abrirResultado(this.dataset.id, this.dataset.nome, this.dataset.candidatura, this.dataset.tel)">
                <i class="ti ti-check"></i>Resultado</button>`
           : `<span class="pill ${e.resultado==='aprovado'?'pill-green':e.resultado==='reprovado'?'pill-red':'pill-purple'}">
                ${e.resultado==='aprovado'?'Aprovado':e.resultado==='reprovado'?'Reprovado':'Não compareceu'}</span>`}
@@ -1841,7 +1876,7 @@ async function carregarProximas() {
       <td class="td-acoes">
         <button class="btn-sm" onclick="verCurriculo('${e.candidatura_id}')" title="Ver currículo">
           <i class="ti ti-file-text"></i></button>
-        <button class="btn-sm azul" onclick="abrirAgendamento('${e.candidatura_id}','${escapeHtml(e.candidato_nome)}','${e.candidato_telefone_e164||''}','${e.id}')">
+        <button class="btn-sm azul" data-candidatura="${e.candidatura_id}" data-nome="${escapeHtml(e.candidato_nome)}" data-tel="${escapeHtml(e.candidato_telefone_e164||'')}" data-entrevista="${e.id}" onclick="abrirAgendamento(this.dataset.candidatura, this.dataset.nome, this.dataset.tel, this.dataset.entrevista)">
           <i class="ti ti-brand-whatsapp"></i>Remarcar</button>
       </td>
     </tr>`).join('');
@@ -1988,20 +2023,140 @@ async function carregarConfig() {
   el.innerHTML = Object.entries(GRUPOS).map(([grupo, chaves]) => {
     const itens = data.filter(c => chaves.includes(c.chave));
     if (!itens.length) return '';
+    // Liga/desliga da segunda avaliação: grava as duas faixas (vazias = desativada)
+    const temFaixa = FAIXA_SEGUNDA.every(k => itens.some(c => c.chave === k));
+    const interruptor = temFaixa ? `
+        <div class="config-item">
+          <div class="config-info">
+            <div class="config-chave">segunda_avaliacao</div>
+            <div class="config-desc">Reavalia de forma independente as notas dentro da faixa abaixo. Desativada, cada currículo é avaliado uma vez só (gasta menos). Liga/desliga as duas faixas.</div>
+          </div>
+          <label class="config-toggle">
+            <input type="checkbox" id="cfg-segunda-ativa"
+                   onchange="alternarSegundaAvaliacao(this.checked)"> Ativa
+          </label>
+        </div>` : '';
     return `<div class="config-grupo">
       <h3>${grupo}</h3>
-      ${itens.map(c => `
+      ${interruptor}
+      ${itens.map(c => {
+        const valor = typeof c.valor === 'string' ? c.valor : JSON.stringify(c.valor);
+        const ehModelo = CHAVES_MODELO.includes(c.chave);
+        const controle = ehModelo
+          ? `<select class="config-input" id="cfg-${c.chave}" onchange="atualizarEstimativas()">${opcoesModelo(valor, c.chave)}</select>`
+          : `<input class="config-input" id="cfg-${c.chave}" value='${escapeHtml(valor)}'>`;
+        return `
         <div class="config-item">
           <div class="config-info">
             <div class="config-chave">${c.chave}</div>
             <div class="config-desc">${escapeHtml(c.descricao||'')}</div>
+            ${ehModelo ? `<div class="config-est" id="est-${c.chave}"></div>` : ''}
           </div>
-          <input class="config-input" id="cfg-${c.chave}"
-                 value='${escapeHtml(typeof c.valor === "string" ? c.valor : JSON.stringify(c.valor))}'>
+          ${controle}
           <button class="btn-sm azul" onclick="salvarConfig('${c.chave}')">Salvar</button>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
+      ${CHAVES_MODELO.every(k => itens.some(c => c.chave === k)) ? '<div class="config-total" id="est-total"></div>' : ''}
     </div>`;
   }).join('');
+  sincronizarSegundaAvaliacao();
+}
+
+// Preços por 1M tokens (US$). Manter igual a PRECOS em backend/config.py.
+// tokenizador: os modelos 4.7+ contam ~30% mais tokens para o mesmo texto que o Haiku 4.5.
+// raciocinio: tokens extras de saída estimados (esforço baixo); Sonnet 5 roda sem raciocínio.
+const MODELOS_IA = [
+  { id: 'claude-fable-5-1',          nome: 'Fable 5.1', entrada: 10, saida: 50, tokenizador: 1.3, raciocinio: 300 },
+  { id: 'claude-opus-5',             nome: 'Opus 5',    entrada: 5,  saida: 25, tokenizador: 1.3, raciocinio: 300 },
+  { id: 'claude-sonnet-5',           nome: 'Sonnet 5',  entrada: 2,  saida: 10, tokenizador: 1.3, raciocinio: 0 },
+  { id: 'claude-haiku-4-5-20251001', nome: 'Haiku 4.5', entrada: 1,  saida: 5,  tokenizador: 1,   raciocinio: 0 }
+];
+const CHAVES_MODELO = ['modelo_ia_classificacao', 'modelo_ia_avaliacao'];
+// Tamanho típico de uma chamada, em tokens do tokenizador do Haiku (estimativa, não medida)
+const USO_TIPICO = {
+  modelo_ia_classificacao: { entrada: 2800, saida: 120 },
+  modelo_ia_avaliacao:     { entrada: 2400, saida: 400 }
+};
+const PARTE_EM_SEGUNDA_AVALIACAO = 0.35;   // fatia estimada dos currículos com nota na faixa
+const SALDO_REFERENCIA_USD = 5;
+
+const usd = v => 'US$ ' + (v >= 1 ? v.toFixed(2) : v.toFixed(4)).replace('.', ',');
+
+// Modelos padrão (espelham config.py): Haiku classifica, Sonnet avalia
+const MODELO_PADRAO = {
+  modelo_ia_classificacao: 'claude-haiku-4-5-20251001',
+  modelo_ia_avaliacao:     'claude-sonnet-5'
+};
+
+function opcoesModelo(valor, chave) {
+  const padrao = MODELO_PADRAO[chave];
+  const vazio = !valor || valor === 'null' || !valor.trim();   // vazio = o backend usa o padrão
+  const atual = vazio ? padrao : valor;
+  const opcoes = MODELOS_IA.map(m =>
+    `<option value="${m.id}"${m.id === atual ? ' selected' : ''}>${m.nome}${m.id === padrao ? ' (padrão)' : ''}</option>`);
+  if (!MODELOS_IA.some(m => m.id === atual)) {   // valor fora da lista: não some em silêncio
+    opcoes.push(`<option value="${escapeHtml(atual)}" selected>${escapeHtml(atual)} (personalizado)</option>`);
+  }
+  return opcoes.join('');
+}
+
+function custoPorCurriculo(chave, modeloId) {
+  const m = MODELOS_IA.find(x => x.id === modeloId);
+  if (!m) return null;
+  const u = USO_TIPICO[chave];
+  const porChamada = (u.entrada * m.tokenizador * m.entrada +
+                      (u.saida * m.tokenizador + m.raciocinio) * m.saida) / 1e6;
+  const comSegunda = chave === 'modelo_ia_avaliacao' && segundaAvaliacaoAtiva();
+  return porChamada * (comSegunda ? 1 + PARTE_EM_SEGUNDA_AVALIACAO : 1);
+}
+
+function atualizarEstimativas() {
+  let total = 0, completo = true;
+  CHAVES_MODELO.forEach(k => {
+    const sel = $(`#cfg-${k}`), el = $(`#est-${k}`);
+    if (!sel || !el) { completo = false; return; }
+    const m = MODELOS_IA.find(x => x.id === sel.value);
+    const c = custoPorCurriculo(k, sel.value);
+    if (c === null) {
+      el.textContent = 'Modelo fora da lista: custo não estimado (o log mostrará US$ 0,00).';
+      completo = false;
+      return;
+    }
+    total += c;
+    const extra = k === 'modelo_ia_avaliacao' && segundaAvaliacaoAtiva() ? ' (inclui a segunda avaliação)' : '';
+    el.textContent = `${m.nome}: ${usd(m.entrada)} entrada / ${usd(m.saida)} saída por 1M tokens · ` +
+      `≈ ${usd(c)} por currículo${extra} · ${usd(c * 100)} a cada 100`;
+  });
+  const tot = $('#est-total');
+  if (tot) {
+    tot.textContent = completo && total
+      ? `Estimativa com essas escolhas: ≈ ${usd(total)} por currículo · ${usd(total * 100)} a cada 100 · ` +
+        `US$ ${SALDO_REFERENCIA_USD} rendem ≈ ${Math.floor(SALDO_REFERENCIA_USD / total)} currículos. ` +
+        'Aproximado; o custo real aparece no log de cada execução.'
+      : '';
+  }
+}
+
+const FAIXA_SEGUNDA = ['faixa_ambigua_min', 'faixa_ambigua_max'];
+
+// Ativa = as duas faixas são números; qualquer uma vazia desativa (o backend segue a mesma regra)
+function segundaAvaliacaoAtiva() {
+  return FAIXA_SEGUNDA.every(k => {
+    const v = $(`#cfg-${k}`)?.value.trim();
+    return v !== undefined && v !== '' && !isNaN(Number(v));
+  });
+}
+
+function sincronizarSegundaAvaliacao() {
+  const chk = $('#cfg-segunda-ativa');
+  if (chk) chk.checked = segundaAvaliacaoAtiva();
+  atualizarEstimativas();   // a segunda avaliação muda o custo estimado
+}
+
+async function gravarConfig(chave, valor) {
+  const { error } = await db.from('configuracoes')
+    .update({ valor, updated_by: app.usuario.id }).eq('chave', chave);
+  return error;
 }
 
 async function salvarConfig(chave) {
@@ -2010,10 +2165,33 @@ async function salvarConfig(chave) {
   try { valor = JSON.parse(raw); }
   catch { valor = raw; }
 
-  const { error } = await db.from('configuracoes')
-    .update({ valor, updated_by: app.usuario.id }).eq('chave', chave);
-
+  const error = await gravarConfig(chave, valor);
   toast(error ? error.message : 'Configuração salva', error ? 'erro' : 'ok');
+  sincronizarSegundaAvaliacao();
+}
+
+async function alternarSegundaAvaliacao(ativa) {
+  const [min, max] = FAIXA_SEGUNDA.map(k => $(`#cfg-${k}`));
+  if (ativa) {
+    // volta para a faixa que estava antes de desativar (nesta sessão) ou para o padrão
+    min.value = min.dataset.anterior || '60';
+    max.value = max.dataset.anterior || '75';
+  } else {
+    min.dataset.anterior = min.value;
+    max.dataset.anterior = max.value;
+    min.value = '';
+    max.value = '';
+  }
+  const valorDe = el => el.value.trim() === '' ? '' : Number(el.value);
+  const erros = await Promise.all([
+    gravarConfig(FAIXA_SEGUNDA[0], valorDe(min)),
+    gravarConfig(FAIXA_SEGUNDA[1], valorDe(max))
+  ]);
+  const erro = erros.find(Boolean);
+  toast(erro ? erro.message : (ativa ? 'Segunda avaliação ativada' : 'Segunda avaliação desativada'),
+        erro ? 'erro' : 'ok');
+  if (erro) carregarConfig();   // não deixa a tela mostrar um estado que o banco não tem
+  else sincronizarSegundaAvaliacao();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2051,10 +2229,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   $('#l-senha').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
   $('#l-email').addEventListener('keydown', e => { if (e.key === 'Enter') $('#l-senha').focus(); });
 
-  // Fechar modais clicando no overlay
-  $$('.modal-overlay').forEach(m => {
-    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
-  });
+  // Sem fechar modal por clique fora: perderia o que foi digitado (só X, Cancelar ou Esc)
 
   // ESC fecha drawer e modais
   document.addEventListener('keydown', e => {

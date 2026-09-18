@@ -1,0 +1,217 @@
+"""Camada de acesso ao Supabase (service_role — ignora RLS)."""
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
+from supabase import create_client, Client
+
+from config import (
+    SUPABASE_URL, SUPABASE_SERVICE_KEY, BUCKET_CURRICULOS,
+    MODO_SIMULACAO, log,
+)
+
+_cliente: Optional[Client] = None
+
+
+def conectar() -> Client:
+    global _cliente
+    if _cliente is None:
+        _cliente = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        log.info("Conectado ao Supabase")
+    return _cliente
+
+
+def agora() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ─────────────────────────────────────────────
+# CONFIGURAÇÕES
+# ─────────────────────────────────────────────
+def carregar_configuracoes() -> Dict[str, Any]:
+    r = conectar().table("configuracoes").select("chave,valor").execute()
+    return {c["chave"]: c["valor"] for c in r.data}
+
+
+# ─────────────────────────────────────────────
+# VAGAS
+# ─────────────────────────────────────────────
+def listar_vagas_abertas() -> List[Dict]:
+    """Vagas ativas com seus requisitos, para o classificador e o avaliador."""
+    db = conectar()
+    vagas = db.table("vagas").select(
+        "id,titulo,descricao,perfil_comportamental,versao_criterios,"
+        "setor_id,setores(nome)"
+    ).eq("status", "ativo").execute().data
+
+    if not vagas:
+        return []
+
+    ids = [v["id"] for v in vagas]
+    reqs = db.table("requisitos").select("*").in_("vaga_id", ids)\
+             .order("ordem").execute().data
+
+    por_vaga: Dict[str, List[Dict]] = {}
+    for r in reqs:
+        por_vaga.setdefault(r["vaga_id"], []).append(r)
+
+    for v in vagas:
+        todos = por_vaga.get(v["id"], [])
+        v["obrigatorios"] = [r for r in todos if r["tipo"] == "obrigatorio"]
+        v["desejaveis"]   = [r for r in todos if r["tipo"] == "desejavel"]
+        v["setor_nome"]   = (v.get("setores") or {}).get("nome", "")
+    return vagas
+
+
+# ─────────────────────────────────────────────
+# REMETENTES
+# ─────────────────────────────────────────────
+def obter_ou_criar_remetente(email: str) -> Dict:
+    db = conectar()
+    r = db.table("remetentes").select("*").eq("email", email).execute()
+    if r.data:
+        return r.data[0]
+    if MODO_SIMULACAO:
+        return {"id": "simulado", "email": email, "bloqueado": False, "total_envios": 0}
+    novo = db.table("remetentes").insert({"email": email}).execute()
+    return novo.data[0]
+
+
+def remetente_bloqueado(email: str) -> bool:
+    r = conectar().table("remetentes").select("bloqueado")\
+        .eq("email", email).execute()
+    return bool(r.data and r.data[0]["bloqueado"])
+
+
+# ─────────────────────────────────────────────
+# IDEMPOTÊNCIA
+# ─────────────────────────────────────────────
+def email_ja_processado(message_id: str) -> bool:
+    """Evita reprocessar o mesmo e-mail em execuções futuras."""
+    if not message_id:
+        return False
+    db = conectar()
+    if db.table("candidaturas").select("id")\
+         .eq("email_message_id", message_id).limit(1).execute().data:
+        return True
+    return bool(db.table("excecoes").select("id")
+                  .eq("email_message_id", message_id).limit(1).execute().data)
+
+
+def buscar_duplicata(hash_identidade: str, vaga_id: str,
+                     dias_carencia: int = 90) -> Optional[Dict]:
+    """Mesma pessoa, mesma vaga, dentro do prazo de carência."""
+    if not hash_identidade or not vaga_id:
+        return None
+    from datetime import timedelta
+    limite = (datetime.now(timezone.utc) - timedelta(days=dias_carencia)).isoformat()
+    r = conectar().table("candidaturas").select("id,recebido_em,status")\
+        .eq("hash_identidade", hash_identidade)\
+        .eq("vaga_id", vaga_id)\
+        .gte("recebido_em", limite)\
+        .limit(1).execute()
+    return r.data[0] if r.data else None
+
+
+# ─────────────────────────────────────────────
+# CANDIDATURAS
+# ─────────────────────────────────────────────
+def criar_candidatura(dados: Dict) -> Optional[Dict]:
+    if MODO_SIMULACAO:
+        log.info("  [simulação] candidatura não gravada")
+        return {"id": "simulado"}
+    r = conectar().table("candidaturas").insert(dados).execute()
+    return r.data[0] if r.data else None
+
+
+def salvar_curriculo(dados: Dict) -> Optional[Dict]:
+    if MODO_SIMULACAO:
+        return {"id": "simulado"}
+    r = conectar().table("curriculos").insert(dados).execute()
+    return r.data[0] if r.data else None
+
+
+def salvar_avaliacao(dados: Dict) -> Optional[Dict]:
+    if MODO_SIMULACAO:
+        return {"id": "simulado"}
+    r = conectar().table("avaliacoes").insert(dados).execute()
+    return r.data[0] if r.data else None
+
+
+def atualizar_candidatura(cand_id: str, dados: Dict) -> None:
+    if MODO_SIMULACAO:
+        return
+    conectar().table("candidaturas").update(dados).eq("id", cand_id).execute()
+
+
+# ─────────────────────────────────────────────
+# EXCEÇÕES
+# ─────────────────────────────────────────────
+def registrar_excecao(dados: Dict) -> None:
+    if MODO_SIMULACAO:
+        log.info(f"  [simulação] exceção: {dados.get('tipo')}")
+        return
+    conectar().table("excecoes").insert(dados).execute()
+
+
+# ─────────────────────────────────────────────
+# STORAGE
+# ─────────────────────────────────────────────
+def enviar_arquivo(caminho: str, conteudo: bytes, tipo_mime: str) -> Optional[str]:
+    if MODO_SIMULACAO:
+        return caminho
+    try:
+        conectar().storage.from_(BUCKET_CURRICULOS).upload(
+            caminho, conteudo,
+            {"content-type": tipo_mime, "upsert": "false"},
+        )
+        return caminho
+    except Exception as e:
+        log.error(f"  Falha ao enviar arquivo: {e}")
+        return None
+
+
+def remover_arquivos(caminhos: List[str]) -> None:
+    """Usado pelo expurgo LGPD."""
+    if not caminhos or MODO_SIMULACAO:
+        return
+    try:
+        conectar().storage.from_(BUCKET_CURRICULOS).remove(caminhos)
+        log.info(f"  {len(caminhos)} arquivo(s) removido(s) do Storage")
+    except Exception as e:
+        log.error(f"  Falha ao remover arquivos: {e}")
+
+
+# ─────────────────────────────────────────────
+# EXECUÇÕES DO PIPELINE
+# ─────────────────────────────────────────────
+def iniciar_execucao() -> Optional[str]:
+    if MODO_SIMULACAO:
+        return None
+    r = conectar().table("execucoes_pipeline").insert({}).execute()
+    return r.data[0]["id"] if r.data else None
+
+
+def finalizar_execucao(exec_id: Optional[str], stats: Dict,
+                       sucesso: bool = True, erro: str = None) -> None:
+    if not exec_id or MODO_SIMULACAO:
+        return
+    conectar().table("execucoes_pipeline").update({
+        "finalizado_em": agora(),
+        "sucesso": sucesso,
+        "erro_mensagem": erro,
+        **stats,
+    }).eq("id", exec_id).execute()
+
+
+# ─────────────────────────────────────────────
+# MANUTENÇÃO (retenção e expurgo)
+# ─────────────────────────────────────────────
+def executar_manutencao() -> Dict:
+    """Chama a rotina do banco e remove os arquivos expurgados."""
+    if MODO_SIMULACAO:
+        return {"inativadas": 0, "expurgadas": 0}
+    r = conectar().rpc("fn_manutencao_diaria").execute()
+    resultado = r.data or {}
+    arquivos = resultado.get("arquivos_para_remover") or []
+    if arquivos:
+        remover_arquivos(arquivos)
+    return resultado
