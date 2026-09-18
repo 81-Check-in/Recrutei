@@ -8,7 +8,7 @@ import leitor_email as mail
 import extrator
 import ia
 from config import (
-    FORMATOS_ACEITOS, TAMANHO_MINIMO_ANEXO, LIMITE_EMAILS,
+    FORMATOS_ACEITOS, TAMANHO_MINIMO_ANEXO, LIMITE_EMAILS, SETOR_MARCAR_LIDO,
     MODO_SIMULACAO, MODELO_CLASSIFICACAO_PADRAO, MODELO_AVALIACAO_PADRAO, log,
 )
 from utils import (
@@ -126,29 +126,41 @@ def faixa_segunda_avaliacao(cfg: Dict) -> Optional[Tuple[int, int]]:
         return 60, 75
 
 
+def _marcar_lido(vaga: Optional[Dict] = None) -> bool:
+    """
+    Só e-mails classificados no setor SETOR_MARCAR_LIDO viram "lidos"; os demais
+    (outros setores, sem vaga, não-currículo, erros) continuam não lidos na caixa.
+    SETOR_MARCAR_LIDO vazio = todo e-mail processado é marcado como lido.
+    """
+    if not SETOR_MARCAR_LIDO:
+        return True
+    setor = ((vaga or {}).get("setor_nome") or "").strip()
+    return setor.casefold() == SETOR_MARCAR_LIDO.casefold()
+
+
 def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
                        stats: Estatisticas) -> bool:
-    """Processa um e-mail. Retorna True se pode ser marcado como lido."""
+    """Processa um e-mail. Retorna True se ele deve ser marcado como lido."""
     uid = msg["uid"].decode() if isinstance(msg["uid"], bytes) else msg["uid"]
     log.info(f"► mensagem UID {uid}")
 
     # Idempotência
     if msg.get("message_id") and bd.email_ja_processado(msg["message_id"]):
         log.info("  Já processado anteriormente — ignorando")
-        return True
+        return _marcar_lido()
 
     # Remetente bloqueado
     if bd.remetente_bloqueado(msg["remetente"]):
         log.info("  Remetente bloqueado — ignorando")
         stats.bloqueados += 1
-        return True
+        return _marcar_lido()
 
     # ── Extração ──
     texto, ocr, anexo, origem, erro = _obter_texto(msg)
     if erro:
         _registrar_excecao(msg, erro[0], erro[1], stats,
                            anexo["nome"] if anexo else None)
-        return True
+        return _marcar_lido()
 
     texto = limpar_texto(texto)
 
@@ -158,24 +170,24 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
         resultado, _ = ia.classificar(texto, vagas, modelo_cls)
     except Exception as e:
         _registrar_excecao(msg, "erro_processamento", f"Falha na classificação: {e}", stats)
-        return True
+        return _marcar_lido()
 
     if not resultado:
         _registrar_excecao(msg, "erro_processamento",
                            "Classificador não retornou resposta válida", stats)
-        return True
+        return _marcar_lido()
 
     if not resultado.get("e_curriculo"):
         _registrar_excecao(msg, "nao_e_curriculo",
                            "Conteúdo não identificado como currículo", stats)
-        return True
+        return _marcar_lido()
 
     vaga_id = resultado.get("vaga_id")
     vaga = next((v for v in vagas if v["id"] == vaga_id), None)
     if not vaga:
         _registrar_excecao(msg, "vaga_nao_identificada",
                            "Nenhuma vaga aberta corresponde ao perfil", stats)
-        return True
+        return _marcar_lido()
 
     log.info(f"  Vaga: {vaga['titulo']} ({resultado.get('aderencia', 0)}% aderência)")
 
@@ -214,7 +226,8 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
     })
     if not candidatura:
         log.error("  Falha ao criar candidatura")
-        return False
+        _registrar_excecao(msg, "erro_processamento", "Falha ao criar candidatura", stats)
+        return _marcar_lido(vaga)
 
     cand_id = candidatura["id"]
 
@@ -248,12 +261,12 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
     except Exception as e:
         log.error(f"  Falha na avaliação: {e}")
         bd.atualizar_candidatura(cand_id, {"status": "recebido"})
-        return True
+        return _marcar_lido(vaga)
 
     if not aval:
         log.error("  Avaliador não retornou resposta válida")
         bd.atualizar_candidatura(cand_id, {"status": "recebido"})
-        return True
+        return _marcar_lido(vaga)
 
     nota = int(aval.get("nota", 0))
     log.info(f"  Nota: {nota}")
@@ -314,7 +327,7 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
             log.warning(f"  Segunda avaliação falhou: {e}")
 
     bd.atualizar_candidatura(cand_id, {"status": "avaliado"})
-    return True
+    return _marcar_lido(vaga)
 
 
 def executar() -> Dict:
@@ -343,7 +356,10 @@ def executar() -> Dict:
             log.info(f"{len(vagas)} vaga(s) aberta(s): "
                      f"{', '.join(v['titulo'] for v in vagas)}")
 
-        mensagens = mail.buscar_novos(LIMITE_EMAILS)
+        # E-mails de outros setores ficam não lidos; o marcador de progresso
+        # (último UID analisado) evita relê-los a cada execução.
+        cursor_uid, cursor_validade = bd.obter_cursor_imap()
+        mensagens, validade = mail.buscar_novos(LIMITE_EMAILS, cursor_uid, cursor_validade)
         stats.emails_lidos = len(mensagens)
 
         if not mensagens:
@@ -351,8 +367,11 @@ def executar() -> Dict:
         else:
             log.info("-" * 60)
             tratadas = []
+            ultimo_uid = None      # até onde tudo foi tratado, sem falha no meio
+            avancar = True
             for i, msg in enumerate(mensagens, 1):
                 log.info(f"[{i}/{len(mensagens)}]")
+                tratada = True
                 try:
                     if processar_mensagem(msg, vagas, cfg, stats):
                         tratadas.append(msg["uid"])
@@ -360,11 +379,24 @@ def executar() -> Dict:
                     log.error(f"  Erro inesperado: {e}", exc_info=True)
                     try:
                         _registrar_excecao(msg, "erro_processamento", str(e)[:400], stats)
-                        tratadas.append(msg["uid"])
+                        if _marcar_lido():
+                            tratadas.append(msg["uid"])
                     except Exception:
-                        pass
+                        tratada = False   # nem a exceção foi registrada: tentar de novo
+                if not tratada:
+                    avancar = False
+                elif avancar:
+                    ultimo_uid = int(msg["uid"])
 
             mail.marcar_como_lidas(tratadas)
+            log.info(f"{len(tratadas)} marcada(s) como lida(s); "
+                     f"{len(mensagens) - len(tratadas)} mantida(s) não lida(s)")
+
+            if ultimo_uid:
+                try:
+                    bd.salvar_cursor_imap(ultimo_uid, validade)
+                except Exception as e:
+                    log.warning(f"Não consegui salvar o marcador de progresso: {e}")
 
         # Manutenção: inativação e expurgo
         log.info("-" * 60)

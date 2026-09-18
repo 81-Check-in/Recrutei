@@ -1,0 +1,16 @@
+# Segredos nunca entram na imagem: as variáveis vêm do Railway.
+.env
+*.env
+!.env.example
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.log
+temp/
+sql/
+.git
+.idea/
+.vscode/
+.DS_Store

@@ -10,7 +10,7 @@ import ssl
 from datetime import date
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
-from typing import List, Dict, Optional, Iterator
+from typing import List, Dict, Optional, Iterator, Tuple
 from contextlib import contextmanager
 
 from config import (
@@ -154,30 +154,56 @@ _MESES_IMAP = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def _criterio_busca() -> tuple:
-    """UNSEEN, limitado por IMAP_DESDE se definida. O IMAP exige DD-Mon-AAAA com mês em inglês."""
-    if not IMAP_DESDE:
-        return ("UNSEEN",)
-    d = date.fromisoformat(IMAP_DESDE)
-    return ("UNSEEN", "SINCE", f"{d.day:02d}-{_MESES_IMAP[d.month - 1]}-{d.year}")
+def _criterio_busca(apos_uid: int = 0) -> tuple:
+    """
+    UNSEEN, limitado por IMAP_DESDE (data) e por apos_uid (só UIDs maiores).
+    O IMAP exige DD-Mon-AAAA com mês em inglês.
+    """
+    criterio: tuple = ("UNSEEN",)
+    if apos_uid > 0:
+        criterio += ("UID", f"{apos_uid + 1}:*")
+    if IMAP_DESDE:
+        d = date.fromisoformat(IMAP_DESDE)
+        criterio += ("SINCE", f"{d.day:02d}-{_MESES_IMAP[d.month - 1]}-{d.year}")
+    return criterio
 
 
-def buscar_novos(limite: int = 0) -> List[Dict]:
-    """Lê os e-mails não lidos da caixa de entrada."""
+def _uidvalidity(conn: imaplib.IMAP4_SSL) -> int:
+    """Identificador da caixa: se mudar, os UIDs guardados deixam de valer."""
+    _, dados = conn.response("UIDVALIDITY")
+    return int(dados[0]) if dados and dados[0] else 0
+
+
+def buscar_novos(limite: int = 0, apos_uid: int = 0,
+                 uidvalidity_salvo: int = 0) -> Tuple[List[Dict], int]:
+    """
+    Lê os e-mails não lidos da caixa de entrada, do mais antigo para o mais novo.
+
+    apos_uid: ignora UIDs até esse valor (e-mails já analisados que ficaram não lidos).
+    Devolve (mensagens, UIDVALIDITY da caixa).
+    """
     mensagens: List[Dict] = []
 
     with conexao_imap() as conn:
         conn.select(IMAP_PASTA_ENTRADA, readonly=True)
-        status, dados = conn.uid("SEARCH", *_criterio_busca())
+        validade = _uidvalidity(conn)
+        if apos_uid and uidvalidity_salvo and validade != uidvalidity_salvo:
+            log.warning("A caixa foi reindexada (UIDVALIDITY mudou) — "
+                        "marcador de progresso ignorado")
+            apos_uid = 0
+
+        status, dados = conn.uid("SEARCH", *_criterio_busca(apos_uid))
         if status != "OK":
             log.error("Falha ao buscar mensagens")
-            return []
+            return [], validade
 
-        ids = dados[0].split()
+        # "UID n:*" sempre inclui o maior UID da caixa, mesmo abaixo de n: filtrar aqui
+        ids = [u for u in dados[0].split() if int(u) > apos_uid]
         if limite > 0:
             ids = ids[:limite]
         desde = f" desde {IMAP_DESDE}" if IMAP_DESDE else ""
-        log.info(f"{len(ids)} mensagem(ns) não lida(s){desde}")
+        apos = f", após o UID {apos_uid}" if apos_uid else ""
+        log.info(f"{len(ids)} mensagem(ns) não lida(s){desde}{apos}")
 
         for uid in ids:
             try:
@@ -208,7 +234,7 @@ def buscar_novos(limite: int = 0) -> List[Dict]:
             except Exception as e:
                 log.error(f"  Erro ao ler mensagem {uid}: {e}")
 
-    return mensagens
+    return mensagens, validade
 
 
 def marcar_como_lidas(uids: List) -> None:

@@ -1,5 +1,5 @@
 """Camada de acesso ao Supabase (service_role — ignora RLS)."""
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
@@ -29,6 +29,37 @@ def agora() -> str:
 def carregar_configuracoes() -> Dict[str, Any]:
     r = conectar().table("configuracoes").select("chave,valor").execute()
     return {c["chave"]: c["valor"] for c in r.data}
+
+
+# Marcador de progresso da caixa de e-mail. E-mails de outros setores continuam
+# não lidos; o marcador impede que o pipeline os releia a cada execução.
+CHAVE_CURSOR_UID = "imap_ultimo_uid"
+CHAVE_CURSOR_VALIDADE = "imap_uidvalidity"
+
+
+def obter_cursor_imap() -> Tuple[int, int]:
+    """(último UID já analisado, UIDVALIDITY da caixa). (0, 0) se ainda não existe."""
+    r = conectar().table("configuracoes").select("chave,valor")\
+        .in_("chave", [CHAVE_CURSOR_UID, CHAVE_CURSOR_VALIDADE]).execute()
+    v = {c["chave"]: c["valor"] for c in r.data}
+    return int(v.get(CHAVE_CURSOR_UID) or 0), int(v.get(CHAVE_CURSOR_VALIDADE) or 0)
+
+
+def salvar_cursor_imap(ultimo_uid: int, uidvalidity: int) -> None:
+    if MODO_SIMULACAO:
+        return
+    db = conectar()
+    for chave, valor, descricao in (
+        (CHAVE_CURSOR_UID, ultimo_uid,
+         "Controle interno: último UID da caixa já analisado pelo pipeline. Não editar."),
+        (CHAVE_CURSOR_VALIDADE, uidvalidity,
+         "Controle interno: UIDVALIDITY da caixa de e-mail. Não editar."),
+    ):
+        if db.table("configuracoes").select("chave").eq("chave", chave).execute().data:
+            db.table("configuracoes").update({"valor": valor}).eq("chave", chave).execute()
+        else:
+            db.table("configuracoes").insert(
+                {"chave": chave, "valor": valor, "descricao": descricao}).execute()
 
 
 # ─────────────────────────────────────────────

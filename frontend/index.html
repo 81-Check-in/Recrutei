@@ -137,6 +137,8 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .btn-sm.azul:hover{background:var(--blue-mid)}
 .btn-sm.verde{background:var(--green);color:#fff;border-color:var(--green)}
 .btn-sm.verde:hover{background:#15803d}
+.btn-sm.vermelho{color:var(--red);border-color:#fca5a5}
+.btn-sm.vermelho:hover{background:var(--red-light)}
 
 /* estados */
 .estado-vazio{text-align:center;padding:38px 20px;color:var(--gray-text)}
@@ -782,7 +784,7 @@ tbody tr:hover td{background:#FAFAFA}
   <div class="wapp-prev"><strong><i class="ti ti-brand-whatsapp"></i> Prévia</strong><span id="ag-preview"></span></div>
   <div class="modal-acoes">
     <button class="btn-cancel" onclick="fecharModal('modal-agendar')">Cancelar</button>
-    <button class="btn-wapp" onclick="confirmarAgendamento()">
+    <button class="btn-wapp" id="ag-confirmar" onclick="confirmarAgendamento()">
       <i class="ti ti-brand-whatsapp"></i>Abrir WhatsApp e registrar</button></div>
 </div></div>
 
@@ -1835,6 +1837,7 @@ async function carregarEntrevistasDia() {
       <div class="ent-acoes">
         <button class="btn-sm" onclick="verCurriculo('${e.candidatura_id}')" title="Ver currículo">
           <i class="ti ti-file-text"></i></button>
+        ${e.resultado === 'agendada' ? botaoExcluirEntrevista(e) : ''}
         ${e.resultado === 'agendada' || e.resultado === 'remarcada'
           ? `<button class="btn-sm verde" data-id="${e.id}" data-nome="${escapeHtml(e.candidato_nome)}" data-candidatura="${e.candidatura_id}" data-tel="${escapeHtml(e.candidato_telefone_e164||'')}" onclick="abrirResultado(this.dataset.id, this.dataset.nome, this.dataset.candidatura, this.dataset.tel)">
                <i class="ti ti-check"></i>Resultado</button>`
@@ -1878,8 +1881,30 @@ async function carregarProximas() {
           <i class="ti ti-file-text"></i></button>
         <button class="btn-sm azul" data-candidatura="${e.candidatura_id}" data-nome="${escapeHtml(e.candidato_nome)}" data-tel="${escapeHtml(e.candidato_telefone_e164||'')}" data-entrevista="${e.id}" onclick="abrirAgendamento(this.dataset.candidatura, this.dataset.nome, this.dataset.tel, this.dataset.entrevista)">
           <i class="ti ti-brand-whatsapp"></i>Remarcar</button>
+        ${e.resultado === 'agendada' ? botaoExcluirEntrevista(e) : ''}
       </td>
     </tr>`).join('');
+}
+
+function botaoExcluirEntrevista(e) {
+  return `<button class="btn-sm vermelho" data-id="${e.id}" data-nome="${escapeHtml(e.candidato_nome||'')}" data-quando="${e.data_hora}" onclick="excluirEntrevista(this.dataset.id, this.dataset.nome, this.dataset.quando)" title="Excluir (agendamento feito por engano)">
+    <i class="ti ti-trash"></i></button>`;
+}
+
+async function excluirEntrevista(id, nome, dataHora) {
+  if (!confirm(`Excluir a entrevista de ${nome} em ${fmtDataHora(dataHora)}?\n\nUse apenas para agendamento feito por engano. Não é possível desfazer.`)) return;
+
+  const { error } = await db.rpc('excluir_entrevista', { p_id: id });
+  if (error) {
+    // PGRST202 = função ainda não criada no banco (falta rodar backend/sql/excluir_entrevista.sql)
+    toast(error.code === 'PGRST202'
+      ? 'Exclusão ainda não habilitada no banco. Rode backend/sql/excluir_entrevista.sql.'
+      : error.message, 'erro');
+    return;
+  }
+
+  toast('Entrevista excluída');
+  carregarEntrevistas();
 }
 
 // ── Agendamento + WhatsApp ──
@@ -1915,9 +1940,11 @@ function previewMensagem() {
   $('#ag-preview').textContent = $('#ag-msg').value;
 }
 
+let agendando = false;
+
 async function confirmarAgendamento() {
   const info = app.entrevistaAberta;
-  if (!info) return;
+  if (!info || agendando) return;
 
   const data = $('#ag-data').value;
   const hora = $('#ag-hora').value;
@@ -1926,33 +1953,61 @@ async function confirmarAgendamento() {
   const dataHora = new Date(`${data}T${hora}:00`).toISOString();
   const msg = $('#ag-msg').value;
 
-  const { error } = await db.from('entrevistas').insert({
-    candidatura_id: info.candidaturaId,
-    data_hora: dataHora,
-    local: $('#ag-local').value.trim() || null,
-    entrevistador: app.perfil?.nome || null,
-    mensagem_enviada: msg,
-    whatsapp_aberto_em: new Date().toISOString(),
-    agendado_por: app.usuario.id,
-    entrevista_anterior_id: info.anteriorId
-  });
+  agendando = true;
+  const btn = $('#ag-confirmar');
+  btn.disabled = true;
+  try {
+    // Agendamento novo (não é remarcação): recusa se já existe entrevista ativa
+    if (!info.anteriorId) {
+      const { data: ativas, error: erroAtiva } = await db.from('vw_agenda_entrevistas')
+        .select('data_hora')
+        .eq('candidatura_id', info.candidaturaId)
+        .in('resultado', ['agendada','remarcada'])
+        .limit(1);
+      if (erroAtiva) { toast(erroAtiva.message, 'erro'); return; }
+      if (ativas.length) {
+        toast(`${info.nome} já tem entrevista em ${fmtDataHora(ativas[0].data_hora)}. Para mudar, use "Remarcar" na tela Entrevistas.`, 'erro');
+        return;
+      }
+    }
 
-  if (error) { toast(error.message, 'erro'); return; }
+    const { error } = await db.from('entrevistas').insert({
+      candidatura_id: info.candidaturaId,
+      data_hora: dataHora,
+      local: $('#ag-local').value.trim() || null,
+      entrevistador: app.perfil?.nome || null,
+      mensagem_enviada: msg,
+      whatsapp_aberto_em: new Date().toISOString(),
+      agendado_por: app.usuario.id,
+      entrevista_anterior_id: info.anteriorId
+    });
 
-  // Abre o WhatsApp do gestor com a mensagem pronta
-  const tel = normalizaTelefone(info.telefone);
-  if (tel) {
-    window.open(`https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`, '_blank');
-  } else {
-    toast('Entrevista registrada, mas o telefone não pôde ser lido', 'erro');
+    if (error) {
+      // 23505 = índice único: esta entrevista já foi remarcada por outra pessoa/aba
+      toast(error.code === '23505'
+        ? 'Esta entrevista já foi remarcada. Atualize a tela.'
+        : error.message, 'erro');
+      return;
+    }
+
+    // Abre o WhatsApp do gestor com a mensagem pronta
+    const tel = normalizaTelefone(info.telefone);
+    if (tel) {
+      window.open(`https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`, '_blank');
+    } else {
+      toast('Entrevista registrada, mas o telefone não pôde ser lido', 'erro');
+    }
+
+    fecharModal('modal-agendar');
+    toast('Entrevista registrada no calendário');
+
+    if (app.telaAtual === 'entrevistas') carregarEntrevistas();
+    if (app.telaAtual === 'candidatos')  carregarCandidatos();
+    if (app.telaAtual === 'triagem')     carregarTriagem();
+  } finally {
+    agendando = false;
+    btn.disabled = false;
   }
-
-  fecharModal('modal-agendar');
-  toast('Entrevista registrada no calendário');
-
-  if (app.telaAtual === 'entrevistas') carregarEntrevistas();
-  if (app.telaAtual === 'candidatos')  carregarCandidatos();
-  if (app.telaAtual === 'triagem')     carregarTriagem();
 }
 
 // ── Resultado da entrevista ──

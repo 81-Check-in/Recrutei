@@ -56,6 +56,9 @@ if len(IDENTIDADE_CHAVE) < 32:
 # ── Execução ──
 MODO_SIMULACAO = os.getenv("MODO_SIMULACAO", "false").lower() == "true"
 LIMITE_EMAILS = int(os.getenv("LIMITE_EMAILS", "0"))
+# Só e-mails classificados neste setor são marcados como lidos; os demais ficam
+# não lidos na caixa. Vazio = todo e-mail processado é marcado como lido.
+SETOR_MARCAR_LIDO = os.getenv("SETOR_MARCAR_LIDO", "Logística").strip()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # ── Constantes ──

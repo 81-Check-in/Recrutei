@@ -104,17 +104,36 @@ python main.py --manutencao     # só inativação e expurgo (LGPD)
 
 ## 4. Deploy no Railway
 
-1. Suba a pasta para um repositório no GitHub (o `.gitignore` já protege o `.env`).
+1. Suba o projeto para um repositório no GitHub (o `.gitignore` já protege o `.env`).
 2. No Railway: **New Project → Deploy from GitHub repo**.
-3. Em **Variables**, cadastre todas as variáveis do `.env`.
-4. Em **Settings → Cron Schedule**, defina:
+3. Em **Settings → Source → Root Directory**, defina `backend`. O repositório tem
+   `backend/` e `frontend/`; sem isso o Railway não encontra o `Dockerfile`.
+4. Em **Variables**, cadastre as variáveis do `.env`, **sem aspas** em volta dos valores.
+   Confira estas:
+   - `MODO_SIMULACAO=false` (em `true` nada é gravado).
+   - `LIMITE_EMAILS`: deixe `0` ou vazio para processar tudo; use um número pequeno
+     só no primeiro dia.
+   - `IDENTIDADE_CHAVE`: a **mesma** usada até hoje. Se mudar, reenvios antigos
+     deixam de ser detectados.
+5. Em **Settings → Cron Schedule**, defina:
 
 ```
 0 8 * * *
 ```
 
 Isso executa todo dia às 05h no horário de Brasília (o Railway usa UTC).
-O `nixpacks.toml` já instala Tesseract e Poppler automaticamente.
+O `Dockerfile` instala Tesseract (com o idioma português) e Poppler. A execução roda
+uma vez e encerra; se falhar, o Railway marca a execução com erro.
+
+Para testar a imagem localmente antes do deploy:
+
+```bash
+docker build -t recrutei-backend .
+docker run --rm -v "$PWD/.env:/app/.env:ro" recrutei-backend python main.py --testar
+```
+
+Não use `--env-file .env` nesse teste: o Docker não remove aspas, então senhas
+entre aspas (ou com `#`) chegam erradas.
 
 ---
 
@@ -140,6 +159,17 @@ vezes não gera duplicata.
 
 **Nada é descartado em silêncio** — todo e-mail que não vira candidatura
 entra na fila de exceções, visível no sistema web.
+
+**Só um setor vira "lido"** — só os e-mails classificados no setor definido em
+`SETOR_MARCAR_LIDO` (padrão: Logística) são marcados como lidos. Currículos de
+outros setores, e-mails que não são currículo e erros continuam **não lidos**
+na caixa para conferência manual — mas são analisados e registrados no sistema
+(candidatura ou exceção) do mesmo jeito. Para não relê-los a cada execução, o
+pipeline guarda um marcador de progresso (o último UID analisado) na tabela
+`configuracoes`, nas chaves `imap_ultimo_uid` e `imap_uidvalidity`. Apague essas
+duas linhas para recomeçar do e-mail não lido mais antigo. E-mail que você marcar
+como não lido à mão *abaixo* do marcador não é relido. Deixe `SETOR_MARCAR_LIDO`
+vazio para marcar tudo como lido.
 
 **Segunda opinião** — notas entre 60 e 75 recebem uma segunda avaliação
 independente. Divergência acima de 10 pontos é sinalizada para revisão
@@ -171,7 +201,7 @@ estimativa em US$ a cada troca). Sonnet 5, Opus 5 e Fable 5.1 raciocinam
 por padrão e o raciocínio é cobrado como saída: o Sonnet 5 roda com o
 raciocínio desligado e o Opus 5/Fable 5.1 com esforço baixo (ver
 `PARAMETROS_MODELO` em `config.py`). Ao acrescentar um modelo novo, inclua-o
-em `PRECOS` (`config.py`) e em `MODELOS_IA` (`recrutei.html`); modelo fora da
+em `PRECOS` (`config.py`) e em `MODELOS_IA` (`frontend/index.html`); modelo fora da
 tabela funciona, mas o custo aparece como US$ 0,00.
 
 ---
