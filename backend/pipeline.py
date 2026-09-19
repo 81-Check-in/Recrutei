@@ -254,26 +254,38 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
     stats.curriculos_processados += 1
 
     # ── Avaliação (Sonnet) ──
+    if not _avaliar_e_salvar(cand_id, texto, vaga, nome, cfg, stats):
+        bd.atualizar_candidatura(cand_id, {"status": "recebido"})
+        return _marcar_lido(vaga)
+
+    bd.atualizar_candidatura(cand_id, {"status": "avaliado"})
+    return _marcar_lido(vaga)
+
+
+def _avaliar_e_salvar(cand_id: str, texto: str, vaga: Dict, nome: Optional[str],
+                      cfg: Dict, stats: Estatisticas, sequencia: int = 1) -> bool:
+    """
+    Avalia o currículo contra a vaga e grava a nota. Na faixa ambígua grava também
+    a segunda opinião (sequencia + 1). False = a IA não devolveu avaliação válida.
+    """
     modelo_aval = modelo_configurado(cfg, "modelo_ia_avaliacao", MODELO_AVALIACAO_PADRAO)
     try:
         aval, uso = ia.avaliar(texto, vaga, modelo_aval, variacao=1,
                                nome_candidato=nome)
     except Exception as e:
         log.error(f"  Falha na avaliação: {e}")
-        bd.atualizar_candidatura(cand_id, {"status": "recebido"})
-        return _marcar_lido(vaga)
+        return False
 
     if not aval:
         log.error("  Avaliador não retornou resposta válida")
-        bd.atualizar_candidatura(cand_id, {"status": "recebido"})
-        return _marcar_lido(vaga)
+        return False
 
     nota = int(aval.get("nota", 0))
     log.info(f"  Nota: {nota}")
 
     bd.salvar_avaliacao({
         "candidatura_id": cand_id,
-        "vaga_id": vaga_id,
+        "vaga_id": vaga["id"],
         "nota": nota,
         "resumo_nota": aval.get("resumo_nota"),
         "resumo_ia": aval.get("resumo_ia"),
@@ -286,7 +298,7 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
         "tokens_entrada": uso["tokens_entrada"],
         "tokens_saida": uso["tokens_saida"],
         "duracao_ms": uso["duracao_ms"],
-        "sequencia": 1,
+        "sequencia": sequencia,
     })
     stats.avaliacoes_realizadas += 1
 
@@ -306,7 +318,7 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
 
                 bd.salvar_avaliacao({
                     "candidatura_id": cand_id,
-                    "vaga_id": vaga_id,
+                    "vaga_id": vaga["id"],
                     "nota": nota2,
                     "resumo_nota": aval2.get("resumo_nota"),
                     "resumo_ia": aval2.get("resumo_ia"),
@@ -319,15 +331,89 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
                     "tokens_entrada": uso2["tokens_entrada"],
                     "tokens_saida": uso2["tokens_saida"],
                     "duracao_ms": uso2["duracao_ms"],
-                    "sequencia": 2,
+                    "sequencia": sequencia + 1,
                     "divergencia_detectada": divergiu,
                 })
                 stats.avaliacoes_realizadas += 1
         except Exception as e:
             log.warning(f"  Segunda avaliação falhou: {e}")
 
-    bd.atualizar_candidatura(cand_id, {"status": "avaliado"})
-    return _marcar_lido(vaga)
+    return True
+
+
+def _devolver_status(cand_id: str) -> None:
+    """Reavaliação impossível: a candidatura volta ao estado em que a IA a deixaria."""
+    bd.atualizar_candidatura(
+        cand_id, {"status": "avaliado" if bd.proxima_sequencia(cand_id) > 1 else "recebido"})
+
+
+def reavaliar_pendentes(pendentes: List[Dict], vagas: List[Dict], cfg: Dict,
+                        stats: Estatisticas) -> None:
+    """
+    Reavalia as candidaturas que o RH mandou para outra vaga no painel (status
+    em_analise), usando o texto do currículo já guardado. A nota nova entra como a
+    avaliação mais recente; as anteriores ficam no histórico.
+    """
+    log.info(f"{len(pendentes)} reavaliação(ões) pendente(s)")
+    por_id = {v["id"]: v for v in vagas}
+
+    for cand in pendentes:
+        cand_id = cand["id"]
+        try:
+            vaga = por_id.get(cand["vaga_id"])
+            log.info(f"► reavaliando candidatura {cand_id[:8]}"
+                     f"{' para ' + vaga['titulo'] if vaga else ''}")
+            if not vaga:
+                log.warning("  A vaga escolhida não está mais aberta — mantendo a nota anterior")
+                _devolver_status(cand_id)
+                continue
+
+            texto = bd.obter_texto_curriculo(cand_id)
+            if not texto:
+                log.warning("  Sem texto do currículo (dados expurgados?) — mantendo a nota anterior")
+                _devolver_status(cand_id)
+                continue
+
+            nome = (cand.get("dados_pessoais") or {}).get("nome")
+            if _avaliar_e_salvar(cand_id, texto, vaga, nome, cfg, stats,
+                                 sequencia=bd.proxima_sequencia(cand_id)):
+                bd.atualizar_candidatura(cand_id, {"status": "avaliado"})
+            else:
+                log.warning("  Fica em análise; tento de novo na próxima execução")
+        except Exception as e:
+            log.error(f"  Erro inesperado na reavaliação: {e}", exc_info=True)
+
+
+def reavaliar() -> Dict:
+    """
+    Só as reavaliações pendentes, sem ler e-mails (python main.py --reavaliar).
+    Sem nada pendente não registra execução, para poder rodar com frequência.
+    """
+    ia.resetar_custo()
+    stats = Estatisticas()
+    pendentes = bd.listar_reavaliacoes()
+    if not pendentes:
+        log.info("Nenhuma reavaliação pendente")
+        return stats.como_dict()
+
+    if MODO_SIMULACAO:
+        log.warning("MODO SIMULAÇÃO — nada será gravado")
+    exec_id = bd.iniciar_execucao()
+    erro_fatal = None
+    try:
+        cfg = bd.carregar_configuracoes()
+        reavaliar_pendentes(pendentes, bd.listar_vagas_abertas(), cfg, stats)
+    except Exception as e:
+        erro_fatal = str(e)
+        log.error(f"ERRO FATAL: {e}", exc_info=True)
+    finally:
+        bd.finalizar_execucao(exec_id, stats.como_dict(),
+                              sucesso=erro_fatal is None, erro=erro_fatal)
+
+    log.info(f"Avaliações realizadas  : {stats.avaliacoes_realizadas}")
+    log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
+             f"({ia.custo_total['chamadas']} chamadas)")
+    return stats.como_dict()
 
 
 def executar() -> Dict:
@@ -355,6 +441,15 @@ def executar() -> Dict:
         else:
             log.info(f"{len(vagas)} vaga(s) aberta(s): "
                      f"{', '.join(v['titulo'] for v in vagas)}")
+
+        # Reavaliações que o RH pediu no painel (troca de vaga) vêm antes dos e-mails novos
+        try:
+            pendentes = bd.listar_reavaliacoes()
+            if pendentes:
+                log.info("-" * 60)
+                reavaliar_pendentes(pendentes, vagas, cfg, stats)
+        except Exception as e:
+            log.error(f"Falha nas reavaliações: {e}", exc_info=True)
 
         # E-mails de outros setores ficam não lidos; o marcador de progresso
         # (último UID analisado) evita relê-los a cada execução.

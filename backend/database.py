@@ -174,6 +174,32 @@ def atualizar_candidatura(cand_id: str, dados: Dict) -> None:
 
 
 # ─────────────────────────────────────────────
+# REAVALIAÇÃO (o RH trocou a vaga no painel)
+# ─────────────────────────────────────────────
+def listar_reavaliacoes() -> List[Dict]:
+    """Candidaturas que o painel deixou em análise: a IA ainda vai (re)avaliar."""
+    return conectar().table("candidaturas").select("id,vaga_id,dados_pessoais")\
+        .eq("status", "em_analise").order("updated_at").execute().data or []
+
+
+def obter_texto_curriculo(cand_id: str) -> Optional[str]:
+    """Texto extraído do currículo; None se não houver (ex.: dados já expurgados)."""
+    r = conectar().table("curriculos").select("texto_extraido")\
+        .eq("candidatura_id", cand_id).limit(1).execute().data
+    return (r[0].get("texto_extraido") or None) if r else None
+
+
+def proxima_sequencia(cand_id: str) -> int:
+    """
+    Sequência da próxima avaliação da candidatura, acima de todas as anteriores:
+    assim a mais nova é a que o painel mostra e o histórico continua guardado.
+    """
+    r = conectar().table("avaliacoes").select("sequencia")\
+        .eq("candidatura_id", cand_id).order("sequencia", desc=True).limit(1).execute().data
+    return r[0]["sequencia"] + 1 if r else 1
+
+
+# ─────────────────────────────────────────────
 # EXCEÇÕES
 # ─────────────────────────────────────────────
 def registrar_excecao(dados: Dict) -> None:

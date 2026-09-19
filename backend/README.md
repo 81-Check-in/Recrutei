@@ -98,6 +98,7 @@ continuam não lidos e podem ser tratados depois, recuando a data.
 
 ```bash
 python main.py --manutencao     # só inativação e expurgo (LGPD)
+python main.py --reavaliar      # só as reavaliações pedidas no painel (troca de vaga)
 ```
 
 ---
@@ -177,6 +178,21 @@ humana. Para desativar (cada currículo passa a ser avaliado uma vez só),
 use o interruptor em Configurações → Avaliação por IA; por baixo ele deixa
 `faixa_ambigua_min` e `faixa_ambigua_max` vazias. O log de cada execução
 informa se está ativa.
+
+**Trocar a vaga de um candidato** — no painel (Triagem → candidato → "Vaga avaliada")
+o RH escolhe outra vaga e clica em Reavaliar. O painel grava a vaga nova e deixa a
+candidatura em `em_analise`; a rotina diária (ou `python main.py --reavaliar`) reavalia
+tudo que estiver em análise, usando o texto do currículo já guardado, sem reler o
+e-mail. A nota nova entra como a avaliação mais recente (sequência acima das
+anteriores, com segunda opinião na faixa ambígua) e as antigas continuam em
+`avaliacoes`. Até lá o painel mostra "avaliação pendente" no lugar da nota antiga.
+Vaga que não está mais aberta ou currículo sem texto (dados expurgados) mantêm a nota
+anterior; falha da IA deixa em análise para a próxima execução. Cada reavaliação custa
+uma chamada (duas na faixa ambígua). Para a nota sair em minutos em vez de no dia
+seguinte, crie no Railway um segundo serviço a partir do mesmo repositório (Root
+Directory `backend`, mesmas variáveis), com *Custom Start Command* `python main.py
+--reavaliar` e Cron Schedule `*/15 * * * *`. Sem nada pendente ele só consulta o banco
+e encerra: não chama a IA nem registra execução.
 
 **Requisito obrigatório limita a nota** — faltando qualquer obrigatório,
 a nota não passa de 45, e o candidato aparece marcado como fora do perfil.

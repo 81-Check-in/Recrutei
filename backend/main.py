@@ -8,6 +8,7 @@ Uso:
   python main.py --simular       roda sem gravar nada
   python main.py --limite 5      processa no máximo 5 e-mails
   python main.py --manutencao    só inativação e expurgo
+  python main.py --reavaliar     só as reavaliações pedidas no painel (troca de vaga)
 """
 import sys
 import argparse
@@ -74,6 +75,8 @@ def main() -> int:
     p.add_argument("--limite", type=int, help="máximo de e-mails a processar")
     p.add_argument("--manutencao", action="store_true",
                    help="só inativação e expurgo")
+    p.add_argument("--reavaliar", action="store_true",
+                   help="só as reavaliações pedidas no painel (troca de vaga)")
     args = p.parse_args()
 
     if args.simular:
@@ -95,6 +98,10 @@ def main() -> int:
         return 0
 
     import pipeline
+    if args.reavaliar:
+        pipeline.reavaliar()
+        return 0
+
     pipeline.executar()
     return 0
 

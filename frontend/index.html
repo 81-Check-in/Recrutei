@@ -156,6 +156,11 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .girando{animation:girar 1s linear infinite;display:inline-block}
 @keyframes girar{to{transform:rotate(360deg)}}
 .sem-dados{font-size:12.5px;color:var(--gray-text);font-style:italic}
+.troca-vaga{display:flex;gap:8px;align-items:center}
+.troca-vaga select{flex:1;min-width:0}
+.troca-vaga .btn-sm{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.troca-vaga .btn-sm:disabled{opacity:.6;cursor:wait}
+.troca-ajuda{font-size:12px;color:var(--gray-text);line-height:1.5;margin-top:8px}
 
 /* ══ DASHBOARD ══ */
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
@@ -957,6 +962,14 @@ body{background:#f5f7fa;color:#202c3a}
       <div><div class="nota-lbl">Nota de aderência à vaga</div>
         <div class="nota-txt" id="d-nota-txt">—</div></div>
     </div>
+    <div class="drawer-sec" id="d-sec-troca" style="display:none">
+      <div class="drawer-sec-tit">Vaga avaliada</div>
+      <div class="troca-vaga">
+        <select class="sel" id="d-vaga-troca" aria-label="Vaga para avaliar este candidato"></select>
+        <button type="button" class="btn-sm azul" id="d-btn-trocar" onclick="trocarVagaCandidato()">
+          <i class="ti ti-refresh"></i>Reavaliar</button>
+      </div>
+      <p class="troca-ajuda" id="d-troca-ajuda"></p></div>
     <div class="drawer-sec"><div class="drawer-sec-tit">Dados do candidato</div>
       <div class="dados" id="d-dados"></div></div>
     <div class="drawer-sec"><div class="drawer-sec-tit">Pontos fortes</div>
@@ -1841,21 +1854,24 @@ async function carregarTriagem() {
 
   el.innerHTML = data.map(c => {
     const [cls, lbl] = STATUS_PILL[c.status] || ['pill-gray', c.status];
-    const alerta = c.divergencia_detectada
+    // Em análise = a IA ainda vai avaliar (ex.: o RH trocou a vaga); a nota guardada é da vaga anterior
+    const pendente = c.status === 'em_analise';
+    const alerta = c.divergencia_detectada && !pendente
       ? '<span class="pill pill-yellow" title="Avaliações divergentes">⚠ Revisar</span>' : '';
     const reinc = c.e_reincidente
       ? `<span class="tag-mini" title="${c.total_envios} envios">↻ ${c.total_envios}</span>` : '';
-    const elim = c.eliminado_por_regra
+    const elim = c.eliminado_por_regra && !pendente
       ? '<span class="tag-mini vermelho" title="Não atende requisito obrigatório">Fora do perfil</span>' : '';
 
     return `<div class="curr-card" onclick="abrirAnalise('${c.id}')">
-      <div class="nota-badge ${classeNota(c.nota)}">${c.nota ?? '—'}</div>
+      <div class="nota-badge ${pendente ? 'nota-vazia' : classeNota(c.nota)}">${pendente ? '…' : (c.nota ?? '—')}</div>
       <div class="curr-ini">${iniciais(c.nome)}</div>
       <div class="curr-info">
         <div class="curr-nome">${escapeHtml(c.nome || 'Nome não extraído')} ${reinc} ${elim}</div>
-        <div class="curr-resumo">${escapeHtml(c.resumo_nota || c.resumo_ia || 'Aguardando avaliação da IA')}</div>
+        <div class="curr-resumo">${escapeHtml(pendente ? 'Avaliação pendente: a IA avalia o currículo para esta vaga na próxima execução'
+          : (c.resumo_nota || c.resumo_ia || 'Aguardando avaliação da IA'))}</div>
         <div class="curr-meta">
-          <span><i class="ti ti-briefcase"></i>${escapeHtml(c.vaga_titulo || 'Vaga não identificada')}</span>
+          <span><i class="ti ti-briefcase"></i>${escapeHtml(c.vaga_titulo || 'Vaga não identificada')}${c.vaga_confirmada_rh ? ' <i class="ti ti-user-check" title="Vaga definida pelo RH" aria-label="Vaga definida pelo RH"></i>' : ''}</span>
           <span><i class="ti ti-calendar"></i>${tempoRelativo(c.recebido_em)}</span>
           ${c.telefone ? `<span><i class="ti ti-phone"></i>${escapeHtml(c.telefone)}</span>` : ''}
           ${c.aderencia_vaga != null ? `<span><i class="ti ti-target"></i>${c.aderencia_vaga}% aderência</span>` : ''}
@@ -1876,10 +1892,16 @@ async function abrirAnalise(id) {
   $('#d-nome').textContent = c.nome || 'Nome não extraído';
   $('#d-sub').textContent  = `${c.vaga_titulo || 'Vaga não identificada'} · ${tempoRelativo(c.recebido_em)}`;
 
+  // Em análise: a nota e os textos guardados são da vaga anterior, então não aparecem
+  const pendente = c.status === 'em_analise';
+  const av = pendente ? {} : c;
+
   const nc = $('#d-nota');
-  nc.textContent = c.nota ?? '—';
-  nc.className = 'nota-circulo ' + classeNota(c.nota);
-  $('#d-nota-txt').textContent = c.resumo_nota || 'Avaliação ainda não realizada.';
+  nc.textContent = pendente ? '…' : (c.nota ?? '—');
+  nc.className = 'nota-circulo ' + (pendente ? 'nota-vazia' : classeNota(c.nota));
+  $('#d-nota-txt').textContent = pendente
+    ? 'Avaliação pendente: a IA avalia o currículo para esta vaga na próxima execução.'
+    : (c.resumo_nota || 'Avaliação ainda não realizada.');
 
   $('#d-dados').innerHTML = `
     <div class="dado"><div class="dado-lbl">Telefone</div><div class="dado-val">${escapeHtml(c.telefone||'—')}</div></div>
@@ -1887,27 +1909,28 @@ async function abrirAnalise(id) {
     <div class="dado"><div class="dado-lbl">Cidade</div><div class="dado-val">${escapeHtml(c.cidade||'—')}</div></div>
     <div class="dado"><div class="dado-lbl">Setor</div><div class="dado-val">${escapeHtml(c.setor_nome||'—')}</div></div>`;
 
-  $('#d-fortes').innerHTML = (c.pontos_fortes||[]).length
-    ? c.pontos_fortes.map(f => `<span class="tag verde">${escapeHtml(f)}</span>`).join('')
-    : '<span class="sem-dados">Nenhum ponto forte registrado</span>';
+  $('#d-fortes').innerHTML = (av.pontos_fortes||[]).length
+    ? av.pontos_fortes.map(f => `<span class="tag verde">${escapeHtml(f)}</span>`).join('')
+    : `<span class="sem-dados">${pendente ? 'Aguardando avaliação' : 'Nenhum ponto forte registrado'}</span>`;
 
-  $('#d-lacunas').innerHTML = (c.lacunas||[]).length
-    ? c.lacunas.map(l => `<span class="tag vermelha">${escapeHtml(l)}</span>`).join('')
-    : '<span class="sem-dados">Nenhuma lacuna registrada</span>';
+  $('#d-lacunas').innerHTML = (av.lacunas||[]).length
+    ? av.lacunas.map(l => `<span class="tag vermelha">${escapeHtml(l)}</span>`).join('')
+    : `<span class="sem-dados">${pendente ? 'Aguardando avaliação' : 'Nenhuma lacuna registrada'}</span>`;
 
   const secFalt = $('#d-sec-faltantes');
-  if ((c.requisitos_faltantes||[]).length) {
+  if ((av.requisitos_faltantes||[]).length) {
     secFalt.style.display = 'block';
-    $('#d-faltantes').innerHTML = c.requisitos_faltantes
+    $('#d-faltantes').innerHTML = av.requisitos_faltantes
       .map(r => `<span class="tag vermelha">${escapeHtml(r)}</span>`).join('');
   } else secFalt.style.display = 'none';
 
-  $('#d-resumo').textContent = c.resumo_ia || 'Resumo ainda não gerado pela IA.';
+  $('#d-resumo').textContent = av.resumo_ia || (pendente ? 'Aguardando a avaliação da IA.' : 'Resumo ainda não gerado pela IA.');
 
   // Ações conforme o status
   const jaSelecionado = ['selecionado','entrevista_agendada','entrevista_realizada',
                          'aprovado','reprovado','nao_compareceu','contratado'].includes(c.status);
-  $('#d-btn-chamar').style.display   = jaSelecionado ? 'none' : 'flex';
+  // Só se chama para entrevista depois da nota: a reavaliação pendente ficaria sem efeito
+  $('#d-btn-chamar').style.display   = (jaSelecionado || pendente) ? 'none' : 'flex';
   $('#d-btn-descartar').style.display = (c.status === 'descartado') ? 'none' : 'flex';
   $('#d-btn-agendar').style.display  = jaSelecionado ? 'flex' : 'none';
 
@@ -1916,6 +1939,65 @@ async function abrirAnalise(id) {
 
   $('#drawer').classList.add('show');
   $('#drawer-overlay').classList.add('show');
+  preencherTrocaVaga(c);
+}
+
+// ── Trocar a vaga: a IA avalia o mesmo currículo para outro setor ──
+const STATUS_TROCA_VAGA = ['recebido', 'em_analise', 'avaliado'];   // depois de chamar, a vaga não muda
+
+function rotuloVaga(v) {
+  const setor = (v.setor_nome || '').trim();
+  return setor && setor.toLowerCase() !== (v.titulo || '').trim().toLowerCase()
+    ? `${v.titulo} — ${setor}` : v.titulo;
+}
+
+async function preencherTrocaVaga(c) {
+  const sec = $('#d-sec-troca');
+  const disponivel = STATUS_TROCA_VAGA.includes(c.status);
+  sec.style.display = disponivel ? 'block' : 'none';
+  if (!disponivel) return;
+
+  $('#d-vaga-troca').innerHTML = '<option value="">Carregando vagas…</option>';
+  $('#d-troca-ajuda').textContent = c.status === 'em_analise'
+    ? 'Avaliação pendente. Escolher outra vaga troca a avaliação que a IA vai fazer.'
+    : 'A IA avalia o mesmo currículo para a vaga escolhida e a nota nova substitui a atual. Isso acontece na próxima execução da rotina.';
+
+  const { data, error } = await db.from('vw_vagas_resumo').select('id,titulo,setor_nome').order('titulo');
+  if (app.candidatoAberto?.id !== c.id) return;          // outro candidato foi aberto enquanto carregava
+  if (error) { $('#d-vaga-troca').innerHTML = '<option value="">Não foi possível carregar as vagas</option>'; return; }
+
+  $('#d-vaga-troca').innerHTML = (c.vaga_id ? '' : '<option value="">Escolha a vaga…</option>') +
+    (data || []).map(v =>
+      `<option value="${v.id}"${v.id === c.vaga_id ? ' selected' : ''}>${escapeHtml(rotuloVaga(v))}</option>`).join('');
+}
+
+async function trocarVagaCandidato() {
+  const c = app.candidatoAberto;
+  const sel = $('#d-vaga-troca');
+  const vagaId = sel.value;
+  if (!c || !STATUS_TROCA_VAGA.includes(c.status)) return;
+  if (!vagaId || vagaId === c.vaga_id) { toast('Escolha uma vaga diferente da atual', 'erro'); return; }
+
+  const rotulo = sel.selectedOptions[0].textContent;
+  if (!confirm(`Avaliar ${c.nome || 'este candidato'} para a vaga "${rotulo}"?\n\n` +
+               'A nota atual deixa de valer e a IA avalia o currículo de novo na próxima execução.')) return;
+
+  const btn = $('#d-btn-trocar');
+  btn.disabled = true;
+  const { data, error } = await db.from('candidaturas').update({
+    vaga_id: vagaId,
+    status: 'em_analise',        // a rotina reavalia tudo o que estiver em análise
+    aderencia_vaga: null,        // a aderência era da vaga anterior
+    vaga_confirmada_rh: true
+  }).eq('id', c.id).select('id');
+  btn.disabled = false;
+
+  if (error) { toast(error.message, 'erro'); return; }
+  if (!data?.length) { toast('Não foi possível trocar a vaga (sem permissão)', 'erro'); return; }
+
+  fecharDrawer();
+  toast('Vaga alterada. A IA reavalia o currículo na próxima execução');
+  carregarTriagem();
 }
 
 function fecharDrawer() {
