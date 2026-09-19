@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Recrutei — Triagem de Currículos</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsbGVkYnk9InRpdGxlIj4KICA8dGl0bGUgaWQ9InRpdGxlIj5SZWNydXRlaTwvdGl0bGU+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImZ1bmRvIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzI4NDQ1QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjAuNTUiIHN0b3AtY29sb3I9IiMxNzJDM0MiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMEYyMDJEIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJhY2VudG8iIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjQTdFOUY2Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzU1QjdEQiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjYyIiBoZWlnaHQ9IjYyIiByeD0iMTYiIGZpbGw9InVybCgjZnVuZG8pIiBzdHJva2U9IiM4REI4RDAiIHN0cm9rZS1vcGFjaXR5PSIuMjgiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxwYXRoIGQ9Ik01IDE4QzEyIDcgMjcgNCA0MyA2IiBmaWxsPSJub25lIiBzdHJva2U9IiNEOEYyRkYiIHN0cm9rZS1vcGFjaXR5PSIuMTgiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTIxIDQ3VjE3aDEzYzcgMCAxMSA0IDExIDEwcy00IDEwLTExIDEwSDIxIiBmaWxsPSJub25lIiBzdHJva2U9IiNGNUZCRkYiIHN0cm9rZS13aWR0aD0iNi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KICA8cGF0aCBkPSJtMzIgMzcgMTMgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0idXJsKCNhY2VudG8pIiBzdHJva2Utd2lkdGg9IjYuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -455,6 +456,235 @@ tbody tr:hover td{background:#FAFAFA}
   .curr-ini{display:none}
 }
 
+/* Refinamento visual: navegação em grafite, detalhes luminosos e superfícies leves. */
+:root{
+  --sidebar-w:252px;
+  --surface-border:#e5eaf0;
+  --surface-shadow:0 12px 36px rgba(18,36,55,.035);
+  --ease-ui:cubic-bezier(.2,.7,.25,1);
+}
+body{background:#f5f7fa;color:#202c3a}
+.sidebar{
+  background:radial-gradient(ellipse at 20% 0%,#26313c 0%,transparent 50%),
+    linear-gradient(160deg,#171c23 0%,#141b22 59%,#102d35 100%);
+  border-right:1px solid rgba(255,255,255,.075);
+  box-shadow:12px 0 36px rgba(13,28,43,.07);
+  transition:width .24s var(--ease-ui),transform .24s var(--ease-ui);
+}
+.sb-brand{display:flex;align-items:center;gap:11px;padding:25px 16px 20px;min-height:89px}
+.sb-symbol{width:38px;height:38px;flex-shrink:0;display:grid;place-items:center;border-radius:12px;
+  background:linear-gradient(145deg,#5ea5e7,#3574ae);color:#fff;font-size:21px;
+  box-shadow:0 7px 18px rgba(43,125,190,.25)}
+.sb-brand-copy{min-width:0;flex:1}
+.sb-nome{font-size:19px;letter-spacing:-.045em;line-height:1.15}
+.sb-nome span{color:#81c5f6}
+.sb-sub{font-size:10px;letter-spacing:.025em;color:#91a0aa;margin-top:4px}
+.sb-collapse{width:30px;height:30px;flex-shrink:0;display:grid;place-items:center;
+  color:#a6b2bd;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.13);
+  border-radius:8px;cursor:pointer;transition:background-color .15s ease,color .15s ease,transform .15s ease}
+.sb-collapse:hover{background:rgba(255,255,255,.11);color:#fff}
+.sb-collapse i{font-size:17px;transition:transform .24s var(--ease-ui)}
+.nav{padding:12px 11px}
+.nav-sec{font-size:10px;color:#748690;letter-spacing:.13em;padding:10px 12px 12px}
+.nav-item{position:relative;width:100%;min-height:45px;margin-bottom:4px;padding:0 13px;
+  border:1px solid transparent;border-radius:11px;text-align:left;background:transparent;
+  color:#aab5be;font-size:13px;font-weight:500;gap:11px;
+  transition:background-color .15s ease,color .15s ease,border-color .15s ease,transform .15s ease}
+.nav-item i{font-size:19px;width:20px;text-align:center}
+.nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-item:hover{background:rgba(255,255,255,.065);color:#fff}
+.nav-item.active{background:linear-gradient(90deg,rgba(255,255,255,.11),rgba(65,150,206,.14));
+  border-color:rgba(196,221,235,.15);color:#fff;box-shadow:inset 0 1px rgba(255,255,255,.05),0 7px 19px rgba(0,0,0,.09)}
+.nav-item.active::after{content:'';position:absolute;right:0;top:8px;bottom:8px;width:3px;
+  border-radius:3px 0 0 3px;background:#70c4e0;box-shadow:0 0 12px 2px rgba(83,199,220,.56)}
+.nav-item:active{transform:scale(.985)}
+.sb-rodape{margin:0 11px 13px;padding:16px 5px 2px;border-color:rgba(255,255,255,.1)}
+.user-av{border-radius:11px;background:rgba(100,186,224,.14);color:#99d3e8;border:1px solid rgba(114,211,232,.2)}
+.user-nome{font-size:12.5px}
+.user-cargo{color:#899aa5}
+.btn-sair{width:30px;height:30px;display:grid;place-items:center;color:#a0aeb8}
+.main{transition:margin-left .24s var(--ease-ui)}
+.topbar{height:70px;padding:0 30px;background:rgba(255,255,255,.96);border-color:var(--surface-border)}
+.topbar-tit{font-size:17px;letter-spacing:-.025em;color:#1d3345}
+.topbar-l::before{content:'';width:3px;height:23px;border-radius:4px;
+  background:linear-gradient(#6db8e2,#3d80bc);box-shadow:0 0 9px rgba(60,142,188,.28)}
+.conteudo{padding:27px 30px 40px;max-width:1600px;width:100%;margin:0 auto}
+.periodo{background:#eef2f5;border:1px solid #e8edf2;border-radius:10px}
+.periodo button{border-radius:7px}
+.periodo button.active{box-shadow:0 1px 5px rgba(20,43,61,.1)}
+.card,.painel,.vaga-card,.vaga-mini,.curr-card,.config-grupo{border-color:var(--surface-border);box-shadow:var(--surface-shadow)}
+.card{position:relative;overflow:hidden;padding:20px 21px;min-height:144px;border-radius:16px;
+  transition:transform .18s var(--ease-ui),box-shadow .18s ease,border-color .18s ease}
+.card::before{content:'';position:absolute;left:0;top:0;width:100%;height:2px;
+  background:linear-gradient(90deg,rgba(71,143,196,.6),rgba(95,197,203,0));opacity:.55}
+.card-top{margin-bottom:15px}
+.card-ico{border-radius:11px;transition:transform .18s var(--ease-ui)}
+.card-val{font-size:29px;letter-spacing:-.055em;color:#18344d}
+.card-lbl{font-size:11.5px;color:#718092}
+.painel,.config-grupo{border-radius:16px;padding:20px 21px}
+.painel-tit,.sec-tit{font-size:14px;letter-spacing:-.015em;color:#21394f}
+.vaga-card,.vaga-mini,.curr-card{border-radius:15px;
+  transition:transform .18s var(--ease-ui),box-shadow .18s ease,border-color .18s ease}
+.vaga-card{padding:19px 20px}
+.vaga-mini{padding:17px 18px}
+.curr-card{padding:17px 18px}
+.exc-row{background:#f5f8fa;border:1px solid #ecf0f3;border-radius:10px;
+  transition:background-color .15s ease,transform .15s ease}
+.exc-row:hover{background:#edf4f8}
+.tabs{background:#eaf0f4;border-radius:11px}
+.tab.active{box-shadow:0 1px 5px rgba(20,43,61,.1)}
+:where(button,.nav-item,.card[tabindex],.curr-card[tabindex],.vaga-mini[tabindex]):focus-visible{
+  outline:2px solid #59a9d4;outline-offset:3px}
+@media (hover:hover) and (pointer:fine){
+  .card:hover,.vaga-card:hover,.vaga-mini:hover,.curr-card:hover{transform:translateY(-3px);
+    border-color:#cddce7;box-shadow:0 13px 28px rgba(18,43,64,.095)}
+  .card:hover .card-ico{transform:translateY(-2px)}
+  .exc-row[onclick]:hover{transform:translateX(2px)}
+}
+@media (min-width:901px){
+  body.sidebar-collapsed{--sidebar-w:72px}
+  .sidebar-collapsed .sb-brand{justify-content:center;padding:18px 0 12px;flex-direction:column;gap:7px}
+  .sidebar-collapsed .sb-brand-copy,.sidebar-collapsed .nav-sec,.sidebar-collapsed .nav-label,
+  .sidebar-collapsed .user-row>div:not(.user-av){display:none}
+  .sidebar-collapsed .sb-collapse{width:25px;height:23px;border:0;background:transparent}
+  .sidebar-collapsed .sb-collapse i{transform:rotate(180deg)}
+  .sidebar-collapsed .nav{padding:13px 8px}
+  .sidebar-collapsed .nav-item{justify-content:center;padding:0;gap:0}
+  .sidebar-collapsed .sb-rodape{margin:0 8px 13px;padding:13px 0 0}
+  .sidebar-collapsed .user-row{justify-content:center;flex-direction:column;gap:7px}
+  .sidebar-collapsed .btn-sair{margin-left:0}
+}
+@media(max-width:900px){
+  .sidebar{width:min(280px,88vw)}
+  .sb-collapse{display:none}
+  .conteudo{padding:20px 17px 32px}
+  .topbar{padding:0 18px}
+  .burger{width:36px;height:36px;display:grid;place-items:center;border-radius:9px}
+  .burger:hover{background:#edf3f7}
+  .topbar-l::before{display:none}
+}
+@media(max-width:600px){
+  .topbar{height:62px}
+  .cards{gap:10px}
+  .card{min-height:138px;padding:16px}
+  .card-val{font-size:25px}
+  .painel,.config-grupo{padding:17px}
+}
+@media(max-width:390px){
+  .cards{grid-template-columns:1fr}.card{min-height:118px}
+  .topbar-tit{font-size:14px}
+  .periodo button{padding:5px 7px;font-size:11px}
+}
+
+/* Vidro escuro no acesso: camadas translúcidas e luz concentrada atrás do cartão. */
+#login{
+  min-height:100svh;
+  background:
+    radial-gradient(ellipse 45% 44% at 16% 83%,rgba(31,82,143,.33),transparent 78%),
+    radial-gradient(ellipse 43% 48% at 88% 82%,rgba(29,69,124,.38),transparent 77%),
+    radial-gradient(ellipse 40% 32% at 50% 9%,rgba(95,121,157,.1),transparent 82%),
+    #0c1016;
+}
+.login-card{
+  position:relative;max-width:454px;border-radius:24px;
+  background:linear-gradient(155deg,rgba(48,56,67,.7),rgba(20,25,32,.76) 42%,rgba(17,22,29,.82));
+  border:1px solid rgba(204,224,242,.16);
+  box-shadow:inset 0 1px rgba(255,255,255,.16),inset 1px 0 rgba(255,255,255,.055),
+    0 32px 80px rgba(0,0,0,.36),0 7px 24px rgba(2,13,30,.24);
+  -webkit-backdrop-filter:blur(24px) saturate(135%);
+  backdrop-filter:blur(24px) saturate(135%);
+}
+.login-card::before{content:'';position:absolute;top:0;left:10%;right:10%;height:1px;z-index:2;
+  background:linear-gradient(90deg,transparent,rgba(230,245,255,.55),transparent);pointer-events:none}
+.login-top{background:transparent;padding:31px 40px 10px;overflow:visible}
+.login-top::before{width:250px;height:170px;top:-106px;right:-16px;bottom:auto;
+  background:radial-gradient(ellipse,rgba(137,187,224,.12),transparent 72%);pointer-events:none}
+.login-brand{justify-content:center;gap:9px;margin-bottom:9px}
+.login-ico{width:35px;height:35px;border-radius:10px;font-size:18px;color:#c9ebff;
+  background:linear-gradient(145deg,rgba(132,193,229,.3),rgba(71,130,171,.11));
+  border:1px solid rgba(194,232,253,.22);box-shadow:inset 0 1px rgba(255,255,255,.18)}
+.brand-mark{width:100%;height:100%;display:block}
+.login-nome{font-size:19px;letter-spacing:-.04em}
+.login-nome span{color:#98d5f7}
+.login-tag{text-align:center;color:#9cabb9;font-size:11.5px}
+.login-form{padding:18px 40px 37px}
+.login-form h2{text-align:center;color:#f6f9fb;font-size:27px;font-weight:600;
+  letter-spacing:-.045em;margin-bottom:6px}
+.login-form>p{text-align:center;color:#a7b2be;font-size:12px;line-height:1.55;
+  margin-bottom:27px}
+#login .campo{margin-bottom:16px}
+#login .campo label{color:#c6d2de;font-size:11.5px;margin-bottom:7px}
+#login .inp-wrap>i{color:#8fa7b8}
+#login .inp-wrap input{height:48px;color:#f3f7fa;background:rgba(8,12,18,.39);
+  border:1px solid rgba(188,212,231,.16);border-radius:12px;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.14),0 1px rgba(255,255,255,.035);
+  transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease}
+#login .inp-wrap input::placeholder{color:#81909e;opacity:1}
+#login .inp-wrap input:focus{background:rgba(10,18,28,.68);border-color:#75bbe6;
+  box-shadow:0 0 0 3px rgba(91,169,219,.15),inset 0 1px rgba(255,255,255,.08)}
+#login .btn-olho{color:#a8bbca}
+#login .btn-olho:hover{color:#fff;background:rgba(255,255,255,.08)}
+#login .link{color:#9bd8fa}
+#login .link:hover{color:#d1edff}
+#login .btn-login{height:49px;margin-top:4px;border:1px solid rgba(171,220,251,.25);
+  border-radius:12px;background:linear-gradient(145deg,rgba(96,160,204,.48),rgba(41,92,130,.48));
+  box-shadow:inset 0 1px rgba(255,255,255,.17),0 9px 21px rgba(2,13,29,.2);
+  color:#f5fbff;transition:transform .16s var(--ease-ui),background-color .16s ease,box-shadow .16s ease}
+#login .btn-login:hover{background:linear-gradient(145deg,rgba(110,181,224,.6),rgba(47,107,151,.58));
+  box-shadow:inset 0 1px rgba(255,255,255,.23),0 12px 26px rgba(2,13,29,.28);
+  transform:translateY(-1px)}
+#login .btn-login:active{transform:scale(.985)}
+#login .login-rodape{border:1px solid rgba(187,216,236,.1);border-radius:11px;
+  background:rgba(255,255,255,.035);padding:11px 12px;margin-top:24px}
+#login .login-rodape-av{border-radius:9px;background:rgba(103,174,217,.15);color:#a8d8f2}
+#login .login-rodape-txt{color:#8d9fac}
+#login .login-rodape-txt strong{color:#d3e0e9}
+
+/* Reflexos leves nos elementos principais do dashboard. */
+#screen-dashboard{position:relative;isolation:isolate}
+#screen-dashboard::before{content:'';position:absolute;z-index:-1;inset:-27px -30px;
+  background:radial-gradient(ellipse 45% 33% at 12% 3%,rgba(158,209,239,.23),transparent 80%),
+    radial-gradient(ellipse 34% 42% at 91% 37%,rgba(165,225,222,.18),transparent 82%);
+  pointer-events:none}
+.topbar{background:rgba(255,255,255,.78);border-bottom-color:rgba(218,231,241,.74);
+  box-shadow:0 5px 22px rgba(42,84,115,.045),inset 0 1px rgba(255,255,255,.9);
+  -webkit-backdrop-filter:blur(18px) saturate(145%);
+  backdrop-filter:blur(18px) saturate(145%)}
+#screen-dashboard .card,#screen-dashboard .painel{
+  background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(248,252,255,.72));
+  border-color:rgba(255,255,255,.91);
+  box-shadow:inset 0 1px rgba(255,255,255,.95),inset 1px 0 rgba(255,255,255,.55),
+    0 11px 29px rgba(31,70,99,.07),0 0 0 1px rgba(151,191,216,.13);
+  -webkit-backdrop-filter:blur(15px) saturate(130%);
+  backdrop-filter:blur(15px) saturate(130%)}
+#screen-dashboard .card{background:
+  radial-gradient(circle at 95% 2%,rgba(255,255,255,.96),transparent 48%),
+  linear-gradient(145deg,rgba(255,255,255,.91),rgba(240,248,253,.76))}
+#screen-dashboard .card-lbl{color:#5a6d7d}
+#screen-dashboard .card-ico{box-shadow:inset 0 1px rgba(255,255,255,.72),0 4px 12px rgba(55,99,129,.08)}
+#screen-dashboard .vaga-mini{background:rgba(255,255,255,.74);border-color:rgba(255,255,255,.86);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.periodo{background:rgba(232,242,249,.57);border-color:rgba(178,208,227,.34);
+  box-shadow:inset 0 1px rgba(255,255,255,.7)}
+@media (hover:hover) and (pointer:fine){
+  #screen-dashboard .card:hover,#screen-dashboard .vaga-mini:hover{
+    border-color:rgba(255,255,255,.95);
+    box-shadow:inset 0 1px #fff,0 16px 33px rgba(31,70,99,.12),0 0 0 1px rgba(121,177,209,.22)}
+}
+@media(max-width:520px){
+  #login{padding:16px}
+  .login-top{padding:28px 25px 8px}
+  .login-form{padding:18px 25px 29px}
+  .login-form h2{font-size:25px}
+}
+@media(prefers-reduced-motion:reduce){
+  .sidebar,.main,.sb-collapse,.sb-collapse i,.nav-item,.card,.card-ico,.vaga-card,
+  .vaga-mini,.curr-card,.exc-row,.drawer,.drawer-overlay,.modal,.modal-overlay,
+  .mob-overlay,.toast,.girando,#login .btn-login,#login .inp-wrap input{transition:none;animation:none}
+  .card:hover,.vaga-card:hover,.vaga-mini:hover,.curr-card:hover,.exc-row[onclick]:hover,
+  #login .btn-login:hover,.card:hover .card-ico,.nav-item:active{transform:none}
+}
+
 </style>
 </head>
 <body>
@@ -463,7 +693,7 @@ tbody tr:hover td{background:#FAFAFA}
   <div class="login-card">
     <div class="login-top">
       <div class="login-brand">
-        <div class="login-ico"><i class="ti ti-users-group"></i></div>
+        <div class="login-ico" aria-hidden="true"><svg class="brand-mark" viewBox="12 10 42 44" focusable="false"><path d="M21 47V17h13c7 0 11 4 11 10s-4 10-11 10H21" fill="none" stroke="#F5FBFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m32 37 13 10" fill="none" stroke="#72D0EA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="login-nome">Recrut<span>ei</span></div>
       </div>
       <div class="login-tag">Triagem inteligente de currículos com IA</div>
@@ -498,17 +728,21 @@ tbody tr:hover td{background:#FAFAFA}
 <div id="app">
   <div class="sidebar" id="sidebar">
     <div class="sb-brand">
-      <div class="sb-nome">Recrut<span>ei</span></div>
-      <div class="sb-sub">Gestão de candidatos</div>
+      <div class="sb-symbol" aria-hidden="true"><svg class="brand-mark" viewBox="12 10 42 44" focusable="false"><path d="M21 47V17h13c7 0 11 4 11 10s-4 10-11 10H21" fill="none" stroke="#F5FBFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m32 37 13 10" fill="none" stroke="#72D0EA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="sb-brand-copy">
+        <div class="sb-nome">Recrut<span>ei</span></div>
+        <div class="sb-sub">Gestão de candidatos</div>
+      </div>
+      <button type="button" class="sb-collapse" id="sb-collapse" onclick="alternarSidebarCompacta()" aria-label="Recolher menu" title="Recolher menu"><i class="ti ti-chevron-left"></i></button>
     </div>
-    <nav class="nav">
+    <nav class="nav" aria-label="Menu principal">
       <div class="nav-sec">Menu</div>
-      <div class="nav-item active" data-tela="dashboard"  onclick="irPara('dashboard',this)"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
-      <div class="nav-item"        data-tela="vagas"      onclick="irPara('vagas',this)"><i class="ti ti-briefcase"></i>Vagas</div>
-      <div class="nav-item"        data-tela="triagem"    onclick="irPara('triagem',this)"><i class="ti ti-files"></i>Triagem de Currículos</div>
-      <div class="nav-item"        data-tela="candidatos" onclick="irPara('candidatos',this)"><i class="ti ti-users"></i>Candidatos</div>
-      <div class="nav-item"        data-tela="entrevistas" onclick="irPara('entrevistas',this)"><i class="ti ti-calendar-event"></i>Entrevistas</div>
-      <div class="nav-item" id="nav-config" data-tela="config" onclick="irPara('config',this)" style="display:none"><i class="ti ti-settings"></i>Configurações</div>
+      <button type="button" class="nav-item active" aria-current="page" title="Dashboard" data-tela="dashboard" onclick="irPara('dashboard',this)"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span class="nav-label">Dashboard</span></button>
+      <button type="button" class="nav-item" title="Vagas" data-tela="vagas" onclick="irPara('vagas',this)"><i class="ti ti-briefcase" aria-hidden="true"></i><span class="nav-label">Vagas</span></button>
+      <button type="button" class="nav-item" title="Triagem de Currículos" data-tela="triagem" onclick="irPara('triagem',this)"><i class="ti ti-files" aria-hidden="true"></i><span class="nav-label">Triagem de Currículos</span></button>
+      <button type="button" class="nav-item" title="Candidatos" data-tela="candidatos" onclick="irPara('candidatos',this)"><i class="ti ti-users" aria-hidden="true"></i><span class="nav-label">Candidatos</span></button>
+      <button type="button" class="nav-item" title="Entrevistas" data-tela="entrevistas" onclick="irPara('entrevistas',this)"><i class="ti ti-calendar-event" aria-hidden="true"></i><span class="nav-label">Entrevistas</span></button>
+      <button type="button" class="nav-item" id="nav-config" title="Configurações" data-tela="config" onclick="irPara('config',this)" style="display:none"><i class="ti ti-settings" aria-hidden="true"></i><span class="nav-label">Configurações</span></button>
     </nav>
     <div class="sb-rodape">
       <div class="user-row">
@@ -517,7 +751,7 @@ tbody tr:hover td{background:#FAFAFA}
           <div class="user-nome" id="user-nome">—</div>
           <div class="user-cargo" id="user-cargo">—</div>
         </div>
-        <button class="btn-sair" onclick="sair()" title="Sair"><i class="ti ti-logout"></i></button>
+        <button type="button" class="btn-sair" onclick="sair()" title="Sair" aria-label="Sair"><i class="ti ti-logout"></i></button>
       </div>
     </div>
   </div>
@@ -526,7 +760,7 @@ tbody tr:hover td{background:#FAFAFA}
   <div class="main">
     <div class="topbar">
       <div class="topbar-l">
-        <button class="burger" onclick="abrirSidebar()"><i class="ti ti-menu-2"></i></button>
+        <button type="button" class="burger" id="menu-mobile" onclick="abrirSidebar()" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false"><i class="ti ti-menu-2"></i></button>
         <span class="topbar-tit" id="page-title">Dashboard</span>
       </div>
       <div class="topbar-r">
@@ -1146,8 +1380,13 @@ const TITULOS = {
 
 function irPara(tela, el) {
   app.telaAtual = tela;
-  $$('.nav-item').forEach(n => n.classList.remove('active'));
-  (el || $(`[data-tela="${tela}"]`))?.classList.add('active');
+  $$('.nav-item').forEach(n => {
+    n.classList.remove('active');
+    n.removeAttribute('aria-current');
+  });
+  const itemAtivo = el || $(`[data-tela="${tela}"]`);
+  itemAtivo?.classList.add('active');
+  itemAtivo?.setAttribute('aria-current', 'page');
   $$('.screen').forEach(s => s.classList.remove('active'));
   $('#screen-' + tela)?.classList.add('active');
   $('#page-title').textContent = TITULOS[tela] || tela;
@@ -2366,12 +2605,24 @@ function abrirModal(id) { $('#'+id).classList.add('show'); }
 function fecharModal(id) { $('#'+id).classList.remove('show'); }
 
 function abrirSidebar() {
+  $('#sidebar').inert = false;
   $('#sidebar').classList.add('open');
   $('#mob-overlay').classList.add('show');
+  $('#menu-mobile').setAttribute('aria-expanded', 'true');
 }
 function fecharSidebar() {
   $('#sidebar').classList.remove('open');
   $('#mob-overlay').classList.remove('show');
+  $('#menu-mobile').setAttribute('aria-expanded', 'false');
+  $('#sidebar').inert = window.matchMedia('(max-width:900px)').matches;
+}
+function alternarSidebarCompacta() {
+  const compacta = document.body.classList.toggle('sidebar-collapsed');
+  const botao = $('#sb-collapse');
+  const texto = compacta ? 'Expandir menu' : 'Recolher menu';
+  botao.setAttribute('aria-label', texto);
+  botao.title = texto;
+  try { localStorage.setItem('recrutei-sidebar-collapsed', String(compacta)); } catch (_) {}
 }
 
 // Debounce para campos de busca
@@ -2385,6 +2636,17 @@ function debounce(fn, ms = 400) {
 // ═══════════════════════════════════════════════════════════
 
 window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    if (localStorage.getItem('recrutei-sidebar-collapsed') === 'true') {
+      document.body.classList.add('sidebar-collapsed');
+      $('#sb-collapse').setAttribute('aria-label', 'Expandir menu');
+      $('#sb-collapse').title = 'Expandir menu';
+    }
+  } catch (_) {}
+  $('#sidebar').inert = window.matchMedia('(max-width:900px)').matches;
+  window.addEventListener('resize', () => {
+    $('#sidebar').inert = window.matchMedia('(max-width:900px)').matches && !$('#sidebar').classList.contains('open');
+  });
   if (ERRO_LINK) {
     toast('Link inválido ou expirado. Peça outro em "Esqueci minha senha"', 'erro');
     history.replaceState(null, '', location.pathname + location.search);
@@ -2409,6 +2671,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // ESC fecha drawer e modais
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      fecharSidebar();
       fecharDrawer();
       // A nova senha não fecha com Esc: só "Cancelar", que também encerra a sessão do link
       $$('.modal-overlay.show:not(#modal-nova-senha)').forEach(m => m.classList.remove('show'));
