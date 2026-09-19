@@ -472,9 +472,9 @@ tbody tr:hover td{background:#FAFAFA}
       <h2>Bem-vindo de volta</h2>
       <p>Acesse o painel de triagem de candidatos</p>
       <div class="campo">
-        <label for="l-email">Login</label>
-        <div class="inp-wrap"><i class="ti ti-user"></i>
-          <input id="l-email" name="username" type="text" placeholder="seu login" autocomplete="username"
+        <label for="l-email">E-mail</label>
+        <div class="inp-wrap"><i class="ti ti-mail"></i>
+          <input id="l-email" name="username" type="email" placeholder="seu@email.com.br" autocomplete="username"
                  autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       </div>
       <div class="campo">
@@ -840,6 +840,22 @@ tbody tr:hover td{background:#FAFAFA}
     <button class="btn-primary" onclick="recuperarSenha()">Enviar</button></div>
 </div></div>
 
+<div class="modal-overlay" id="modal-nova-senha"><div class="modal" style="width:360px">
+  <form onsubmit="salvarNovaSenha(event)" novalidate>
+    <div class="modal-hd"><div class="modal-tit">
+      <i class="ti ti-key" style="color:var(--blue)"></i>Definir nova senha</div></div>
+    <p style="font-size:12.5px;color:var(--gray-text);margin-bottom:13px">
+      Escolha a senha que você vai usar para entrar no painel.</p>
+    <div class="f-campo"><label for="ns-senha">Nova senha</label>
+      <input id="ns-senha" type="password" autocomplete="new-password" placeholder="Mínimo de 8 caracteres"></div>
+    <div class="f-campo"><label for="ns-confirma">Confirmar senha</label>
+      <input id="ns-confirma" type="password" autocomplete="new-password"></div>
+    <div class="modal-acoes">
+      <button type="button" class="btn-cancel" onclick="cancelarNovaSenha()">Cancelar</button>
+      <button type="submit" class="btn-primary" id="btn-nova-senha">Salvar senha</button></div>
+  </form>
+</div></div>
+
 <div class="toast" id="toast"><i class="ti ti-check" id="toast-icon"></i><span id="toast-msg"></span></div>
 
 <script>
@@ -850,9 +866,21 @@ tbody tr:hover td{background:#FAFAFA}
 const SUPABASE_URL  = 'https://iragwjfaczpfbldbgsjv.supabase.co';
 const SUPABASE_KEY  = 'sb_publishable_IbWdbj93GKSLp_KXIkm1nw_s9L00E2f';
 
+// Link de "Esqueci minha senha": o Supabase devolve o token no # da URL e o supabase-js
+// o apaga ao processar, então o que interessa é guardado antes de criar o cliente.
+const RECUPERANDO_SENHA = /[#&]type=recovery(&|$)/.test(location.hash);
+const ERRO_LINK = new URLSearchParams(location.hash.slice(1)).get('error_code');
+
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
+
+// Mensagens do Supabase Auth que aparecem para o usuário, em português
+const MSG_AUTH = {
+  same_password: 'A nova senha precisa ser diferente da atual',
+  weak_password: 'Senha fraca: use mais caracteres, com letras e números',
+  over_email_send_rate_limit: 'Muitos pedidos de e-mail. Aguarde alguns minutos e tente de novo',
+};
 
 // Estado da aplicação
 const app = {
@@ -973,23 +1001,13 @@ function alternarSenha() {
   definirSenhaVisivel($('#l-senha').type === 'password');
 }
 
-// Domínio completado quando se digita só o nome (ex.: "miguel" → "miguel@<domínio>").
-// Vazio = só e-mail completo é aceito.
-const DOMINIO_LOGIN = 'recrutei.com.br';
-
 async function entrar(ev) {
   ev?.preventDefault();
-  const digitado = $('#l-email').value.trim();
+  const email = $('#l-email').value.trim();
   const senha = $('#l-senha').value;
   const btn   = $('#btn-login');
 
-  if (!digitado || !senha) { toast('Preencha login e senha', 'erro'); return; }
-
-  let email = digitado;
-  if (!digitado.includes('@')) {
-    if (!DOMINIO_LOGIN) { toast('Informe o e-mail completo', 'erro'); return; }
-    email = `${digitado.toLowerCase()}@${DOMINIO_LOGIN}`;
-  }
+  if (!email || !senha) { toast('Preencha e-mail e senha', 'erro'); return; }
 
   btn.disabled = true;
   btn.innerHTML = '<i class="ti ti-loader-2 girando"></i> Entrando...';
@@ -1001,7 +1019,7 @@ async function entrar(ev) {
 
   if (error) {
     toast(error.message === 'Invalid login credentials'
-      ? 'Login ou senha incorretos' : error.message, 'erro');
+      ? 'E-mail ou senha incorretos' : error.message, 'erro');
     return;
   }
   await iniciarSessao(data.user);
@@ -1052,10 +1070,46 @@ async function sair() {
 async function recuperarSenha() {
   const email = $('#f-email').value.trim();
   if (!email) { toast('Informe o e-mail', 'erro'); return; }
-  const { error } = await db.auth.resetPasswordForEmail(email);
+  // O link do e-mail volta para este painel. Essa URL precisa estar em
+  // Supabase → Authentication → URL Configuration → Redirect URLs.
+  const redirectTo = location.protocol.startsWith('http')
+    ? location.origin + location.pathname : undefined;
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo });
   fecharModal('modal-forgot');
-  toast(error ? error.message : 'Instruções enviadas para o e-mail',
+  // O Supabase não revela se o e-mail existe, então a resposta é a mesma nos dois casos
+  toast(error ? (MSG_AUTH[error.code] || error.message)
+              : 'Se o e-mail estiver cadastrado, você receberá as instruções',
         error ? 'erro' : 'ok');
+}
+
+// Fim do fluxo do link de recuperação: o usuário define a nova senha (ou desiste e sai)
+function encerrarRecuperacao() {
+  fecharModal('modal-nova-senha');
+  $('#ns-senha').value = ''; $('#ns-confirma').value = '';
+  history.replaceState(null, '', location.pathname + location.search);
+}
+
+async function salvarNovaSenha(ev) {
+  ev.preventDefault();
+  const senha = $('#ns-senha').value;
+  if (senha.length < 8) { toast('A senha precisa ter pelo menos 8 caracteres', 'erro'); return; }
+  if (senha !== $('#ns-confirma').value) { toast('As senhas não conferem', 'erro'); return; }
+
+  const btn = $('#btn-nova-senha');
+  btn.disabled = true;
+  const { data, error } = await db.auth.updateUser({ password: senha });
+  btn.disabled = false;
+
+  if (error) { toast(MSG_AUTH[error.code] || error.message, 'erro'); return; }
+  encerrarRecuperacao();
+  toast('Senha alterada com sucesso');
+  await iniciarSessao(data.user);
+}
+
+// Desistir encerra a sessão que o link abriu, para não deixar o painel destrancado
+async function cancelarNovaSenha() {
+  encerrarRecuperacao();
+  await db.auth.signOut();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2331,11 +2385,21 @@ function debounce(fn, ms = 400) {
 // ═══════════════════════════════════════════════════════════
 
 window.addEventListener('DOMContentLoaded', async () => {
-  // Sessão persistida
-  const { data: { session } } = await db.auth.getSession();
-  if (session?.user) await iniciarSessao(session.user);
+  if (ERRO_LINK) {
+    toast('Link inválido ou expirado. Peça outro em "Esqueci minha senha"', 'erro');
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 
-  // Enter no usuário pula para a senha; Enter na senha envia o formulário
+  // Sessão persistida. Vindo do link de recuperação, pede a nova senha antes de entrar.
+  const { data: { session } } = await db.auth.getSession();
+  if (RECUPERANDO_SENHA && session?.user) {
+    abrirModal('modal-nova-senha');
+    $('#ns-senha').focus();
+  } else if (session?.user) {
+    await iniciarSessao(session.user);
+  }
+
+  // Enter no e-mail pula para a senha; Enter na senha envia o formulário
   $('#l-email').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); $('#l-senha').focus(); }
   });
@@ -2346,7 +2410,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       fecharDrawer();
-      $$('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+      // A nova senha não fecha com Esc: só "Cancelar", que também encerra a sessão do link
+      $$('.modal-overlay.show:not(#modal-nova-senha)').forEach(m => m.classList.remove('show'));
     }
   });
 
