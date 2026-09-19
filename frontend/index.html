@@ -50,6 +50,12 @@ body.logado #app{display:flex}
   border-radius:10px;font-size:13.5px;background:var(--gray-bg);outline:none;
   transition:border-color .15s,box-shadow .15s,background .15s}
 .inp-wrap input:focus{border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+.inp-wrap.tem-olho input{padding-right:46px}
+.btn-olho{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;
+  display:flex;align-items:center;justify-content:center;background:none;border:none;border-radius:8px;
+  color:var(--gray-text);font-size:18px;cursor:pointer;transition:color .15s,background .15s}
+.btn-olho:hover{color:var(--navy);background:rgba(0,0,0,.05)}
+.btn-olho:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
 .link-row{display:flex;justify-content:flex-end;margin:-6px 0 18px}
 .link{font-size:12px;color:var(--blue);cursor:pointer;background:none;border:none}
 .link:hover{text-decoration:underline}
@@ -466,15 +472,17 @@ tbody tr:hover td{background:#FAFAFA}
       <h2>Bem-vindo de volta</h2>
       <p>Acesse o painel de triagem de candidatos</p>
       <div class="campo">
-        <label for="l-email">Usuário ou e-mail</label>
+        <label for="l-email">Login</label>
         <div class="inp-wrap"><i class="ti ti-user"></i>
-          <input id="l-email" name="username" type="text" placeholder="seu usuário" autocomplete="username"
+          <input id="l-email" name="username" type="text" placeholder="seu login" autocomplete="username"
                  autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       </div>
       <div class="campo">
         <label for="l-senha">Senha</label>
-        <div class="inp-wrap"><i class="ti ti-lock"></i>
-          <input id="l-senha" name="password" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+        <div class="inp-wrap tem-olho"><i class="ti ti-lock"></i>
+          <input id="l-senha" name="password" type="password" placeholder="••••••••" autocomplete="current-password">
+          <button type="button" class="btn-olho" id="btn-olho" onclick="alternarSenha()"
+                  aria-label="Mostrar senha" aria-pressed="false"><i class="ti ti-eye"></i></button></div>
       </div>
       <div class="link-row"><button type="button" class="link" onclick="abrirModal('modal-forgot')">Esqueci minha senha</button></div>
       <button type="submit" class="btn-login" id="btn-login"><i class="ti ti-login"></i>Entrar</button>
@@ -953,6 +961,18 @@ function erro(container, msg) {
 //  AUTENTICAÇÃO
 // ═══════════════════════════════════════════════════════════
 
+function definirSenhaVisivel(visivel) {
+  $('#l-senha').type = visivel ? 'text' : 'password';
+  const btn = $('#btn-olho');
+  btn.innerHTML = `<i class="ti ti-eye${visivel ? '-off' : ''}"></i>`;
+  btn.setAttribute('aria-label', visivel ? 'Ocultar senha' : 'Mostrar senha');
+  btn.setAttribute('aria-pressed', String(visivel));
+}
+
+function alternarSenha() {
+  definirSenhaVisivel($('#l-senha').type === 'password');
+}
+
 // Domínio completado quando se digita só o nome (ex.: "miguel" → "miguel@<domínio>").
 // Vazio = só e-mail completo é aceito.
 const DOMINIO_LOGIN = 'recrutei.com.br';
@@ -963,7 +983,7 @@ async function entrar(ev) {
   const senha = $('#l-senha').value;
   const btn   = $('#btn-login');
 
-  if (!digitado || !senha) { toast('Preencha usuário e senha', 'erro'); return; }
+  if (!digitado || !senha) { toast('Preencha login e senha', 'erro'); return; }
 
   let email = digitado;
   if (!digitado.includes('@')) {
@@ -981,7 +1001,7 @@ async function entrar(ev) {
 
   if (error) {
     toast(error.message === 'Invalid login credentials'
-      ? 'Usuário ou senha incorretos' : error.message, 'erro');
+      ? 'Login ou senha incorretos' : error.message, 'erro');
     return;
   }
   await iniciarSessao(data.user);
@@ -1026,6 +1046,7 @@ async function sair() {
   app.usuario = null; app.perfil = null;
   document.body.classList.remove('logado');
   $('#l-email').value = ''; $('#l-senha').value = '';
+  definirSenhaVisivel(false);
 }
 
 async function recuperarSenha() {
