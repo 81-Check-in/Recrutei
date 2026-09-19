@@ -462,26 +462,27 @@ tbody tr:hover td{background:#FAFAFA}
       </div>
       <div class="login-tag">Triagem inteligente de currículos com IA</div>
     </div>
-    <div class="login-form">
+    <form class="login-form" id="form-login" onsubmit="entrar(event)" novalidate>
       <h2>Bem-vindo de volta</h2>
       <p>Acesse o painel de triagem de candidatos</p>
       <div class="campo">
-        <label for="l-email">E-mail</label>
-        <div class="inp-wrap"><i class="ti ti-mail"></i>
-          <input id="l-email" type="email" placeholder="seu@email.com.br" autocomplete="username"></div>
+        <label for="l-email">Usuário ou e-mail</label>
+        <div class="inp-wrap"><i class="ti ti-user"></i>
+          <input id="l-email" name="username" type="text" placeholder="seu usuário" autocomplete="username"
+                 autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       </div>
       <div class="campo">
         <label for="l-senha">Senha</label>
         <div class="inp-wrap"><i class="ti ti-lock"></i>
-          <input id="l-senha" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+          <input id="l-senha" name="password" type="password" placeholder="••••••••" autocomplete="current-password"></div>
       </div>
-      <div class="link-row"><button class="link" onclick="abrirModal('modal-forgot')">Esqueci minha senha</button></div>
-      <button class="btn-login" id="btn-login" onclick="entrar()"><i class="ti ti-login"></i>Entrar</button>
+      <div class="link-row"><button type="button" class="link" onclick="abrirModal('modal-forgot')">Esqueci minha senha</button></div>
+      <button type="submit" class="btn-login" id="btn-login"><i class="ti ti-login"></i>Entrar</button>
       <div class="login-rodape">
         <div class="login-rodape-av">RH</div>
         <div class="login-rodape-txt"><strong>Acesso restrito</strong><br>Somente usuários autorizados</div>
       </div>
-    </div>
+    </form>
   </div>
 </div>
 
@@ -952,12 +953,23 @@ function erro(container, msg) {
 //  AUTENTICAÇÃO
 // ═══════════════════════════════════════════════════════════
 
-async function entrar() {
-  const email = $('#l-email').value.trim();
+// Domínio completado quando se digita só o nome (ex.: "miguel" → "miguel@<domínio>").
+// Vazio = só e-mail completo é aceito.
+const DOMINIO_LOGIN = 'recrutei.com.br';
+
+async function entrar(ev) {
+  ev?.preventDefault();
+  const digitado = $('#l-email').value.trim();
   const senha = $('#l-senha').value;
   const btn   = $('#btn-login');
 
-  if (!email || !senha) { toast('Preencha e-mail e senha', 'erro'); return; }
+  if (!digitado || !senha) { toast('Preencha usuário e senha', 'erro'); return; }
+
+  let email = digitado;
+  if (!digitado.includes('@')) {
+    if (!DOMINIO_LOGIN) { toast('Informe o e-mail completo', 'erro'); return; }
+    email = `${digitado.toLowerCase()}@${DOMINIO_LOGIN}`;
+  }
 
   btn.disabled = true;
   btn.innerHTML = '<i class="ti ti-loader-2 girando"></i> Entrando...';
@@ -969,7 +981,7 @@ async function entrar() {
 
   if (error) {
     toast(error.message === 'Invalid login credentials'
-      ? 'E-mail ou senha incorretos' : error.message, 'erro');
+      ? 'Usuário ou senha incorretos' : error.message, 'erro');
     return;
   }
   await iniciarSessao(data.user);
@@ -2302,9 +2314,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   const { data: { session } } = await db.auth.getSession();
   if (session?.user) await iniciarSessao(session.user);
 
-  // Enter no login
-  $('#l-senha').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
-  $('#l-email').addEventListener('keydown', e => { if (e.key === 'Enter') $('#l-senha').focus(); });
+  // Enter no usuário pula para a senha; Enter na senha envia o formulário
+  $('#l-email').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); $('#l-senha').focus(); }
+  });
 
   // Sem fechar modal por clique fora: perderia o que foi digitado (só X, Cancelar ou Esc)
 
