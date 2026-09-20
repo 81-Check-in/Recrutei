@@ -173,6 +173,19 @@ def atualizar_candidatura(cand_id: str, dados: Dict) -> None:
     conectar().table("candidaturas").update(dados).eq("id", cand_id).execute()
 
 
+def listar_sem_perfil(limite: int = 0) -> List[Dict]:
+    """
+    Candidaturas ativas cujo perfil de busca (idade, escolaridade, experiência, CNH)
+    ainda não foi extraído: as que chegaram antes dos filtros avançados.
+    """
+    q = conectar().table("candidaturas").select("id,dados_pessoais")\
+        .eq("status_registro", "ativo").is_("dados_pessoais->>perfil_v", "null")\
+        .order("recebido_em")
+    if limite:
+        q = q.limit(limite)
+    return q.execute().data or []
+
+
 # ─────────────────────────────────────────────
 # REAVALIAÇÃO (o RH trocou a vaga no painel)
 # ─────────────────────────────────────────────

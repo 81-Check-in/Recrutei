@@ -92,6 +92,13 @@ PRECOS = {
     "claude-haiku-4-5-20251001": {"entrada": 1.00,  "saida": 5.00},
 }
 
+# Rotatividade: a IA avalia em todo currículo e registra na análise (não muda a nota).
+# Estes números viram os critérios do prompt; ajuste aqui para deixar mais ou menos rígido.
+ROT_EMPREGO_CURTO_MESES = 12     # emprego que durou menos que isso é "curto"
+ROT_EMPREGOS_CURTOS_ALTA = 3     # tantos empregos curtos = alta rotatividade
+ROT_EMPRESAS_NO_ANO_ALTA = 3     # tantas empresas diferentes em 12 meses = alta rotatividade
+ROT_PERMANENCIA_BAIXA_MESES = 24 # permanência média a partir daqui, sem empregos curtos = baixa
+
 # Modelos padrão (os mais baratos que atendem): Haiku classifica, Sonnet avalia.
 # Valem quando a configuração está ausente ou vazia.
 MODELO_CLASSIFICACAO_PADRAO = "claude-haiku-4-5-20251001"

@@ -13,7 +13,7 @@ from config import (
 )
 from utils import (
     extrair_telefone, extrair_email, gerar_hash_identidade,
-    detectar_link_google_docs, limpar_texto,
+    detectar_link_google_docs, limpar_texto, extrair_idade,
 )
 
 
@@ -126,6 +126,28 @@ def faixa_segunda_avaliacao(cfg: Dict) -> Optional[Tuple[int, int]]:
         return 60, 75
 
 
+def _perfil_do_curriculo(texto: str, cfg: Dict) -> Dict:
+    """
+    Dados de busca do currículo, guardados em dados_pessoais para os filtros do painel:
+    idade (lida do texto, sem IA), escolaridade, anos de experiência e CNH (Haiku).
+    "perfil_v" marca que a IA já extraiu; sem ele o comando --enriquecer tenta de novo.
+    Nunca derruba o processamento: falha vira perfil parcial.
+    """
+    perfil: Dict = {}
+    idade = extrair_idade(texto)
+    if idade is not None:
+        perfil["idade"] = idade
+    try:
+        extra, _ = ia.extrair_perfil(
+            texto, modelo_configurado(cfg, "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO))
+        if extra:
+            perfil.update({k: v for k, v in extra.items() if v is not None})
+            perfil["perfil_v"] = 1
+    except Exception as e:
+        log.warning(f"  Não consegui extrair o perfil de busca: {e}")
+    return perfil
+
+
 def _marcar_lido(vaga: Optional[Dict] = None) -> bool:
     """
     Só e-mails classificados no setor SETOR_MARCAR_LIDO viram "lidos"; os demais
@@ -216,6 +238,7 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
             "telefone_e164": telefone,
             "email": email_cand,
             "cidade": resultado.get("cidade"),
+            **_perfil_do_curriculo(texto, cfg),
         },
         "hash_identidade": hash_id,
         "status": "em_analise",
@@ -382,6 +405,42 @@ def reavaliar_pendentes(pendentes: List[Dict], vagas: List[Dict], cfg: Dict,
                 log.warning("  Fica em análise; tento de novo na próxima execução")
         except Exception as e:
             log.error(f"  Erro inesperado na reavaliação: {e}", exc_info=True)
+
+
+def enriquecer() -> None:
+    """
+    Preenche o perfil de busca (idade, escolaridade, experiência, CNH) das candidaturas
+    que ainda não têm, a partir do texto já guardado (python main.py --enriquecer).
+    Use --limite N para fazer só as N primeiras.
+    """
+    ia.resetar_custo()
+    if MODO_SIMULACAO:
+        log.warning("MODO SIMULAÇÃO — nada será gravado")
+    cfg = bd.carregar_configuracoes()
+    pendentes = bd.listar_sem_perfil(LIMITE_EMAILS)
+    if not pendentes:
+        log.info("Nenhuma candidatura sem perfil de busca")
+        return
+
+    log.info(f"{len(pendentes)} candidatura(s) sem perfil de busca")
+    feitas = 0
+    for cand in pendentes:
+        try:
+            texto = bd.obter_texto_curriculo(cand["id"])
+            if not texto:
+                log.warning(f"  candidatura {cand['id'][:8]}: sem texto do currículo — ignorada")
+                continue
+            perfil = _perfil_do_curriculo(texto, cfg)
+            if not perfil.get("perfil_v"):
+                continue                      # a IA falhou; a próxima execução tenta de novo
+            bd.atualizar_candidatura(
+                cand["id"], {"dados_pessoais": {**(cand.get("dados_pessoais") or {}), **perfil}})
+            feitas += 1
+        except Exception as e:
+            log.error(f"  candidatura {cand['id'][:8]}: {e}", exc_info=True)
+
+    log.info(f"Perfis preenchidos: {feitas} de {len(pendentes)} | "
+             f"custo US$ {ia.custo_total['usd']:.4f} ({ia.custo_total['chamadas']} chamadas)")
 
 
 def reavaliar() -> Dict:

@@ -3,6 +3,7 @@ import re
 import hmac
 import hashlib
 import unicodedata
+from datetime import date
 from typing import Optional
 
 from config import IDENTIDADE_CHAVE
@@ -79,6 +80,43 @@ def normalizar_texto(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", s).strip().lower()
+
+
+_RE_NASCIMENTO = re.compile(
+    r"(?i)\b(?:data\s+de\s+nascimento|nascimento|nasc\.?|nascid[oa](?:\s+em)?|d\.?\s?n\.?)"
+    r"\s*[:\-]?\s*(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4}|\d{2})(?!\d)"
+)
+_RE_IDADE = re.compile(r"(?i)\bidade\s*[:\-]?\s*(\d{2})(?:\s*anos)?(?!\d)|\btenho\s+(\d{2})\s+anos\b")
+
+
+def extrair_idade(texto: str, hoje: Optional[date] = None) -> Optional[int]:
+    """
+    Idade em anos, lida do próprio currículo: data de nascimento ("Nascimento: 12/03/1998")
+    ou idade escrita ("Idade: 27 anos"). None se o currículo não informa.
+    Roda só localmente: a data de nascimento não é enviada à IA.
+    """
+    if not texto:
+        return None
+    hoje = hoje or date.today()
+    m = _RE_NASCIMENTO.search(texto)
+    if m:
+        dia, mes, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if ano < 100:                                   # "98" → 1998; "05" → 2005
+            ano += 2000 if ano <= hoje.year % 100 else 1900
+        try:
+            nasc = date(ano, mes, dia)
+        except ValueError:
+            nasc = None
+        if nasc and nasc <= hoje:
+            idade = hoje.year - nasc.year - ((hoje.month, hoje.day) < (nasc.month, nasc.day))
+            if 14 <= idade <= 85:
+                return idade
+    m = _RE_IDADE.search(texto)
+    if m:
+        idade = int(m.group(1) or m.group(2))
+        if 14 <= idade <= 85:
+            return idade
+    return None
 
 
 def limpar_texto(texto: str, limite: int = 20000) -> str:
