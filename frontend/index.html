@@ -8,6 +8,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// Tema aplicado antes da primeira pintura, para não piscar o claro no modo escuro.
+// Escolha salva vence; sem escolha, segue o sistema. A chave é a mesma de alternarTema().
+(function () {
+  var tema;
+  try { tema = localStorage.getItem('recrutei-tema'); } catch (_) {}
+  if (tema !== 'light' && tema !== 'dark')
+    tema = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.dataset.theme = tema;
+})();
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -109,7 +120,7 @@ body.logado #app{display:flex}
 .periodo{display:flex;gap:4px;background:var(--gray-bg);border-radius:8px;padding:3px}
 .periodo button{padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:500;
   cursor:pointer;color:var(--gray-text);background:transparent;transition:.15s}
-.periodo button.active{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.periodo button.active{background:var(--surface);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .conteudo{padding:22px 26px;flex:1}
 .screen{display:none}.screen.active{display:block}
 
@@ -119,10 +130,10 @@ body.logado #app{display:flex}
 .busca i{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--gray-text);
   font-size:16px;pointer-events:none}
 .busca input{width:100%;height:38px;padding:0 12px 0 36px;border:1px solid var(--gray-border);
-  border-radius:8px;font-size:13px;background:#fff;outline:none;transition:border-color .15s}
+  border-radius:8px;font-size:13px;background:var(--surface);outline:none;transition:border-color .15s}
 .busca input:focus{border-color:var(--blue)}
 select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border-radius:8px;
-  font-size:13px;background:#fff;color:#374151;outline:none;cursor:pointer}
+  font-size:13px;background:var(--surface);color:var(--text-2);outline:none;cursor:pointer}
 .pill{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;
   padding:3px 9px;border-radius:20px;white-space:nowrap}
 .pill-green{background:var(--green-light);color:var(--green)}
@@ -137,7 +148,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
   color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s}
 .btn-primary:hover{background:#162e4a}
 .btn-sm{height:32px;padding:0 11px;border-radius:7px;font-size:12.5px;font-weight:500;cursor:pointer;
-  border:1px solid var(--gray-border);background:#fff;color:#374151;transition:.15s;
+  border:1px solid var(--gray-border);background:var(--surface);color:var(--text-2);transition:.15s;
   display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .btn-sm:hover{background:var(--gray-bg)}
 .btn-sm.azul{background:var(--blue);color:#fff;border-color:var(--blue)}
@@ -150,7 +161,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 /* estados */
 .estado-vazio{text-align:center;padding:38px 20px;color:var(--gray-text)}
 .estado-vazio i{font-size:34px;opacity:.35;display:block;margin-bottom:10px}
-.estado-vazio p{font-size:14px;font-weight:500;color:#374151}
+.estado-vazio p{font-size:14px;font-weight:500;color:var(--text-2)}
 .estado-vazio span{font-size:12.5px;display:block;margin-top:4px}
 .estado-vazio.erro i{color:var(--red);opacity:.6}
 .girando{animation:girar 1s linear infinite;display:inline-block}
@@ -164,7 +175,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 
 /* ══ DASHBOARD ══ */
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
-.card{background:#fff;border-radius:12px;border:1px solid var(--gray-border);padding:18px;
+.card{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);padding:18px;
   transition:box-shadow .15s}
 .card:hover{box-shadow:0 4px 16px rgba(0,0,0,.07)}
 .card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
@@ -173,18 +184,18 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .card-val{font-size:27px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:3px}
 .card-lbl{font-size:12px;color:var(--gray-text)}
 .duas-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
-.painel{background:#fff;border-radius:12px;border:1px solid var(--gray-border);padding:18px}
+.painel{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);padding:18px}
 .painel-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .painel-tit{font-size:14px;font-weight:600;color:var(--navy)}
 .painel-sub{font-size:11.5px;color:var(--gray-text);margin-top:2px}
 .funil{display:flex;flex-direction:column;gap:8px}
 .funil-row{display:flex;align-items:center;gap:10px}
-.funil-label{font-size:12.5px;color:#374151;width:110px;flex-shrink:0}
+.funil-label{font-size:12.5px;color:var(--text-2);width:110px;flex-shrink:0}
 .funil-bg{flex:1;height:24px;background:var(--gray-bg);border-radius:6px;overflow:hidden}
 .funil-fill{height:100%;border-radius:6px;display:flex;align-items:center;padding-left:8px;
   font-size:11px;font-weight:600;color:#fff;transition:width .4s}
 .funil-num{font-size:12.5px;font-weight:600;color:var(--navy);width:40px;text-align:right;flex-shrink:0}
-.vaga-mini{background:#fff;border-radius:12px;border:1px solid var(--gray-border);padding:15px 17px;
+.vaga-mini{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);padding:15px 17px;
   display:flex;align-items:center;gap:12px;cursor:pointer;transition:box-shadow .15s}
 .vaga-mini:hover{box-shadow:0 4px 14px rgba(0,0,0,.07)}
 .vaga-mini-icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;
@@ -197,7 +208,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .exc-row{display:flex;align-items:center;gap:11px;padding:9px 12px;background:var(--gray-bg);
   border-radius:8px;margin-bottom:8px}
 .exc-row:last-child{margin-bottom:0}
-.exc-email{font-size:13px;font-weight:500;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exc-email{font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .exc-meta{font-size:11.5px;color:var(--gray-text)}
 
 /* ══ VAGAS ══ */
@@ -205,13 +216,13 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
   margin-bottom:20px;width:fit-content}
 .tab{padding:8px 18px;border-radius:7px;font-size:13px;font-weight:500;color:var(--gray-text);
   cursor:pointer;border:none;background:transparent;display:flex;align-items:center;gap:7px;transition:.15s}
-.tab.active{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.tab.active{background:var(--surface);color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.1)}
 .tab .cnt{font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;
   background:var(--blue-light);color:var(--blue)}
 .tab.active .cnt{background:var(--navy);color:#fff}
 .sub-screen{display:none}.sub-screen.active{display:block}
 .vagas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
-.vaga-card{background:#fff;border-radius:12px;border:1px solid var(--gray-border);padding:17px 19px;
+.vaga-card{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);padding:17px 19px;
   transition:box-shadow .15s}
 .vaga-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08)}
 .vaga-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px}
@@ -219,7 +230,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
   justify-content:center;font-size:20px;flex-shrink:0}
 .vaga-actions{display:flex;gap:4px}
 .action-btn{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;
-  justify-content:center;border:1px solid var(--gray-border);background:#fff;cursor:pointer;
+  justify-content:center;border:1px solid var(--gray-border);background:var(--surface);cursor:pointer;
   color:var(--gray-text);font-size:15px;transition:.15s}
 .action-btn:hover{background:var(--gray-bg);color:var(--navy)}
 .action-btn.danger:hover{background:var(--red-light);color:var(--red);border-color:var(--red)}
@@ -234,19 +245,19 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
   border:none;border-radius:6px;padding:5px 10px;cursor:pointer;transition:background .15s}
 .btn-triagem:hover{background:#DBEAFE}
 .exc-full{display:flex;align-items:center;gap:13px;padding:13px 17px;
-  border-bottom:1px solid var(--gray-border);background:#fff;transition:background .15s}
+  border-bottom:1px solid var(--gray-border);background:var(--surface);transition:background .15s}
 .exc-full:first-child{border-radius:12px 12px 0 0}
 .exc-full:last-child{border-bottom:none;border-radius:0 0 12px 12px}
-.exc-full:hover{background:#FAFAFA}
+.exc-full:hover{background:var(--hover-bg)}
 .exc-icon-box{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;
   justify-content:center;font-size:18px;flex-shrink:0}
 .exc-info{flex:1;min-width:0}
 .exc-btns{display:flex;gap:6px;flex-shrink:0}
-#excecoes-lista{background:#fff;border-radius:12px;border:1px solid var(--gray-border);overflow:hidden}
+#excecoes-lista{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);overflow:hidden}
 
 /* ══ TRIAGEM ══ */
 .curr-list{display:flex;flex-direction:column;gap:9px}
-.curr-card{background:#fff;border-radius:12px;border:1px solid var(--gray-border);padding:15px 17px;
+.curr-card{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);padding:15px 17px;
   display:flex;align-items:center;gap:14px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
 .curr-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);border-color:#d1d5db}
 .nota-badge{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;
@@ -258,7 +269,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .curr-ini{width:42px;height:42px;border-radius:50%;background:var(--blue-light);color:var(--blue-mid);
   display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0}
 .curr-info{flex:1;min-width:0}
-.curr-nome{font-size:14px;font-weight:600;color:#111827;margin-bottom:2px;
+.curr-nome{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px;
   display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .curr-resumo{font-size:12.5px;color:var(--gray-text);line-height:1.4;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;max-width:520px}
@@ -274,7 +285,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:80;opacity:0;
   pointer-events:none;transition:opacity .22s}
 .drawer-overlay.show{opacity:1;pointer-events:all}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:560px;max-width:95vw;background:#fff;z-index:90;
+.drawer{position:fixed;top:0;right:0;bottom:0;width:560px;max-width:95vw;background:var(--surface);z-index:90;
   transform:translateX(100%);transition:transform .25s;display:flex;flex-direction:column;overflow:hidden}
 .drawer.show{transform:translateX(0)}
 .drawer-hd{padding:19px 23px;border-bottom:1px solid var(--gray-border);display:flex;
@@ -290,7 +301,7 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .nota-circulo{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;font-size:23px;font-weight:700;flex-shrink:0}
 .nota-lbl{font-size:12px;color:var(--gray-text)}
-.nota-txt{font-size:13.5px;color:#374151;margin-top:3px;line-height:1.5}
+.nota-txt{font-size:13.5px;color:var(--text-2);margin-top:3px;line-height:1.5}
 .drawer-sec{margin-bottom:17px}
 .drawer-sec-tit{font-size:11.5px;font-weight:600;color:var(--gray-text);text-transform:uppercase;
   letter-spacing:.05em;margin-bottom:8px}
@@ -301,12 +312,12 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .dados{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .dado{background:var(--gray-bg);border-radius:8px;padding:10px 12px}
 .dado-lbl{font-size:11px;color:var(--gray-text);margin-bottom:2px}
-.dado-val{font-size:13px;font-weight:500;color:#111827;word-break:break-word}
+.dado-val{font-size:13px;font-weight:500;color:var(--text);word-break:break-word}
 .drawer-rodape{padding:15px 23px;border-top:1px solid var(--gray-border);display:flex;
   gap:8px;flex-shrink:0;flex-wrap:wrap}
 .btn-drawer{display:flex;align-items:center;gap:6px;padding:10px 14px;border-radius:8px;
   font-size:13px;font-weight:500;cursor:pointer;transition:.15s;border:1px solid var(--gray-border);
-  background:var(--gray-bg);color:#374151}
+  background:var(--gray-bg);color:var(--text-2)}
 .btn-drawer:hover{background:var(--gray-border)}
 .btn-drawer.verde{flex:1;justify-content:center;background:var(--green);color:#fff;
   border-color:var(--green);font-weight:600}
@@ -317,17 +328,17 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .aviso-arquivo i{color:var(--yellow);font-size:15px}
 
 /* ══ TABELAS ══ */
-.tabela{background:#fff;border-radius:12px;border:1px solid var(--gray-border);overflow:hidden;overflow-x:auto}
+.tabela{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);overflow:hidden;overflow-x:auto}
 table{width:100%;border-collapse:collapse;min-width:640px}
 thead th{background:var(--gray-bg);font-size:12px;font-weight:600;color:var(--gray-text);
   text-align:left;padding:11px 15px;border-bottom:1px solid var(--gray-border);white-space:nowrap}
 tbody td{padding:12px 15px;border-bottom:1px solid var(--gray-border);font-size:13.5px;vertical-align:middle}
 tbody tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:#FAFAFA}
+tbody tr:hover td{background:var(--hover-bg)}
 .cand-row{display:flex;align-items:center;gap:10px}
 .cand-av{width:34px;height:34px;border-radius:50%;background:var(--blue-light);color:var(--blue-mid);
   display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
-.cand-nome{font-size:13.5px;font-weight:500;color:#111827}
+.cand-nome{font-size:13.5px;font-weight:500;color:var(--text)}
 .cand-tel{font-size:12px;color:var(--gray-text)}
 .td-acoes{display:flex;gap:6px;align-items:center}
 
@@ -336,7 +347,7 @@ tbody tr:hover td{background:#FAFAFA}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .cal-dow{font-size:10.5px;font-weight:600;color:var(--gray-text);text-align:center;padding:4px 0}
 .cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;
-  font-size:12px;cursor:pointer;transition:background .15s;color:#374151}
+  font-size:12px;cursor:pointer;transition:background .15s;color:var(--text-2)}
 .cal-day:hover{background:var(--blue-light)}
 .cal-day.hoje{background:var(--blue);color:#fff;font-weight:600}
 .cal-day.com-evento{background:var(--blue-light);color:var(--blue-mid);font-weight:600}
@@ -349,7 +360,7 @@ tbody tr:hover td{background:#FAFAFA}
 .ent-hora span{display:block;font-size:10.5px;font-weight:400;color:var(--gray-text)}
 .ent-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .ent-info{flex:1;min-width:0}
-.ent-nome{font-size:13.5px;font-weight:500;color:#111827}
+.ent-nome{font-size:13.5px;font-weight:500;color:var(--text)}
 .ent-meta{font-size:12px;color:var(--gray-text);margin-top:2px}
 .ent-acoes{display:flex;gap:6px;flex-shrink:0}
 
@@ -357,7 +368,7 @@ tbody tr:hover td{background:#FAFAFA}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;
   justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .2s;padding:20px}
 .modal-overlay.show{opacity:1;pointer-events:all}
-.modal{background:#fff;border-radius:14px;padding:24px 26px;width:480px;max-width:100%;
+.modal{background:var(--surface);border-radius:14px;padding:24px 26px;width:480px;max-width:100%;
   max-height:90vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.2);
   transform:translateY(10px);transition:transform .2s}
 .modal-overlay.show .modal{transform:translateY(0)}
@@ -366,35 +377,35 @@ tbody tr:hover td{background:#FAFAFA}
 .modal-x{width:30px;height:30px;border:none;background:var(--gray-bg);border-radius:7px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--gray-text)}
 .f-campo{margin-bottom:13px}
-.f-campo label{display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:5px}
+.f-campo label{display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:5px}
 .f-campo input,.f-campo textarea,.f-campo select{width:100%;padding:9px 12px;
   border:1.5px solid var(--gray-border);border-radius:8px;font-size:13px;outline:none;
   background:var(--gray-bg);transition:border-color .15s,background .15s}
-.f-campo input:focus,.f-campo textarea:focus,.f-campo select:focus{border-color:var(--blue);background:#fff}
+.f-campo input:focus,.f-campo textarea:focus,.f-campo select:focus{border-color:var(--blue);background:var(--surface)}
 .f-campo textarea{resize:vertical;min-height:80px;font-family:'Poppins',sans-serif}
 .f-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .f-sec{font-size:11.5px;font-weight:600;color:var(--gray-text);text-transform:uppercase;
   letter-spacing:.05em;margin:16px 0 9px}
 .empresas-grid{display:flex;flex-wrap:wrap;gap:7px}
 .chk-empresa{display:flex;align-items:center;gap:5px;font-size:12.5px;padding:5px 11px;
-  border:1px solid var(--gray-border);border-radius:20px;cursor:pointer;background:#fff;transition:.15s}
+  border:1px solid var(--gray-border);border-radius:20px;cursor:pointer;background:var(--surface);transition:.15s}
 .chk-empresa:has(input:checked){background:var(--blue-light);border-color:var(--blue);color:var(--blue-mid)}
 .chk-empresa input{cursor:pointer}
 .chk-todas{font-weight:600}
 .req-row{display:flex;gap:7px;margin-bottom:7px;align-items:center}
 .req-input{flex:1;padding:8px 10px;border:1px solid var(--gray-border);border-radius:7px;
-  font-size:12.5px;outline:none;background:#fff}
+  font-size:12.5px;outline:none;background:var(--surface)}
 .req-tipo{padding:8px 10px;border:1px solid var(--gray-border);border-radius:7px;font-size:12.5px;
-  background:#fff;cursor:pointer;outline:none}
+  background:var(--surface);cursor:pointer;outline:none}
 .req-peso{width:56px;padding:8px 8px;border:1px solid var(--gray-border);border-radius:7px;
-  font-size:12.5px;outline:none;background:#fff;text-align:center}
-.req-del{width:30px;height:32px;border:1px solid var(--gray-border);background:#fff;border-radius:7px;
+  font-size:12.5px;outline:none;background:var(--surface);text-align:center}
+.req-del{width:30px;height:32px;border:1px solid var(--gray-border);background:var(--surface);border-radius:7px;
   cursor:pointer;color:var(--gray-text);font-size:14px;flex-shrink:0}
 .req-del:hover{background:var(--red-light);color:var(--red);border-color:var(--red)}
 .btn-add{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);
   background:var(--blue-light);border:none;border-radius:7px;padding:6px 12px;cursor:pointer;margin-top:4px}
 .modal-acoes{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
-.btn-cancel{padding:9px 16px;background:var(--gray-bg);color:#374151;border:1px solid var(--gray-border);
+.btn-cancel{padding:9px 16px;background:var(--gray-bg);color:var(--text-2);border:1px solid var(--gray-border);
   border-radius:8px;font-size:13px;cursor:pointer}
 .wapp-prev{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;
   margin:12px 0;font-size:12.5px;color:#166534;line-height:1.6;white-space:pre-wrap}
@@ -407,20 +418,25 @@ tbody tr:hover td{background:#FAFAFA}
 .res-btn:hover{filter:brightness(.96)}
 .res-btn strong{display:block;font-size:13.5px;font-weight:600;margin-bottom:2px}
 .res-btn span{font-size:12px;opacity:.85}
+.res-aprovado{background:var(--green-light);border:1.5px solid #86efac;color:var(--green)}
+.res-contratado{background:#DCFCE7;border:1.5px solid #4ade80;color:#15803d}
+.res-reprovado{background:var(--red-light);border:1.5px solid #fca5a5;color:var(--red)}
+.res-faltou{background:var(--yellow-light);border:1.5px solid #fcd34d;color:var(--yellow)}
+.res-remarcar{background:var(--blue-light);border:1.5px solid #93c5fd;color:var(--blue-mid)}
 
 /* ══ CONFIG ══ */
-.config-grupo{background:#fff;border-radius:12px;border:1px solid var(--gray-border);
+.config-grupo{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);
   padding:18px 20px;margin-bottom:14px}
 .config-grupo h3{font-size:14px;font-weight:600;color:var(--navy);margin-bottom:14px}
 .config-item{display:flex;align-items:center;gap:12px;padding:11px 0;
   border-bottom:1px solid var(--gray-border)}
 .config-item:last-child{border-bottom:none}
 .config-info{flex:1;min-width:0}
-.config-chave{font-size:12.5px;font-weight:600;color:#374151;font-family:ui-monospace,monospace}
+.config-chave{font-size:12.5px;font-weight:600;color:var(--text-2);font-family:ui-monospace,monospace}
 .config-desc{font-size:11.5px;color:var(--gray-text);margin-top:2px}
 .config-input{width:220px;padding:7px 10px;border:1px solid var(--gray-border);border-radius:7px;
   font-size:12.5px;outline:none;background:var(--gray-bg);flex-shrink:0}
-.config-input:focus{border-color:var(--blue);background:#fff}
+.config-input:focus{border-color:var(--blue);background:var(--surface)}
 .config-toggle{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
   color:var(--navy);cursor:pointer;width:220px}
 .config-toggle input{width:16px;height:16px;cursor:pointer}
@@ -467,8 +483,14 @@ tbody tr:hover td{background:#FAFAFA}
   --surface-border:#e5eaf0;
   --surface-shadow:0 12px 36px rgba(18,36,55,.035);
   --ease-ui:cubic-bezier(.2,.7,.25,1);
+  /* Tokens de tema: o bloco "Modo escuro" no fim do CSS troca estes valores. */
+  color-scheme:light;
+  --bg:#f5f7fa;--fg:#202c3a;
+  --surface:#fff;--hover-bg:#FAFAFA;
+  --text:#111827;--text-2:#374151;
+  --funil-3:#1E3A5F;
 }
-body{background:#f5f7fa;color:#202c3a}
+body{background:var(--bg);color:var(--fg)}
 .sidebar{
   background:radial-gradient(ellipse at 20% 0%,#26313c 0%,transparent 50%),
     linear-gradient(160deg,#171c23 0%,#141b22 59%,#102d35 100%);
@@ -517,6 +539,11 @@ body{background:#f5f7fa;color:#202c3a}
 .periodo{background:#eef2f5;border:1px solid #e8edf2;border-radius:10px}
 .periodo button{border-radius:7px}
 .periodo button.active{box-shadow:0 1px 5px rgba(20,43,61,.1)}
+.btn-tema{width:38px;height:38px;flex-shrink:0;display:grid;place-items:center;font-size:18px;
+  color:var(--gray-text);background:var(--surface);border:1px solid var(--surface-border);
+  border-radius:10px;cursor:pointer;transition:background-color .15s ease,color .15s ease,border-color .15s ease}
+.btn-tema:hover{color:var(--navy);background:var(--gray-bg)}
+.btn-tema .ico-sol{display:none}
 .card,.painel,.vaga-card,.vaga-mini,.curr-card,.config-grupo{border-color:var(--surface-border);box-shadow:var(--surface-shadow)}
 .card{position:relative;overflow:hidden;padding:20px 21px;min-height:144px;border-radius:16px;
   transition:transform .18s var(--ease-ui),box-shadow .18s ease,border-color .18s ease}
@@ -579,6 +606,8 @@ body{background:#f5f7fa;color:#202c3a}
   .cards{grid-template-columns:1fr}.card{min-height:118px}
   .topbar-tit{font-size:14px}
   .periodo button{padding:5px 7px;font-size:11px}
+  .topbar-r{gap:6px}
+  .btn-tema{width:34px;height:34px}
 }
 
 /* Vidro escuro no acesso: camadas translúcidas e luz concentrada atrás do cartão. */
@@ -683,12 +712,108 @@ body{background:#f5f7fa;color:#202c3a}
   .login-form h2{font-size:25px}
 }
 @media(prefers-reduced-motion:reduce){
-  .sidebar,.main,.sb-collapse,.sb-collapse i,.nav-item,.card,.card-ico,.vaga-card,
+  .sidebar,.main,.sb-collapse,.sb-collapse i,.btn-tema,.nav-item,.card,.card-ico,.vaga-card,
   .vaga-mini,.curr-card,.exc-row,.drawer,.drawer-overlay,.modal,.modal-overlay,
   .mob-overlay,.toast,.girando,#login .btn-login,#login .inp-wrap input{transition:none;animation:none}
   .card:hover,.vaga-card:hover,.vaga-mini:hover,.curr-card:hover,.exc-row[onclick]:hover,
   #login .btn-login:hover,.card:hover .card-ico,.nav-item:active{transform:none}
 }
+
+/* ══ MODO ESCURO ══
+   Ativado por <html data-theme="dark"> (ver alternarTema). Sidebar e login já são escuros,
+   então só a área de conteúdo, o drawer e os modais trocam de paleta. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f141a;--fg:#e4eaf1;
+  --surface:#161c25;--hover-bg:#1c2430;
+  --text:#e4eaf1;--text-2:#c4cfda;
+  --navy:#e1eaf3;
+  --gray-bg:#1e2631;--gray-border:#2a3441;--gray-text:#93a1b1;
+  --surface-border:#232d39;
+  --surface-shadow:0 12px 36px rgba(0,0,0,.28);
+  --blue:#60a5fa;--blue-mid:#93c5fd;--blue-light:rgba(96,165,250,.14);
+  --green:#4ade80;--green-light:rgba(74,222,128,.14);
+  --yellow:#fbbf24;--yellow-light:rgba(251,191,36,.14);
+  --red:#f87171;--red-light:rgba(248,113,113,.14);
+  --purple:#c4b5fd;--purple-light:rgba(167,139,250,.16);
+  --funil-3:#4b6d94;
+}
+/* Campos herdam a cor do tema; :where() zera a especificidade para não vencer regras próprias */
+:where(:root[data-theme="dark"]) :where(input,textarea,select){color:var(--text)}
+:where(:root[data-theme="dark"]) ::placeholder{color:#8794a3}
+
+/* Variáveis de cor de destaque viram tons claros (para texto); os fundos preenchidos são fixados aqui */
+:root[data-theme="dark"] :is(.btn-primary,.tab.active .cnt){background:#3574ae;color:#fff}
+:root[data-theme="dark"] .btn-primary:hover{background:#2c6296}
+:root[data-theme="dark"] .btn-sm.azul{background:#2563eb;border-color:#2563eb}
+:root[data-theme="dark"] .btn-sm.azul:hover{background:#1d4ed8}
+:root[data-theme="dark"] :is(.btn-sm.verde,.btn-drawer.verde,.btn-wapp){background:#15803d;border-color:#15803d}
+:root[data-theme="dark"] :is(.btn-sm.verde,.btn-drawer.verde,.btn-wapp):hover{background:#166534}
+:root[data-theme="dark"] :is(.cal-day.hoje,.cal-day.com-evento.hoje){background:#2563eb}
+
+:root[data-theme="dark"] .btn-tema .ico-lua{display:none}
+:root[data-theme="dark"] .btn-tema .ico-sol{display:block}
+
+/* Topbar, títulos e blocos do dashboard (vidro escuro no lugar do vidro claro) */
+:root[data-theme="dark"] .topbar{background:rgba(15,20,26,.8);border-bottom-color:var(--surface-border);
+  box-shadow:0 5px 22px rgba(0,0,0,.25),inset 0 1px rgba(255,255,255,.04)}
+:root[data-theme="dark"] .topbar-tit{color:var(--navy)}
+:root[data-theme="dark"] .card-val,
+:root[data-theme="dark"] :is(.painel-tit,.sec-tit){color:var(--navy)}
+:root[data-theme="dark"] #screen-dashboard::before{
+  background:radial-gradient(ellipse 45% 33% at 12% 3%,rgba(64,132,190,.13),transparent 80%),
+    radial-gradient(ellipse 34% 42% at 91% 37%,rgba(56,160,165,.09),transparent 82%)}
+:root[data-theme="dark"] #screen-dashboard :is(.card,.painel){
+  background:linear-gradient(145deg,rgba(30,39,51,.86),rgba(22,29,39,.74));
+  border-color:rgba(255,255,255,.07);
+  box-shadow:inset 0 1px rgba(255,255,255,.06),inset 1px 0 rgba(255,255,255,.03),
+    0 11px 29px rgba(0,0,0,.3),0 0 0 1px rgba(120,170,210,.06)}
+:root[data-theme="dark"] #screen-dashboard .card{
+  background:radial-gradient(circle at 95% 2%,rgba(120,170,215,.1),transparent 48%),
+    linear-gradient(145deg,rgba(30,39,51,.88),rgba(22,29,39,.76))}
+:root[data-theme="dark"] #screen-dashboard .card-lbl{color:var(--gray-text)}
+:root[data-theme="dark"] #screen-dashboard .card-ico{box-shadow:inset 0 1px rgba(255,255,255,.08),0 4px 12px rgba(0,0,0,.25)}
+:root[data-theme="dark"] #screen-dashboard .vaga-mini{background:rgba(26,34,45,.78);border-color:rgba(255,255,255,.07)}
+:root[data-theme="dark"] .exc-row{background:var(--gray-bg);border-color:var(--surface-border)}
+:root[data-theme="dark"] .exc-row:hover{background:#26313f}
+
+/* Abas e seletor de período: o segmento ativo fica mais claro que a trilha */
+:root[data-theme="dark"] .periodo{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08);box-shadow:none}
+:root[data-theme="dark"] .tabs{background:var(--gray-bg)}
+:root[data-theme="dark"] :is(.periodo button.active,.tab.active){background:#2b3645;color:var(--navy);
+  box-shadow:0 1px 5px rgba(0,0,0,.35)}
+
+/* Hovers com cor fixa no modo claro */
+:root[data-theme="dark"] .curr-card:hover{border-color:#34445a}
+:root[data-theme="dark"] .burger:hover{background:var(--gray-bg)}
+:root[data-theme="dark"] .btn-triagem:hover{background:rgba(96,165,250,.26)}
+@media (hover:hover) and (pointer:fine){
+  :root[data-theme="dark"] :is(.card,.vaga-card,.vaga-mini,.curr-card):hover{
+    border-color:#34445a;box-shadow:0 13px 28px rgba(0,0,0,.4)}
+  :root[data-theme="dark"] #screen-dashboard :is(.card,.vaga-mini):hover{
+    border-color:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px rgba(255,255,255,.08),0 16px 33px rgba(0,0,0,.4),0 0 0 1px rgba(110,170,215,.18)}
+}
+
+/* Notas, botões de perigo, resultado de entrevista e prévia do WhatsApp */
+:root[data-theme="dark"] .nota-high{color:var(--green)}
+:root[data-theme="dark"] .nota-mid{color:var(--yellow)}
+:root[data-theme="dark"] .nota-low{color:var(--red)}
+:root[data-theme="dark"] :is(.btn-sm,.btn-drawer).vermelho{border-color:rgba(248,113,113,.4)}
+:root[data-theme="dark"] .res-btn:hover{filter:brightness(1.2)}
+:root[data-theme="dark"] .res-aprovado{border-color:rgba(74,222,128,.38)}
+:root[data-theme="dark"] .res-contratado{background:rgba(74,222,128,.24);border-color:rgba(74,222,128,.62);color:#86efac}
+:root[data-theme="dark"] .res-reprovado{border-color:rgba(248,113,113,.4)}
+:root[data-theme="dark"] .res-faltou{border-color:rgba(251,191,36,.4)}
+:root[data-theme="dark"] .res-remarcar{border-color:rgba(96,165,250,.4)}
+:root[data-theme="dark"] .wapp-prev{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.28);color:#86efac}
+
+/* Camadas sobrepostas: modal e drawer um degrau acima da superfície, com contorno */
+:root[data-theme="dark"] :is(.modal,.drawer){background:#19202a}
+:root[data-theme="dark"] .modal{border:1px solid var(--gray-border);box-shadow:0 20px 56px rgba(0,0,0,.55)}
+:root[data-theme="dark"] .drawer{border-left:1px solid var(--gray-border);box-shadow:-16px 0 48px rgba(0,0,0,.4)}
+:root[data-theme="dark"] :is(.modal-overlay,.drawer-overlay){background:rgba(3,7,12,.62)}
+:root[data-theme="dark"] .toast{background:#242e3b;border:1px solid #344253;color:var(--text)}
 
 </style>
 </head>
@@ -773,6 +898,7 @@ body{background:#f5f7fa;color:#202c3a}
           <button id="btn7" class="active" onclick="setPeriodo(7)">7 dias</button>
           <button id="btn30" onclick="setPeriodo(30)">Mês atual</button>
         </div>
+        <button type="button" class="btn-tema" id="btn-tema" onclick="alternarTema()" aria-label="Ativar modo escuro" title="Ativar modo escuro"><i class="ti ti-moon ico-lua" aria-hidden="true"></i><i class="ti ti-sun ico-sol" aria-hidden="true"></i></button>
       </div>
     </div>
 
@@ -782,22 +908,22 @@ body{background:#f5f7fa;color:#202c3a}
       <div class="screen active" id="screen-dashboard">
         <div class="cards">
           <div class="card">
-            <div class="card-top"><div class="card-ico" style="background:#EFF6FF;color:#3B82F6"><i class="ti ti-file-text"></i></div></div>
+            <div class="card-top"><div class="card-ico" style="background:var(--blue-light);color:var(--blue)"><i class="ti ti-file-text"></i></div></div>
             <div class="card-val" id="m-curriculos">—</div>
             <div class="card-lbl">Currículos recebidos</div>
           </div>
           <div class="card">
-            <div class="card-top"><div class="card-ico" style="background:#DCFCE7;color:#16A34A"><i class="ti ti-user-check"></i></div></div>
+            <div class="card-top"><div class="card-ico" style="background:var(--green-light);color:var(--green)"><i class="ti ti-user-check"></i></div></div>
             <div class="card-val" id="m-selecionados">—</div>
             <div class="card-lbl">Selecionados para entrevista</div>
           </div>
           <div class="card">
-            <div class="card-top"><div class="card-ico" style="background:#FEF3C7;color:#D97706"><i class="ti ti-calendar-event"></i></div></div>
+            <div class="card-top"><div class="card-ico" style="background:var(--yellow-light);color:var(--yellow)"><i class="ti ti-calendar-event"></i></div></div>
             <div class="card-val" id="m-entrevistas">—</div>
             <div class="card-lbl">Entrevistas agendadas</div>
           </div>
           <div class="card">
-            <div class="card-top"><div class="card-ico" style="background:#F3E8FF;color:#7C3AED"><i class="ti ti-briefcase"></i></div></div>
+            <div class="card-top"><div class="card-ico" style="background:var(--purple-light);color:var(--purple)"><i class="ti ti-briefcase"></i></div></div>
             <div class="card-val" id="m-vagas">—</div>
             <div class="card-lbl">Vagas abertas</div>
           </div>
@@ -980,7 +1106,7 @@ body{background:#f5f7fa;color:#202c3a}
       <div class="drawer-sec-tit">Requisitos obrigatórios não atendidos</div>
       <div class="tags" id="d-faltantes"></div></div>
     <div class="drawer-sec"><div class="drawer-sec-tit">Resumo gerado pela IA</div>
-      <p style="font-size:13.5px;color:#374151;line-height:1.7" id="d-resumo">—</p></div>
+      <p style="font-size:13.5px;color:var(--text-2);line-height:1.7" id="d-resumo">—</p></div>
   </div>
   <div class="drawer-rodape">
     <div class="aviso-arquivo" id="d-sem-arquivo" style="display:none">
@@ -1050,24 +1176,19 @@ body{background:#f5f7fa;color:#202c3a}
     <button class="modal-x" onclick="fecharModal('modal-resultado')"><i class="ti ti-x"></i></button></div>
   <p style="font-size:13px;color:var(--gray-text);margin-bottom:15px">
     Entrevista — <strong id="res-nome"></strong></p>
-  <button class="res-btn" onclick="registrarResultado('aprovado')"
-    style="background:var(--green-light);border:1.5px solid #86efac;color:var(--green)">
+  <button class="res-btn res-aprovado" onclick="registrarResultado('aprovado')">
     <i class="ti ti-check" style="font-size:18px"></i>
     <div><strong>Aprovado</strong><span>Candidato segue no processo</span></div></button>
-  <button class="res-btn" onclick="marcarContratado()"
-    style="background:#DCFCE7;border:1.5px solid #4ade80;color:#15803d">
+  <button class="res-btn res-contratado" onclick="marcarContratado()">
     <i class="ti ti-user-star" style="font-size:18px"></i>
     <div><strong>Contratado</strong><span>Efetivado — retenção permanente</span></div></button>
-  <button class="res-btn" onclick="registrarResultado('reprovado')"
-    style="background:var(--red-light);border:1.5px solid #fca5a5;color:var(--red)">
+  <button class="res-btn res-reprovado" onclick="registrarResultado('reprovado')">
     <i class="ti ti-x" style="font-size:18px"></i>
     <div><strong>Reprovado</strong><span>Não avança no processo</span></div></button>
-  <button class="res-btn" onclick="registrarResultado('nao_compareceu')"
-    style="background:var(--yellow-light);border:1.5px solid #fcd34d;color:var(--yellow)">
+  <button class="res-btn res-faltou" onclick="registrarResultado('nao_compareceu')">
     <i class="ti ti-user-off" style="font-size:18px"></i>
     <div><strong>Não compareceu</strong><span>Falta registrada</span></div></button>
-  <button class="res-btn" onclick="remarcarEntrevista()"
-    style="background:var(--blue-light);border:1.5px solid #93c5fd;color:var(--blue-mid)">
+  <button class="res-btn res-remarcar" onclick="remarcarEntrevista()">
     <i class="ti ti-clock" style="font-size:18px"></i>
     <div><strong>Remarcar</strong><span>Nova data e aviso pelo WhatsApp</span></div></button>
   <div class="f-campo" style="margin-top:14px"><label>Observações (opcional)</label>
@@ -1451,7 +1572,7 @@ async function carregarFunil() {
   const etapas = [
     { l: 'Recebidos',     v: total, c: '#3B82F6' },
     { l: 'Avaliados',     v: conta(['avaliado','selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado','descartado']), c: '#2563EB' },
-    { l: 'Selecionados',  v: conta(['selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado']), c: '#1E3A5F' },
+    { l: 'Selecionados',  v: conta(['selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado']), c: 'var(--funil-3)' },
     { l: 'Entrevistados', v: conta(['entrevista_realizada','aprovado','reprovado','contratado']), c: '#16A34A' },
     { l: 'Contratados',   v: conta(['contratado']), c: '#D97706' }
   ];
@@ -2707,6 +2828,21 @@ function alternarSidebarCompacta() {
   try { localStorage.setItem('recrutei-sidebar-collapsed', String(compacta)); } catch (_) {}
 }
 
+// Tema claro/escuro. O <head> aplica o tema salvo (ou o do sistema) antes de pintar;
+// aqui fica a troca manual e o rótulo do botão.
+function aplicarTema(tema) {
+  document.documentElement.dataset.theme = tema;
+  const botao = $('#btn-tema');
+  const texto = tema === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro';
+  botao.setAttribute('aria-label', texto);
+  botao.title = texto;
+}
+function alternarTema() {
+  const novo = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  aplicarTema(novo);
+  try { localStorage.setItem('recrutei-tema', novo); } catch (_) {}
+}
+
 // Debounce para campos de busca
 function debounce(fn, ms = 400) {
   let t;
@@ -2718,6 +2854,12 @@ function debounce(fn, ms = 400) {
 // ═══════════════════════════════════════════════════════════
 
 window.addEventListener('DOMContentLoaded', async () => {
+  aplicarTema(document.documentElement.dataset.theme);
+  // Sem escolha salva, acompanha o sistema em tempo real
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+    try { if (localStorage.getItem('recrutei-tema')) return; } catch (_) {}
+    aplicarTema(e.matches ? 'dark' : 'light');
+  });
   try {
     if (localStorage.getItem('recrutei-sidebar-collapsed') === 'true') {
       document.body.classList.add('sidebar-collapsed');
