@@ -141,10 +141,10 @@ function paginaInicialSeFiltroMudou(estado, chaveAtual) {
 // Cuida do carregando/erro/vazio de uma lista paginada e devolve os dados prontos
 // para o chamador desenhar. montarQuery() deve incluir select('*', {count:'exact'})
 // e os filtros, mas NÃO o .limit() — este helper aplica o limite da página atual.
-async function carregarLista(el, estado, montarQuery, { icone, msg, sub = '' }) {
+async function carregarLista(el, estado, montarQuery, { icone, msg, sub = '', mensagemErro }) {
   if (estado.limite === estado.tamanhoPagina) loading(el);   // só pisca na 1ª página
   const { data, error, count } = await montarQuery().limit(estado.limite);
-  if (error) { erro(el, error.message); return null; }
+  if (error) { erro(el, mensagemErro ? mensagemErro(error) : error.message); return null; }
   estado.total = count ?? data.length;
   if (!data.length) vazio(el, icone, msg, sub);
   return { data, count: estado.total };

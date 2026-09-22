@@ -252,7 +252,67 @@
             <option value="selecionado">Selecionado</option>
             <option value="descartado">Descartado</option>
           </select>
+          <button type="button" class="btn-filtros-av" id="btn-filtros-av" onclick="alternarFiltrosAvancados()"
+                  aria-expanded="false" aria-controls="painel-filtros-av">
+            <i class="ti ti-adjustments-horizontal"></i>Filtros avançados
+            <span class="badge-cnt" id="badge-filtros-av" style="display:none">0</span></button>
         </div>
+
+        <div class="painel-av" id="painel-filtros-av" style="display:none">
+          <div class="av-grid">
+            <div class="f-campo av-span2"><label for="av-palavras">Palavras-chave</label>
+              <input id="av-palavras" type="text" placeholder="ex.: empilhadeira, cnh b (separe por vírgula)"></div>
+            <div class="f-campo"><label for="av-palavras-modo">Combinar palavras</label>
+              <select class="sel" id="av-palavras-modo" style="width:100%">
+                <option value="todas">Todas elas</option>
+                <option value="qualquer">Qualquer uma</option>
+              </select></div>
+            <div class="f-campo"><label for="av-palavras-onde">Onde buscar</label>
+              <select class="sel" id="av-palavras-onde" style="width:100%">
+                <option value="curriculo">No currículo</option>
+                <option value="analise">Na análise da IA</option>
+                <option value="ambos">Nos dois</option>
+              </select></div>
+            <div class="f-campo"><label for="av-local">Mora em</label>
+              <input id="av-local" type="text" placeholder="cidade ou bairro"></div>
+            <div class="f-campo"><label for="av-excluir-locais">Exceto quem mora em</label>
+              <input id="av-excluir-locais" type="text" placeholder="separe por vírgula"></div>
+            <div class="f-campo"><label for="av-escolaridade">Escolaridade mínima</label>
+              <select class="sel" id="av-escolaridade" style="width:100%">
+                <option value="">Qualquer</option>
+                <option value="fundamental">Fundamental</option>
+                <option value="medio">Médio</option>
+                <option value="tecnico">Técnico</option>
+                <option value="superior">Superior</option>
+                <option value="pos">Pós-graduação</option>
+              </select></div>
+            <div class="f-campo"><label for="av-experiencia">Experiência mínima (anos)</label>
+              <input id="av-experiencia" type="number" min="0" max="60" step="0.5" placeholder="ex.: 2"></div>
+            <div class="f-campo"><label for="av-rotatividade">Rotatividade</label>
+              <select class="sel" id="av-rotatividade" style="width:100%">
+                <option value="">Qualquer</option>
+                <option value="sem_alta">Sem alta rotatividade</option>
+                <option value="baixa">Só baixa rotatividade</option>
+                <option value="alta">Só alta rotatividade</option>
+              </select></div>
+            <div class="f-campo"><label for="av-idade-min">Idade mínima</label>
+              <input id="av-idade-min" type="number" min="14" max="85" placeholder="anos"></div>
+            <div class="f-campo"><label for="av-idade-max">Idade máxima</label>
+              <input id="av-idade-max" type="number" min="14" max="85" placeholder="anos"></div>
+            <label class="av-check"><input type="checkbox" id="av-cnh"> Só quem informa CNH</label>
+            <label class="av-check"><input type="checkbox" id="av-sem-info" checked>
+              Incluir quem não informou idade/escolaridade/experiência</label>
+          </div>
+          <p class="av-aviso"><i class="ti ti-alert-triangle"></i>A nota da IA nunca considera idade,
+            gênero, origem ou outras características protegidas — o prompt proíbe isso explicitamente.
+            Filtrar candidatos por idade aqui é uma decisão do RH, fora da IA, e pode configurar
+            discriminação no processo seletivo (Lei 9.029/95). Use com critério.</p>
+          <div class="av-acoes">
+            <button type="button" class="btn-cancel" onclick="limparFiltrosAvancados()">Limpar</button>
+            <button type="button" class="btn-primary" onclick="aplicarFiltrosAvancados()">Aplicar filtros</button>
+          </div>
+        </div>
+
         <div class="sec-hd"><div class="sec-tit">
           <span id="triagem-total">0 currículos</span>
           <span style="font-size:12px;font-weight:400;color:var(--gray-text)">· ordenados por nota</span>

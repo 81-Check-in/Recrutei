@@ -86,7 +86,17 @@ _RE_NASCIMENTO = re.compile(
     r"(?i)\b(?:data\s+de\s+nascimento|nascimento|nasc\.?|nascid[oa](?:\s+em)?|d\.?\s?n\.?)"
     r"\s*[:\-]?\s*(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4}|\d{2})(?!\d)"
 )
-_RE_IDADE = re.compile(r"(?i)\bidade\s*[:\-]?\s*(\d{2})(?:\s*anos)?(?!\d)|\btenho\s+(\d{2})\s+anos\b")
+# "Tenho X anos" é ambíguo com tempo de experiência ("Tenho 20 anos de experiência",
+# "Tenho 15 anos atuando em..."). Só conta como idade quando NÃO é seguido de uma dessas
+# continuações — nesses casos o número é tempo de trabalho, não idade da pessoa.
+_CONTINUACAO_EXPERIENCIA = (
+    r"de|na|no|em|com|para|atuando|trabalhando|exercendo|desenvolvendo|militando|"
+    r"dedicad[oa]s?|completos?\s+de"
+)
+_RE_IDADE = re.compile(
+    r"(?i)\bidade\s*[:\-]?\s*(\d{2})(?:\s*anos)?(?!\d)"
+    rf"|\btenho\s+(\d{{2}})\s+anos(?:\s+de\s+idade)?(?!\s*(?:{_CONTINUACAO_EXPERIENCIA})\b)"
+)
 
 
 def extrair_idade(texto: str, hoje: Optional[date] = None) -> Optional[int]:

@@ -4,6 +4,89 @@
 
 const estadoTriagem = novoEstadoLista(50);
 
+// ── Filtros avançados (palavras-chave, localização, idade, escolaridade, experiência,
+// CNH, rotatividade) — usam a função filtrar_triagem() do banco (backend/sql/filtros_avancados.sql).
+// null = nenhum filtro avançado ativo; a tela usa a consulta simples de sempre.
+let filtrosAvancados = null;
+
+function alternarFiltrosAvancados() {
+  const painel = $('#painel-filtros-av');
+  const abrir = painel.style.display === 'none';
+  painel.style.display = abrir ? 'block' : 'none';
+  $('#btn-filtros-av').setAttribute('aria-expanded', String(abrir));
+}
+
+// Só entra no objeto o que a pessoa preencheu — a função no banco trata ausência como
+// "sem filtro". Devolve também quantos campos estão ativos, para o selo no botão.
+function lerFiltrosAvancados() {
+  const filtros = {};
+  let ativos = 0;
+
+  const palavras = $('#av-palavras').value.split(',').map(p => p.trim()).filter(Boolean);
+  if (palavras.length) {
+    filtros.palavras = palavras;
+    filtros.palavras_modo = $('#av-palavras-modo').value;
+    filtros.palavras_onde = $('#av-palavras-onde').value;
+    ativos++;
+  }
+
+  const local = $('#av-local').value.trim();
+  if (local) { filtros.local = local; ativos++; }
+
+  const excluirLocais = $('#av-excluir-locais').value.split(',').map(p => p.trim()).filter(Boolean);
+  if (excluirLocais.length) { filtros.excluir_locais = excluirLocais; ativos++; }
+
+  const idadeMin = $('#av-idade-min').value.trim();
+  const idadeMax = $('#av-idade-max').value.trim();
+  if (idadeMin) { filtros.idade_min = Number(idadeMin); ativos++; }
+  if (idadeMax) { filtros.idade_max = Number(idadeMax); ativos++; }
+
+  const escolaridade = $('#av-escolaridade').value;
+  if (escolaridade) { filtros.escolaridade_min = escolaridade; ativos++; }
+
+  const experiencia = $('#av-experiencia').value.trim();
+  if (experiencia) { filtros.experiencia_min = Number(experiencia); ativos++; }
+
+  if ($('#av-cnh').checked) { filtros.cnh = true; ativos++; }
+
+  const rotatividade = $('#av-rotatividade').value;
+  if (rotatividade) { filtros.rotatividade = rotatividade; ativos++; }
+
+  if (!$('#av-sem-info').checked) { filtros.incluir_sem_info = false; ativos++; }   // padrão é true
+
+  return { filtros, ativos };
+}
+
+function atualizarBadgeFiltrosAv(ativos) {
+  const badge = $('#badge-filtros-av');
+  badge.style.display = ativos ? 'inline-flex' : 'none';
+  badge.textContent = ativos;
+  $('#btn-filtros-av').classList.toggle('ativo', ativos > 0);
+}
+
+function aplicarFiltrosAvancados() {
+  const { filtros, ativos } = lerFiltrosAvancados();
+  filtrosAvancados = ativos ? filtros : null;
+  atualizarBadgeFiltrosAv(ativos);
+  toast(ativos ? `${ativos} filtro${ativos > 1 ? 's' : ''} avançado${ativos > 1 ? 's' : ''} aplicado${ativos > 1 ? 's' : ''}`
+               : 'Nenhum filtro avançado preenchido');
+  carregarTriagem();
+}
+
+function limparFiltrosAvancados() {
+  ['av-palavras', 'av-local', 'av-excluir-locais', 'av-idade-min', 'av-idade-max', 'av-experiencia']
+    .forEach(id => { $('#' + id).value = ''; });
+  $('#av-palavras-modo').value = 'todas';
+  $('#av-palavras-onde').value = 'curriculo';
+  $('#av-escolaridade').value = '';
+  $('#av-rotatividade').value = '';
+  $('#av-cnh').checked = false;
+  $('#av-sem-info').checked = true;
+  filtrosAvancados = null;
+  atualizarBadgeFiltrosAv(0);
+  carregarTriagem();
+}
+
 function maisTriagem() {
   const btn = $('#triagem-mais');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2 girando"></i>Carregando…'; }
@@ -27,11 +110,15 @@ async function carregarTriagem() {
   const status = $('#filtro-status').value;
   const busca  = $('#busca-triagem').value.trim();
 
-  // Filtro mudou desde a última carga: volta para a primeira página
-  paginaInicialSeFiltroMudou(estadoTriagem, JSON.stringify([vaga, faixa, status, busca]));
+  // Filtro mudou desde a última carga (inclui os avançados): volta para a primeira página
+  paginaInicialSeFiltroMudou(estadoTriagem, JSON.stringify([vaga, faixa, status, busca, filtrosAvancados]));
 
   const montar = () => {
-    let q = db.from('vw_triagem').select('*', { count: 'exact' });
+    // Com filtro avançado, a busca parte da função filtrar_triagem() em vez da view direto;
+    // ela devolve as mesmas colunas, então os filtros comuns encaixam do mesmo jeito por cima.
+    let q = filtrosAvancados
+      ? db.rpc('filtrar_triagem', { filtros: filtrosAvancados }, { count: 'exact' })
+      : db.from('vw_triagem').select('*', { count: 'exact' });
     if (vaga)   q = q.eq('vaga_id', vaga);
     if (status) q = q.eq('status', status);
     if (faixa === 'alta')  q = q.gte('nota', 76);
@@ -44,7 +131,11 @@ async function carregarTriagem() {
 
   const resultado = await carregarLista(el, estadoTriagem, montar,
     { icone: 'ti-files', msg: 'Nenhum currículo encontrado',
-      sub: 'Os currículos aparecem aqui após o processamento diário dos e-mails' });
+      sub: 'Os currículos aparecem aqui após o processamento diário dos e-mails',
+      // PGRST202 = a função filtrar_triagem ainda não existe no banco
+      mensagemErro: error => error.code === 'PGRST202'
+        ? 'Filtros avançados ainda não habilitados no banco. Rode backend/sql/filtros_avancados.sql.'
+        : error.message });
 
   if (!resultado) { destravarBotaoMais($('#triagem-mais')); return; }   // erro() já foi desenhado
 
