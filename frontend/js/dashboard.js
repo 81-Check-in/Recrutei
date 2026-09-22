@@ -1,0 +1,129 @@
+// ═══════════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════════
+
+async function carregarDashboard() {
+  const { data, error } = await db.from('vw_dashboard_metricas').select('*').single();
+  if (error) { toast('Erro ao carregar métricas', 'erro'); return; }
+
+  const p = app.periodo;
+  $('#m-curriculos').textContent  = (p === 7 ? data.curriculos_7d   : data.curriculos_mes).toLocaleString('pt-BR');
+  $('#m-selecionados').textContent = (p === 7 ? data.selecionados_7d : data.selecionados_mes).toLocaleString('pt-BR');
+  $('#m-entrevistas').textContent  = (p === 7 ? data.entrevistas_7d  : data.entrevistas_mes).toLocaleString('pt-BR');
+  $('#m-vagas').textContent = data.vagas_abertas;
+  $('#m-excecoes').textContent = data.excecoes_pendentes;
+  $('#m-triagem').textContent  = data.aguardando_triagem;
+  $('#periodo-label').textContent = p === 7 ? 'Últimos 7 dias' : 'Mês atual';
+
+  await Promise.all([carregarFunil(), carregarVagasResumo(), carregarExcecoesResumo()]);
+}
+
+async function carregarFunil() {
+  const dias  = app.periodo === 7 ? 7 : 30;
+  const desde = new Date(Date.now() - dias * 86400000).toISOString();
+
+  const { data, error } = await db
+    .from('candidaturas')
+    .select('status')
+    .eq('status_registro', 'ativo')
+    .gte('recebido_em', desde);
+
+  const el = $('#funil');
+  if (error) { erro(el, error.message); return; }
+
+  const total = data.length;
+  if (!total) { vazio(el, 'ti-chart-bar', 'Nenhum currículo no período'); return; }
+
+  const conta = s => data.filter(d => s.includes(d.status)).length;
+  const etapas = [
+    { l: 'Recebidos',     v: total, c: '#3B82F6' },
+    { l: 'Avaliados',     v: conta(['avaliado','selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado','descartado']), c: '#2563EB' },
+    { l: 'Selecionados',  v: conta(['selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado']), c: 'var(--funil-3)' },
+    { l: 'Entrevistados', v: conta(['entrevista_realizada','aprovado','reprovado','contratado']), c: '#16A34A' },
+    { l: 'Contratados',   v: conta(['contratado']), c: '#D97706' }
+  ];
+
+  el.innerHTML = etapas.map(e => `
+    <div class="funil-row">
+      <div class="funil-label">${e.l}</div>
+      <div class="funil-bg">
+        <div class="funil-fill" style="width:${total ? Math.round(e.v/total*100) : 0}%;background:${e.c}">
+          ${total ? Math.round(e.v/total*100) : 0}%
+        </div>
+      </div>
+      <div class="funil-num">${e.v}</div>
+    </div>`).join('');
+}
+
+async function carregarVagasResumo() {
+  const { data, error } = await db.from('vw_vagas_resumo')
+    .select('*').order('total_curriculos', { ascending: false }).limit(4);
+
+  const el = $('#vagas-resumo');
+  if (error) { erro(el, error.message); return; }
+  if (!data.length) {
+    vazio(el, 'ti-briefcase', 'Nenhuma vaga aberta',
+      'Cadastre uma vaga para começar a receber candidaturas');
+    return;
+  }
+
+  el.innerHTML = data.map(v => `
+    <div class="vaga-mini" onclick="irPara('vagas')">
+      <div class="vaga-mini-icon" style="background:${v.setor_cor}1a;color:${v.setor_cor}">
+        <i class="ti ${v.setor_icone}"></i>
+      </div>
+      <div class="vaga-mini-info">
+        <div class="vaga-mini-titulo">${escapeHtml(v.titulo)}</div>
+        <div class="vaga-mini-meta">${escapeHtml(v.empresas || v.setor_nome)}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="vaga-mini-num">${v.total_curriculos}</div>
+        <div class="vaga-mini-lbl">currículos</div>
+      </div>
+    </div>`).join('');
+}
+
+async function carregarExcecoesResumo() {
+  const { data, error } = await db.from('excecoes')
+    .select('email_remetente,tipo,recebido_em')
+    .eq('status', 'pendente')
+    .order('recebido_em', { ascending: false }).limit(3);
+
+  const el = $('#excecoes-resumo');
+  if (error) { erro(el, error.message); return; }
+  if (!data.length) {
+    vazio(el, 'ti-circle-check', 'Nenhuma exceção pendente');
+    return;
+  }
+
+  const ICONES = {
+    sem_anexo:'ti-mail-off', formato_invalido:'ti-file-x',
+    arquivo_corrompido:'ti-file-x', ocr_falhou:'ti-scan-off',
+    docs_privado:'ti-lock', nao_e_curriculo:'ti-file-off',
+    vaga_nao_identificada:'ti-help-circle', erro_processamento:'ti-alert-triangle'
+  };
+  const LABELS = {
+    sem_anexo:'Sem currículo', formato_invalido:'Formato inválido',
+    arquivo_corrompido:'Sem leitura', ocr_falhou:'OCR falhou',
+    docs_privado:'Docs privado', nao_e_curriculo:'Não é currículo',
+    vaga_nao_identificada:'Vaga indefinida', erro_processamento:'Erro'
+  };
+
+  el.innerHTML = data.map(e => `
+    <div class="exc-row">
+      <i class="ti ${ICONES[e.tipo]||'ti-alert-triangle'}" style="color:var(--yellow);font-size:17px"></i>
+      <div style="flex:1;min-width:0">
+        <div class="exc-email">${escapeHtml(e.email_remetente)}</div>
+        <div class="exc-meta">${tempoRelativo(e.recebido_em)} · ${LABELS[e.tipo]||e.tipo}</div>
+      </div>
+      <span class="pill pill-yellow">${LABELS[e.tipo]||e.tipo}</span>
+    </div>`).join('');
+}
+
+function setPeriodo(p) {
+  app.periodo = p;
+  $('#btn7').classList.toggle('active', p === 7);
+  $('#btn30').classList.toggle('active', p === 30);
+  carregarDashboard();
+}
+

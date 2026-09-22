@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Página não encontrada — Recrutei</title>
+<meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f7fa;--surface:#fff;--navy:#1E3A5F;--blue:#3B82F6;--blue-mid:#2563EB;
+  --gray-border:#E5E7EB;--gray-bg:#F3F4F6;--gray-text:#6B7280;--text:#111827;
+  --yellow:#D97706;--yellow-light:#FEF3C7;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f141a;--surface:#161c25;--navy:#e1eaf3;--blue:#60a5fa;--blue-mid:#93c5fd;
+    --gray-border:#2a3441;--gray-bg:#1e2631;--gray-text:#93a1b1;--text:#e4eaf1;
+    --yellow:#fbbf24;--yellow-light:rgba(251,191,36,.14);
+  }
+}
+body{font-family:'Poppins',system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;min-height:100svh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{max-width:380px;text-align:center;display:flex;flex-direction:column;align-items:center}
+.codigo{font-size:13px;font-weight:600;letter-spacing:.08em;color:var(--blue-mid);margin-bottom:6px}
+h1{font-size:19px;font-weight:600;color:var(--navy);margin:8px 0 8px}
+p{font-size:13.5px;color:var(--gray-text);line-height:1.6;margin-bottom:22px}
+a.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 20px;background:var(--navy);
+  color:#fff;text-decoration:none;border-radius:9px;font-size:13.5px;font-weight:500;
+  transition:opacity .15s}
+a.btn:hover{opacity:.88}
+</style>
+</head>
+<body>
+  <div class="card">
+    <svg viewBox="0 0 120 120" width="108" height="108" aria-hidden="true">
+      <line x1="60" y1="9" x2="60" y2="21" stroke="var(--gray-border)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="60" cy="7" r="4" fill="var(--blue)"/>
+      <rect x="26" y="21" width="68" height="56" rx="18" fill="var(--gray-bg)" stroke="var(--gray-border)" stroke-width="3"/>
+      <path d="M42 49 q8 8 16 0" fill="none" stroke="var(--gray-text)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M62 49 q8 8 16 0" fill="none" stroke="var(--gray-text)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M52 63 q8 6 16 0" fill="none" stroke="var(--gray-text)" stroke-width="3" stroke-linecap="round"/>
+      <rect x="36" y="79" width="48" height="25" rx="10" fill="var(--gray-bg)" stroke="var(--gray-border)" stroke-width="3"/>
+      <g transform="translate(83,85) rotate(18)">
+        <path d="M0 8 h15 l-2 9 a5 5 0 0 1-5 4h-1a5 5 0 0 1-5-4z" fill="var(--yellow-light)" stroke="var(--yellow)" stroke-width="2"/>
+        <path d="M15 11 q6-2 5 3 q-1 4-5.5 3" fill="none" stroke="var(--yellow)" stroke-width="2"/>
+      </g>
+      <text x="88" y="29" font-size="15" font-weight="700" fill="var(--blue-mid)" font-family="Poppins,sans-serif">z</text>
+      <text x="96" y="20" font-size="11" font-weight="700" fill="var(--blue-mid)" font-family="Poppins,sans-serif">z</text>
+      <text x="102" y="13" font-size="8"  font-weight="700" fill="var(--blue-mid)" font-family="Poppins,sans-serif">z</text>
+    </svg>
+    <div class="codigo">ERRO 404</div>
+    <h1>Essa página cochilou e sumiu</h1>
+    <p>O endereço não existe ou foi movido. Nossa IA não encontrou nada por aqui — mas o resto do painel está bem acordado.</p>
+    <a class="btn" href="/"><span>Voltar ao painel</span></a>
+  </div>
+</body>
+</html>
