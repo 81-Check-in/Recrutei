@@ -353,7 +353,8 @@ tbody tr:hover td{background:var(--hover-bg)}
 .cal-day:hover{background:var(--blue-light)}
 .cal-day.hoje{background:var(--blue);color:#fff;font-weight:600}
 .cal-day.com-evento{background:var(--blue-light);color:var(--blue-mid);font-weight:600}
-.cal-day.com-evento.hoje{background:var(--blue);color:#fff}
+.cal-day.selecionado{background:var(--blue-light);color:var(--blue-mid);font-weight:600}
+.cal-day.com-evento.hoje,.cal-day.selecionado.hoje{background:var(--blue);color:#fff}
 .cal-day.vazio{cursor:default}
 .cal-day.vazio:hover{background:transparent}
 .ent-item{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid var(--gray-border)}
@@ -777,7 +778,7 @@ body{background:var(--bg);color:var(--fg)}
 :root[data-theme="dark"] .btn-sm.azul:hover{background:#1d4ed8}
 :root[data-theme="dark"] :is(.btn-sm.verde,.btn-drawer.verde,.btn-wapp){background:#15803d;border-color:#15803d}
 :root[data-theme="dark"] :is(.btn-sm.verde,.btn-drawer.verde,.btn-wapp):hover{background:#166534}
-:root[data-theme="dark"] :is(.cal-day.hoje,.cal-day.com-evento.hoje){background:#2563eb}
+:root[data-theme="dark"] :is(.cal-day.hoje,.cal-day.com-evento.hoje,.cal-day.selecionado.hoje){background:#2563eb}
 
 :root[data-theme="dark"] .btn-tema .ico-lua{display:none}
 :root[data-theme="dark"] .btn-tema .ico-sol{display:block}
@@ -876,10 +877,6 @@ body{background:var(--bg);color:var(--fg)}
       </div>
       <div class="link-row"><button type="button" class="link" onclick="abrirModal('modal-forgot')">Esqueci minha senha</button></div>
       <button type="submit" class="btn-login" id="btn-login"><i class="ti ti-login"></i>Entrar</button>
-      <div class="login-rodape">
-        <div class="login-rodape-av">RH</div>
-        <div class="login-rodape-txt"><strong>Acesso restrito</strong><br>Somente usuários autorizados</div>
-      </div>
     </form>
   </div>
 </div>
@@ -2362,6 +2359,9 @@ async function carregarCalendario() {
   const ehMesAtual = hoje.getMonth() === mesAtual.getMonth()
                   && hoje.getFullYear() === mesAtual.getFullYear();
 
+  const ehMesSelecionado = diaSelecionado.getMonth() === mesAtual.getMonth()
+                        && diaSelecionado.getFullYear() === mesAtual.getFullYear();
+
   let html = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
     .map(d => `<div class="cal-dow">${d}</div>`).join('');
   for (let i = 0; i < primeiroDia; i++) html += '<div class="cal-day vazio"></div>';
@@ -2369,9 +2369,10 @@ async function carregarCalendario() {
     const cls = [
       'cal-day',
       (ehMesAtual && d === hoje.getDate()) ? 'hoje' : '',
-      comEvento.has(d) ? 'com-evento' : ''
+      comEvento.has(d) ? 'com-evento' : '',
+      (ehMesSelecionado && d === diaSelecionado.getDate()) ? 'selecionado' : ''
     ].filter(Boolean).join(' ');
-    html += `<div class="${cls}" onclick="selecionarDia(${d})">${d}</div>`;
+    html += `<div class="${cls}" onclick="selecionarDia(${d}, this)">${d}</div>`;
   }
   $('#cal-grid').innerHTML = html;
 }
@@ -2383,8 +2384,10 @@ function mudarMes(delta) {
 
 let diaSelecionado = new Date();
 
-function selecionarDia(d) {
+function selecionarDia(d, el) {
   diaSelecionado = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), d);
+  $$('#cal-grid .cal-day.selecionado').forEach(c => c.classList.remove('selecionado'));
+  el?.classList.add('selecionado');
   carregarEntrevistasDia();
 }
 
