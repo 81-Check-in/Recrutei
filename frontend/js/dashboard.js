@@ -10,7 +10,6 @@ async function carregarDashboard() {
   $('#m-curriculos').textContent  = (p === 7 ? data.curriculos_7d   : data.curriculos_mes).toLocaleString('pt-BR');
   $('#m-selecionados').textContent = (p === 7 ? data.selecionados_7d : data.selecionados_mes).toLocaleString('pt-BR');
   $('#m-entrevistas').textContent  = (p === 7 ? data.entrevistas_7d  : data.entrevistas_mes).toLocaleString('pt-BR');
-  $('#m-vagas').textContent = data.vagas_abertas;
   $('#m-excecoes').textContent = data.excecoes_pendentes;
   $('#m-triagem').textContent  = data.aguardando_triagem;
   $('#periodo-label').textContent = p === 7 ? 'Últimos 7 dias' : 'Mês atual';
@@ -37,7 +36,7 @@ async function carregarFunil() {
   const conta = s => data.filter(d => s.includes(d.status)).length;
   const etapas = [
     { l: 'Recebidos',     v: total, c: '#3B82F6' },
-    { l: 'Avaliados',     v: conta(['avaliado','selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado','descartado']), c: '#2563EB' },
+    { l: 'Avaliados por IA', v: conta(['avaliado','selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado','descartado']), c: '#2563EB' },
     { l: 'Selecionados',  v: conta(['selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado']), c: 'var(--funil-3)' },
     { l: 'Entrevistados', v: conta(['entrevista_realizada','aprovado','reprovado','contratado']), c: '#16A34A' },
     { l: 'Contratados',   v: conta(['contratado']), c: '#D97706' }
@@ -56,31 +55,44 @@ async function carregarFunil() {
 }
 
 async function carregarVagasResumo() {
+  // Sem .limit(4) aqui: precisamos de todas as vagas abertas para contar por setor
+  // (o card "Setores com vagas abertas" e a legenda de cada mini-card usam essa conta).
   const { data, error } = await db.from('vw_vagas_resumo')
-    .select('*').order('total_curriculos', { ascending: false }).limit(4);
+    .select('*').order('total_curriculos', { ascending: false });
 
   const el = $('#vagas-resumo');
-  if (error) { erro(el, error.message); return; }
+  if (error) { erro(el, error.message); $('#m-vagas').textContent = '—'; return; }
+
+  const porSetor = new Map();
+  data.forEach(v => porSetor.set(v.setor_nome, (porSetor.get(v.setor_nome) || 0) + 1));
+  $('#m-vagas').textContent = porSetor.size;
+
   if (!data.length) {
     vazio(el, 'ti-briefcase', 'Nenhuma vaga aberta',
       'Cadastre uma vaga para começar a receber candidaturas');
     return;
   }
 
-  el.innerHTML = data.map(v => `
+  el.innerHTML = data.slice(0, 4).map(v => {
+    const noSetor = porSetor.get(v.setor_nome);
+    const meta = noSetor > 1
+      ? `${escapeHtml(v.setor_nome)} · ${noSetor} vagas abertas`
+      : escapeHtml(v.setor_nome);
+    return `
     <div class="vaga-mini" onclick="irPara('vagas')">
       <div class="vaga-mini-icon" style="background:${v.setor_cor}1a;color:${v.setor_cor}">
         <i class="ti ${v.setor_icone}"></i>
       </div>
       <div class="vaga-mini-info">
         <div class="vaga-mini-titulo">${escapeHtml(v.titulo)}</div>
-        <div class="vaga-mini-meta">${escapeHtml(v.empresas || v.setor_nome)}</div>
+        <div class="vaga-mini-meta">${meta}</div>
       </div>
       <div style="text-align:right">
         <div class="vaga-mini-num">${v.total_curriculos}</div>
         <div class="vaga-mini-lbl">currículos</div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function carregarExcecoesResumo() {

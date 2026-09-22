@@ -313,13 +313,3 @@ function remarcarEntrevista() {
   abrirAgendamento(info.candidaturaId, info.nome, info.telefone, info.entrevistaId);
 }
 
-async function marcarContratado() {
-  const info = app.entrevistaAberta;
-  const { error } = await db.from('candidaturas')
-    .update({ status: 'contratado' }).eq('id', info.candidaturaId);
-  if (error) { toast(error.message, 'erro'); return; }
-  fecharModal('modal-resultado');
-  toast(`${info.nome} marcado como contratado`);
-  carregarEntrevistas();
-}
-

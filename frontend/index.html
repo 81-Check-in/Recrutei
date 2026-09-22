@@ -167,7 +167,7 @@
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--purple-light);color:var(--purple)"><i class="ti ti-briefcase"></i></div></div>
             <div class="card-val" id="m-vagas">—</div>
-            <div class="card-lbl">Vagas abertas</div>
+            <div class="card-lbl">Setores com vagas abertas</div>
           </div>
         </div>
 
@@ -303,10 +303,6 @@
             <label class="av-check"><input type="checkbox" id="av-sem-info" checked>
               Incluir quem não informou idade/escolaridade/experiência</label>
           </div>
-          <p class="av-aviso"><i class="ti ti-alert-triangle"></i>A nota da IA nunca considera idade,
-            gênero, origem ou outras características protegidas — o prompt proíbe isso explicitamente.
-            Filtrar candidatos por idade aqui é uma decisão do RH, fora da IA, e pode configurar
-            discriminação no processo seletivo (Lei 9.029/95). Use com critério.</p>
           <div class="av-acoes">
             <button type="button" class="btn-cancel" onclick="limparFiltrosAvancados()">Limpar</button>
             <button type="button" class="btn-primary" onclick="aplicarFiltrosAvancados()">Aplicar filtros</button>
@@ -498,9 +494,6 @@
   <button class="res-btn res-aprovado" onclick="registrarResultado('aprovado')">
     <i class="ti ti-check" style="font-size:18px"></i>
     <div><strong>Aprovado</strong><span>Candidato segue no processo</span></div></button>
-  <button class="res-btn res-contratado" onclick="marcarContratado()">
-    <i class="ti ti-user-star" style="font-size:18px"></i>
-    <div><strong>Contratado</strong><span>Efetivado — retenção permanente</span></div></button>
   <button class="res-btn res-reprovado" onclick="registrarResultado('reprovado')">
     <i class="ti ti-x" style="font-size:18px"></i>
     <div><strong>Reprovado</strong><span>Não avança no processo</span></div></button>

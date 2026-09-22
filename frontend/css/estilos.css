@@ -366,13 +366,17 @@ tbody tr:hover td{background:var(--hover-bg)}
 .ent-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .cal-dow{font-size:10.5px;font-weight:600;color:var(--gray-text);text-align:center;padding:4px 0}
-.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;
+.cal-day{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;
   font-size:12px;cursor:pointer;transition:background .15s;color:var(--text-2)}
 .cal-day:hover{background:var(--blue-light)}
+/* "Tem entrevista" é só informativo (um ponto); "selecionado" é o único estado com fundo
+   preenchido, pra não parecer que vários dias estão escolhidos ao mesmo tempo. */
+.cal-day.com-evento::after{content:'';position:absolute;bottom:4px;width:5px;height:5px;
+  border-radius:50%;background:var(--blue-mid)}
 .cal-day.hoje{background:var(--blue);color:#fff;font-weight:600}
-.cal-day.com-evento{background:var(--blue-light);color:var(--blue-mid);font-weight:600}
 .cal-day.selecionado{background:var(--blue-light);color:var(--blue-mid);font-weight:600}
-.cal-day.com-evento.hoje,.cal-day.selecionado.hoje{background:var(--blue);color:#fff}
+.cal-day.selecionado.hoje{background:var(--blue);color:#fff}
+.cal-day.hoje.com-evento::after,.cal-day.selecionado.com-evento::after{background:#fff}
 .cal-day.vazio{cursor:default}
 .cal-day.vazio:hover{background:transparent}
 .ent-item{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid var(--gray-border)}
@@ -440,7 +444,6 @@ tbody tr:hover td{background:var(--hover-bg)}
 .res-btn strong{display:block;font-size:13.5px;font-weight:600;margin-bottom:2px}
 .res-btn span{font-size:12px;opacity:.85}
 .res-aprovado{background:var(--green-light);border:1.5px solid #86efac;color:var(--green)}
-.res-contratado{background:#DCFCE7;border:1.5px solid #4ade80;color:#15803d}
 .res-reprovado{background:var(--red-light);border:1.5px solid #fca5a5;color:var(--red)}
 .res-faltou{background:var(--yellow-light);border:1.5px solid #fcd34d;color:var(--yellow)}
 .res-remarcar{background:var(--blue-light);border:1.5px solid #93c5fd;color:var(--blue-mid)}
@@ -796,7 +799,7 @@ body{background:var(--bg);color:var(--fg)}
 :root[data-theme="dark"] .btn-sm.azul:hover{background:#1d4ed8}
 :root[data-theme="dark"] :is(.btn-sm.verde,.btn-drawer.verde,.btn-wapp){background:#15803d;border-color:#15803d}
 :root[data-theme="dark"] :is(.btn-sm.verde,.btn-drawer.verde,.btn-wapp):hover{background:#166534}
-:root[data-theme="dark"] :is(.cal-day.hoje,.cal-day.com-evento.hoje,.cal-day.selecionado.hoje){background:#2563eb}
+:root[data-theme="dark"] :is(.cal-day.hoje,.cal-day.selecionado.hoje){background:#2563eb}
 
 :root[data-theme="dark"] .btn-tema .ico-lua{display:none}
 :root[data-theme="dark"] .btn-tema .ico-sol{display:block}
@@ -851,7 +854,6 @@ body{background:var(--bg);color:var(--fg)}
 :root[data-theme="dark"] :is(.btn-sm,.btn-drawer).vermelho{border-color:rgba(248,113,113,.4)}
 :root[data-theme="dark"] .res-btn:hover{filter:brightness(1.2)}
 :root[data-theme="dark"] .res-aprovado{border-color:rgba(74,222,128,.38)}
-:root[data-theme="dark"] .res-contratado{background:rgba(74,222,128,.24);border-color:rgba(74,222,128,.62);color:#86efac}
 :root[data-theme="dark"] .res-reprovado{border-color:rgba(248,113,113,.4)}
 :root[data-theme="dark"] .res-faltou{border-color:rgba(251,191,36,.4)}
 :root[data-theme="dark"] .res-remarcar{border-color:rgba(96,165,250,.4)}
