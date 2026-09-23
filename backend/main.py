@@ -9,7 +9,9 @@ Uso:
   python main.py --limite 5      processa no máximo 5 e-mails
   python main.py --manutencao    só inativação e expurgo
   python main.py --reavaliar     só as reavaliações pedidas no painel (troca de vaga)
+  python main.py --reprocessar-excecoes   só as exceções marcadas para tentar de novo no painel
   python main.py --enriquecer    preenche idade, escolaridade, experiência e CNH dos já recebidos
+  python main.py --sem-segunda-avaliacao   desativa a segunda avaliação (faixa ambígua) nesta execução
 """
 import sys
 import argparse
@@ -78,8 +80,15 @@ def main() -> int:
                    help="só inativação e expurgo")
     p.add_argument("--reavaliar", action="store_true",
                    help="só as reavaliações pedidas no painel (troca de vaga)")
+    p.add_argument("--reprocessar-excecoes", action="store_true",
+                   help="só as exceções marcadas para tentar de novo no painel")
+    p.add_argument("--uploads-manuais", action="store_true",
+                   help="só os currículos enviados manualmente no painel (botão \"Enviar currículo\")")
     p.add_argument("--enriquecer", action="store_true",
                    help="preenche idade, escolaridade, experiência e CNH dos currículos já recebidos")
+    p.add_argument("--sem-segunda-avaliacao", action="store_true",
+                   help="desativa a segunda avaliação da faixa ambígua só nesta execução "
+                        "(economiza tokens; não altera a configuração salva no banco)")
     args = p.parse_args()
 
     if args.simular:
@@ -88,6 +97,9 @@ def main() -> int:
     if args.limite:
         import os
         os.environ["LIMITE_EMAILS"] = str(args.limite)
+    if args.sem_segunda_avaliacao:
+        import os
+        os.environ["DESATIVAR_SEGUNDA_AVALIACAO"] = "true"
 
     if args.testar:
         return 0 if testar_conexoes() else 1
@@ -103,6 +115,14 @@ def main() -> int:
     import pipeline
     if args.reavaliar:
         pipeline.reavaliar()
+        return 0
+
+    if args.reprocessar_excecoes:
+        pipeline.reprocessar_excecoes()
+        return 0
+
+    if args.uploads_manuais:
+        pipeline.processar_uploads_manuais()
         return 0
 
     if args.enriquecer:

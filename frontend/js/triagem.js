@@ -212,7 +212,8 @@ async function abrirAnalise(id) {
     <div class="dado"><div class="dado-lbl">Telefone</div><div class="dado-val">${escapeHtml(c.telefone||'—')}</div></div>
     <div class="dado"><div class="dado-lbl">E-mail</div><div class="dado-val">${escapeHtml(c.email||'—')}</div></div>
     <div class="dado"><div class="dado-lbl">Cidade</div><div class="dado-val">${escapeHtml(c.cidade||'—')}</div></div>
-    <div class="dado"><div class="dado-lbl">Setor</div><div class="dado-val">${escapeHtml(c.setor_nome||'—')}</div></div>`;
+    <div class="dado"><div class="dado-lbl">Setor</div><div class="dado-val">${escapeHtml(c.setor_nome||'—')}</div></div>
+    <div class="dado"><div class="dado-lbl">Sexo</div><div class="dado-val">${c.sexo === 'masculino' ? 'Masculino' : c.sexo === 'feminino' ? 'Feminino' : '—'}</div></div>`;
 
   $('#d-fortes').innerHTML = (av.pontos_fortes||[]).length
     ? av.pontos_fortes.map(f => `<span class="tag verde">${escapeHtml(f)}</span>`).join('')

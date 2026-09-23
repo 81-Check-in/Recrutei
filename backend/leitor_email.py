@@ -174,6 +174,34 @@ def _uidvalidity(conn: imaplib.IMAP4_SSL) -> int:
     return int(dados[0]) if dados and dados[0] else 0
 
 
+def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
+    """Busca e decodifica uma mensagem pelo UID. None se não achar ou não tiver remetente."""
+    # PEEK não marca como lida: se o processo cair, o e-mail é relido
+    status, dados = conn.uid("FETCH", uid, "(BODY.PEEK[])")
+    if status != "OK" or not dados or not isinstance(dados[0], tuple):
+        return None
+    msg = email.message_from_bytes(dados[0][1])
+
+    _, remetente = parseaddr(msg.get("From", ""))
+    if not remetente:
+        return None
+
+    try:
+        recebido = parsedate_to_datetime(msg.get("Date")).isoformat()
+    except Exception:
+        recebido = None
+
+    return {
+        "uid": uid,
+        "message_id": (msg.get("Message-ID") or "").strip("<> "),
+        "remetente": remetente.lower(),
+        "assunto": _decodificar(msg.get("Subject")),
+        "corpo": _extrair_corpo(msg),
+        "recebido_em": recebido,
+        "anexos": _extrair_anexos(msg),
+    }
+
+
 def buscar_novos(limite: int = 0, apos_uid: int = 0,
                  uidvalidity_salvo: int = 0) -> Tuple[List[Dict], int]:
     """
@@ -207,34 +235,33 @@ def buscar_novos(limite: int = 0, apos_uid: int = 0,
 
         for uid in ids:
             try:
-                # PEEK não marca como lida: se o processo cair, o e-mail é relido
-                status, dados = conn.uid("FETCH", uid, "(BODY.PEEK[])")
-                if status != "OK" or not dados or not isinstance(dados[0], tuple):
-                    continue
-                msg = email.message_from_bytes(dados[0][1])
-
-                _, remetente = parseaddr(msg.get("From", ""))
-                if not remetente:
-                    continue
-
-                try:
-                    recebido = parsedate_to_datetime(msg.get("Date")).isoformat()
-                except Exception:
-                    recebido = None
-
-                mensagens.append({
-                    "uid": uid,
-                    "message_id": (msg.get("Message-ID") or "").strip("<> "),
-                    "remetente": remetente.lower(),
-                    "assunto": _decodificar(msg.get("Subject")),
-                    "corpo": _extrair_corpo(msg),
-                    "recebido_em": recebido,
-                    "anexos": _extrair_anexos(msg),
-                })
+                msg = _mensagem_de_uid(conn, uid)
+                if msg:
+                    mensagens.append(msg)
             except Exception as e:
                 log.error(f"  Erro ao ler mensagem {uid}: {e}")
 
     return mensagens, validade
+
+
+def buscar_por_message_id(message_id: str) -> Optional[Dict]:
+    """
+    Busca de novo uma mensagem específica pelo cabeçalho Message-ID — usada para
+    reprocessar uma exceção (o e-mail original já pode estar lido, então a busca
+    não se limita a UNSEEN). None se a mensagem não existir mais na caixa (ex.:
+    apagada por outro cliente de e-mail).
+    """
+    if not message_id:
+        return None
+    with conexao_imap() as conn:
+        conn.select(IMAP_PASTA_ENTRADA, readonly=True)
+        # HEADER faz busca por substring: o valor gravado no banco já vem sem "<>",
+        # e o cabeçalho real inclui os "<>" — a substring ainda casa.
+        status, dados = conn.uid("SEARCH", "HEADER", "Message-ID", message_id)
+        if status != "OK" or not dados or not dados[0]:
+            return None
+        uid = dados[0].split()[0]
+        return _mensagem_de_uid(conn, uid)
 
 
 def marcar_como_lidas(uids: List) -> None:
