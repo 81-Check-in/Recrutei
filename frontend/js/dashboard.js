@@ -7,25 +7,34 @@ async function carregarDashboard() {
   if (error) { toast('Erro ao carregar métricas', 'erro'); return; }
 
   const p = app.periodo;
-  $('#m-curriculos').textContent  = (p === 7 ? data.curriculos_7d   : data.curriculos_mes).toLocaleString('pt-BR');
   $('#m-selecionados').textContent = (p === 7 ? data.selecionados_7d : data.selecionados_mes).toLocaleString('pt-BR');
   $('#m-entrevistas').textContent  = (p === 7 ? data.entrevistas_7d  : data.entrevistas_mes).toLocaleString('pt-BR');
   $('#m-excecoes').textContent = data.excecoes_pendentes;
   $('#m-triagem').textContent  = data.aguardando_triagem;
   $('#periodo-label').textContent = p === 7 ? 'Últimos 7 dias' : 'Mês atual';
 
-  await Promise.all([carregarFunil(), carregarVagasResumo(), carregarExcecoesResumo()]);
+  await Promise.all([carregarTotalCurriculos(), carregarFunil(), carregarVagasResumo(), carregarExcecoesResumo()]);
 }
 
-async function carregarFunil() {
-  const dias  = app.periodo === 7 ? 7 : 30;
-  const desde = new Date(Date.now() - dias * 86400000).toISOString();
+// "Currículos recebidos": total histórico de tudo que já chegou pelo pipeline de
+// e-mail (Locaweb), não o recorte do período selecionado — por pedido explícito, este
+// card não acompanha o seletor "7 dias / Mês atual" (quem quiser o recorte do período
+// vê a primeira barra do funil, "Recebidos", que continua period-scoped).
+async function carregarTotalCurriculos() {
+  const { count, error } = await db.from('candidaturas')
+    .select('*', { count: 'exact', head: true }).eq('status_registro', 'ativo');
+  $('#m-curriculos').textContent = error ? '—' : count.toLocaleString('pt-BR');
+}
 
+// Igual ao card "Currículos recebidos (total)": todo o histórico, não o recorte do
+// período — por pedido explícito, o funil também não deve variar com o seletor
+// "7 dias / Mês atual" (ficava mostrando 16 currículos enquanto o backlog real, mais
+// antigo, tinha 93 — os 77 restantes nunca apareciam aqui).
+async function carregarFunil() {
   const { data, error } = await db
     .from('candidaturas')
     .select('status')
-    .eq('status_registro', 'ativo')
-    .gte('recebido_em', desde);
+    .eq('status_registro', 'ativo');
 
   const el = $('#funil');
   if (error) { erro(el, error.message); return; }

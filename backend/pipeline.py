@@ -1,6 +1,7 @@
 """Orquestração: e-mail → extração → classificação → avaliação → banco."""
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
+import os
 import uuid
 
 import database as bd
@@ -38,15 +39,38 @@ class Estatisticas:
 
 
 def _registrar_excecao(msg: Dict, tipo: str, detalhe: str,
-                       stats: Estatisticas, nome_arquivo: str = None) -> None:
+                       stats: Estatisticas, nome_arquivo: str = None,
+                       excecao_id: str = None, texto: str = None) -> None:
+    """
+    excecao_id: veio de reprocessar_excecoes() (a mensagem já tinha uma exceção
+    registrada) — atualiza a linha existente em vez de criar outra. Sem isso,
+    cada tentativa de reprocessar geraria uma exceção nova, duplicando a fila.
+
+    texto: o que foi extraído do anexo/link antes da IA decidir a exceção (só
+    existe quando a extração deu certo — "não é currículo" e "vaga indefinida").
+    Guardado para o RH poder ler exatamente o que a IA viu, no botão "Ver e-mail".
+    O corpo do e-mail (msg["corpo"]) é sempre guardado, mesmo sem extração.
+    """
     # O detalhe pode conter nome de arquivo/candidato: fica só no banco, não no log
-    log.warning(f"  Exceção [{tipo}]")
+    log.warning(f"  Exceção [{tipo}]{' (reprocessamento)' if excecao_id else ''}")
+    if excecao_id:
+        bd.atualizar_excecao(excecao_id, {
+            "tipo": tipo,
+            "detalhe_erro": detalhe,
+            "nome_arquivo": nome_arquivo,
+            "email_corpo": msg.get("corpo"),
+            "texto_extraido": texto,
+            "reprocessar_solicitado_em": None,   # a tentativa terminou; não reentra sozinha
+        })
+        return
     remetente = bd.obter_ou_criar_remetente(msg["remetente"])
     bd.registrar_excecao({
         "remetente_id": remetente["id"] if remetente["id"] != "simulado" else None,
         "email_remetente": msg["remetente"],
         "email_message_id": msg.get("message_id"),
         "email_assunto": msg.get("assunto"),
+        "email_corpo": msg.get("corpo"),
+        "texto_extraido": texto,
         "tipo": tipo,
         "detalhe_erro": detalhe,
         "nome_arquivo": nome_arquivo,
@@ -85,10 +109,11 @@ def _obter_texto(msg: Dict) -> tuple:
     # 2. Link de Google Docs no corpo
     link = detectar_link_google_docs(msg.get("corpo", ""))
     if link:
-        texto = extrator.extrair_google_docs(link)
+        texto, ocr = extrator.extrair_google_docs(link)
         if texto and len(texto.strip()) >= 100:
-            return texto, False, None, "google_docs", None
-        return None, False, None, None, ("docs_privado", "Google Docs com acesso restrito")
+            return texto, ocr, None, "google_docs", None
+        return None, False, None, None, (
+            "docs_privado", "Link do Google Docs/Drive privado, quebrado ou sem texto legível")
 
     # 3. Anexo inutilizável: conteúdo diferente do tipo declarado, ou pequeno demais
     if msg["anexos"]:
@@ -114,8 +139,12 @@ def modelo_configurado(cfg: Dict, chave: str, padrao: str) -> str:
 def faixa_segunda_avaliacao(cfg: Dict) -> Optional[Tuple[int, int]]:
     """
     Faixa de notas que dispara a segunda avaliação; None = desativada.
-    Desativa quando faixa_ambigua_min ou faixa_ambigua_max está vazia.
+    Desativa quando faixa_ambigua_min ou faixa_ambigua_max está vazia, ou quando
+    DESATIVAR_SEGUNDA_AVALIACAO=true (override só para esta execução, sem mexer
+    na configuração salva no banco).
     """
+    if os.getenv("DESATIVAR_SEGUNDA_AVALIACAO", "").strip().lower() == "true":
+        return None
     brutos = [cfg.get("faixa_ambigua_min", 60), cfg.get("faixa_ambigua_max", 75)]
     if any(v is None or str(v).strip() == "" for v in brutos):
         return None
@@ -161,13 +190,20 @@ def _marcar_lido(vaga: Optional[Dict] = None) -> bool:
 
 
 def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
-                       stats: Estatisticas) -> bool:
-    """Processa um e-mail. Retorna True se ele deve ser marcado como lido."""
+                       stats: Estatisticas, excecao_id: str = None) -> bool:
+    """
+    Processa um e-mail. Retorna True se ele deve ser marcado como lido.
+
+    excecao_id: preenchido só por reprocessar_excecoes() — esta mensagem já tem
+    uma exceção registrada e o RH pediu para tentar de novo. Pula a checagem de
+    idempotência (que bloquearia por já existir essa mesma exceção) e, se der
+    certo esta vez, atualiza a exceção em vez de criar outra.
+    """
     uid = msg["uid"].decode() if isinstance(msg["uid"], bytes) else msg["uid"]
     log.info(f"► mensagem UID {uid}")
 
-    # Idempotência
-    if msg.get("message_id") and bd.email_ja_processado(msg["message_id"]):
+    # Idempotência (pulada no reprocessamento: a exceção existente É o motivo de tentar de novo)
+    if not excecao_id and msg.get("message_id") and bd.email_ja_processado(msg["message_id"]):
         log.info("  Já processado anteriormente — ignorando")
         return _marcar_lido()
 
@@ -181,7 +217,7 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
     texto, ocr, anexo, origem, erro = _obter_texto(msg)
     if erro:
         _registrar_excecao(msg, erro[0], erro[1], stats,
-                           anexo["nome"] if anexo else None)
+                           anexo["nome"] if anexo else None, excecao_id)
         return _marcar_lido()
 
     texto = limpar_texto(texto)
@@ -191,24 +227,28 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
     try:
         resultado, _ = ia.classificar(texto, vagas, modelo_cls)
     except Exception as e:
-        _registrar_excecao(msg, "erro_processamento", f"Falha na classificação: {e}", stats)
+        _registrar_excecao(msg, "erro_processamento", f"Falha na classificação: {e}", stats,
+                           excecao_id=excecao_id, texto=texto)
         return _marcar_lido()
 
     if not resultado:
         _registrar_excecao(msg, "erro_processamento",
-                           "Classificador não retornou resposta válida", stats)
+                           "Classificador não retornou resposta válida", stats,
+                           excecao_id=excecao_id, texto=texto)
         return _marcar_lido()
 
     if not resultado.get("e_curriculo"):
         _registrar_excecao(msg, "nao_e_curriculo",
-                           "Conteúdo não identificado como currículo", stats)
+                           "Conteúdo não identificado como currículo", stats,
+                           excecao_id=excecao_id, texto=texto)
         return _marcar_lido()
 
     vaga_id = resultado.get("vaga_id")
     vaga = next((v for v in vagas if v["id"] == vaga_id), None)
     if not vaga:
         _registrar_excecao(msg, "vaga_nao_identificada",
-                           "Nenhuma vaga aberta corresponde ao perfil", stats)
+                           "Nenhuma vaga aberta corresponde ao perfil", stats,
+                           excecao_id=excecao_id, texto=texto)
         return _marcar_lido()
 
     log.info(f"  Vaga: {vaga['titulo']} ({resultado.get('aderencia', 0)}% aderência)")
@@ -249,10 +289,21 @@ def processar_mensagem(msg: Dict, vagas: List[Dict], cfg: Dict,
     })
     if not candidatura:
         log.error("  Falha ao criar candidatura")
-        _registrar_excecao(msg, "erro_processamento", "Falha ao criar candidatura", stats)
+        _registrar_excecao(msg, "erro_processamento", "Falha ao criar candidatura", stats,
+                           excecao_id=excecao_id, texto=texto)
         return _marcar_lido(vaga)
 
     cand_id = candidatura["id"]
+
+    # A partir daqui existe candidatura: se isto era um reprocessamento, a exceção
+    # original está resolvida, mesmo que a avaliação (nota) ainda falhe abaixo —
+    # ela já tem sua própria tentativa de novo na próxima execução normal.
+    if excecao_id:
+        bd.atualizar_excecao(excecao_id, {
+            "status": "revisado",
+            "detalhe_erro": "Reprocessado com sucesso — candidatura criada.",
+            "reprocessar_solicitado_em": None,
+        })
 
     # ── Arquivo no Storage ──
     caminho = None
@@ -475,6 +526,239 @@ def reavaliar() -> Dict:
     return stats.como_dict()
 
 
+def reprocessar_excecoes() -> Dict:
+    """
+    Tenta de novo as exceções que o RH marcou na Fila de exceções (botão
+    "Reprocessar"), sem ler o restante da caixa de entrada
+    (python main.py --reprocessar-excecoes). Busca cada e-mail original de novo
+    pelo Message-ID e roda o mesmo caminho de sempre — então uma causa
+    passageira (link do Drive que estava privado, oscilação da IA) pode se
+    resolver nesta tentativa, mesmo sem nada ter mudado no e-mail em si.
+
+    Sem nada marcado não registra execução, para poder rodar com frequência.
+    """
+    ia.resetar_custo()
+    stats = Estatisticas()
+    pendentes = bd.listar_excecoes_para_reprocessar()
+    if not pendentes:
+        log.info("Nenhuma exceção marcada para reprocessar")
+        return stats.como_dict()
+
+    if MODO_SIMULACAO:
+        log.warning("MODO SIMULAÇÃO — nada será gravado")
+    log.info(f"{len(pendentes)} exceção(ões) marcada(s) para reprocessar")
+
+    exec_id = bd.iniciar_execucao()
+    erro_fatal = None
+    try:
+        cfg = bd.carregar_configuracoes()
+        vagas = bd.listar_vagas_abertas()
+        for exc in pendentes:
+            message_id = exc.get("email_message_id")
+            log.info(f"► reprocessando exceção {exc['id'][:8]} ({exc['email_remetente']})")
+            try:
+                if not message_id:
+                    log.warning("  Sem Message-ID salvo — não é possível buscar o e-mail original")
+                    bd.atualizar_excecao(exc["id"], {"reprocessar_solicitado_em": None})
+                    continue
+
+                # Este e-mail já virou candidatura por outro caminho (ex.: uma execução normal
+                # o pegou de novo antes de alguém revisar esta exceção) — a exceção ficou
+                # esquecida, mas não há nada a reprocessar: só encerrar, sem tentar duplicar
+                # (isso já quebrou o lote uma vez: "duplicate key ... idx_cand_message_id").
+                if bd.candidatura_existe_para_mensagem(message_id):
+                    bd.atualizar_excecao(exc["id"], {
+                        "status": "revisado",
+                        "detalhe_erro": "Este e-mail já tinha virado candidatura por outro caminho — exceção estava desatualizada.",
+                        "reprocessar_solicitado_em": None,
+                    })
+                    continue
+
+                msg = mail.buscar_por_message_id(message_id)
+                if not msg:
+                    bd.atualizar_excecao(exc["id"], {
+                        "tipo": "erro_processamento",
+                        "detalhe_erro": "E-mail original não encontrado na caixa (pode ter sido apagado)",
+                        "reprocessar_solicitado_em": None,
+                    })
+                    continue
+                processar_mensagem(msg, vagas, cfg, stats, excecao_id=exc["id"])
+            except Exception as e:
+                # Uma exceção só não pode travar as outras 25 — antes travava o lote inteiro.
+                log.error(f"  Falha ao reprocessar {exc['id'][:8]}: {e}", exc_info=True)
+                try:
+                    bd.atualizar_excecao(exc["id"], {"reprocessar_solicitado_em": None})
+                except Exception:
+                    pass
+    except Exception as e:
+        erro_fatal = str(e)
+        log.error(f"ERRO FATAL: {e}", exc_info=True)
+    finally:
+        bd.finalizar_execucao(exec_id, stats.como_dict(),
+                              sucesso=erro_fatal is None, erro=erro_fatal)
+
+    log.info(f"Currículos processados : {stats.curriculos_processados} de {len(pendentes)}")
+    log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
+             f"({ia.custo_total['chamadas']} chamadas)")
+    return stats.como_dict()
+
+
+def processar_upload_manual(item: Dict, vagas: List[Dict], cfg: Dict,
+                            stats: Estatisticas) -> None:
+    """
+    Processa um currículo enviado manualmente no painel (botão "Enviar currículo",
+    sem passar por e-mail). O RH já escolheu a vaga ao enviar, então a IA não
+    precisa achar qual vaga combina — só confirma que é currículo de verdade,
+    extrai nome/cidade e avalia contra essa única vaga (mesmo prompt de sempre,
+    com a lista de vagas restrita a uma).
+    """
+    upload_id = item["id"]
+    log.info(f"► upload manual {upload_id[:8]} ({item['nome_arquivo']})")
+
+    def _falhar(motivo: str) -> None:
+        log.warning(f"  {motivo}")
+        bd.atualizar_upload_manual(upload_id, {
+            "status": "erro", "detalhe_erro": motivo[:400], "processado_em": bd.agora(),
+        })
+
+    vaga = next((v for v in vagas if v["id"] == item["vaga_id"]), None)
+    if not vaga:
+        _falhar("A vaga escolhida não está mais aberta")
+        return
+
+    conteudo = bd.baixar_arquivo(item["storage_path"])
+    if not conteudo:
+        _falhar("Não foi possível ler o arquivo enviado")
+        return
+
+    texto, ocr = extrator.extrair(conteudo, item["tipo_mime"])
+    if not texto or len(texto.strip()) < 100:
+        _falhar(f"Arquivo '{item['nome_arquivo']}' sem texto legível")
+        return
+    texto = limpar_texto(texto)
+
+    modelo_cls = modelo_configurado(cfg, "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO)
+    try:
+        resultado, _ = ia.classificar(texto, [vaga], modelo_cls)
+    except Exception as e:
+        _falhar(f"Falha na classificação: {e}")
+        return
+
+    if not resultado or not resultado.get("e_curriculo"):
+        _falhar("Conteúdo não identificado como currículo")
+        return
+
+    nome = resultado.get("nome_candidato")
+    telefone = extrair_telefone(texto)
+    email_cand = extrair_email(texto)
+    hash_id = gerar_hash_identidade(nome, telefone)
+
+    carencia = int(cfg.get("reincidencia_dias_carencia", 90))
+    dup = bd.buscar_duplicata(hash_id, vaga["id"], carencia)
+    if dup:
+        log.info(f"  Reenvio dentro de {carencia} dias — registrado como reincidência")
+        stats.duplicados_detectados += 1
+
+    # Sem e-mail de origem: usa o e-mail achado no currículo, ou um identificador
+    # próprio (remetente_id é obrigatório em candidaturas, e o e-mail é único).
+    remetente = bd.obter_ou_criar_remetente(
+        email_cand or f"upload-manual-{upload_id}@sem-email.recrutei")
+
+    candidatura = bd.criar_candidatura({
+        "remetente_id": remetente["id"] if remetente["id"] != "simulado" else None,
+        "vaga_id": vaga["id"],
+        "dados_pessoais": {
+            "nome": nome,
+            "telefone": telefone,
+            "telefone_e164": telefone,
+            "email": email_cand,
+            "cidade": resultado.get("cidade"),
+            **_perfil_do_curriculo(texto, cfg),
+        },
+        "hash_identidade": hash_id,
+        "status": "em_analise",
+        "aderencia_vaga": resultado.get("aderencia"),
+        "recebido_em": bd.agora(),
+    })
+    if not candidatura:
+        _falhar("Falha ao criar candidatura")
+        return
+
+    cand_id = candidatura["id"]
+
+    bd.salvar_curriculo({
+        "candidatura_id": cand_id,
+        "storage_path": item["storage_path"],
+        "nome_arquivo": item["nome_arquivo"],
+        "tipo_mime": item["tipo_mime"],
+        "tamanho_bytes": item.get("tamanho_bytes"),
+        "origem": "upload_manual",
+        "texto_extraido": texto,
+        "ocr_aplicado": ocr,
+        "extracao_ok": True,
+    })
+    stats.curriculos_processados += 1
+
+    if _avaliar_e_salvar(cand_id, texto, vaga, nome, cfg, stats):
+        bd.atualizar_candidatura(cand_id, {"status": "avaliado"})
+    else:
+        bd.atualizar_candidatura(cand_id, {"status": "recebido"})
+
+    bd.atualizar_upload_manual(upload_id, {
+        "status": "processado", "candidatura_gerada_id": cand_id, "processado_em": bd.agora(),
+    })
+
+
+def processar_uploads_manuais_pendentes(vagas: List[Dict], cfg: Dict, stats: Estatisticas) -> None:
+    pendentes = bd.listar_uploads_manuais_pendentes()
+    if not pendentes:
+        return
+    log.info(f"{len(pendentes)} upload(s) manual(is) pendente(s)")
+    for item in pendentes:
+        try:
+            processar_upload_manual(item, vagas, cfg, stats)
+        except Exception as e:
+            log.error(f"  Erro inesperado: {e}", exc_info=True)
+            bd.atualizar_upload_manual(item["id"], {
+                "status": "erro", "detalhe_erro": str(e)[:400], "processado_em": bd.agora(),
+            })
+
+
+def processar_uploads_manuais() -> Dict:
+    """
+    Só os currículos enviados manualmente no painel, sem ler e-mail nenhum
+    (python main.py --uploads-manuais). Sem nada pendente não registra execução,
+    para poder rodar com frequência.
+    """
+    ia.resetar_custo()
+    stats = Estatisticas()
+    pendentes = bd.listar_uploads_manuais_pendentes()
+    if not pendentes:
+        log.info("Nenhum upload manual pendente")
+        return stats.como_dict()
+
+    if MODO_SIMULACAO:
+        log.warning("MODO SIMULAÇÃO — nada será gravado")
+
+    exec_id = bd.iniciar_execucao()
+    erro_fatal = None
+    try:
+        cfg = bd.carregar_configuracoes()
+        vagas = bd.listar_vagas_abertas()
+        processar_uploads_manuais_pendentes(vagas, cfg, stats)
+    except Exception as e:
+        erro_fatal = str(e)
+        log.error(f"ERRO FATAL: {e}", exc_info=True)
+    finally:
+        bd.finalizar_execucao(exec_id, stats.como_dict(),
+                              sucesso=erro_fatal is None, erro=erro_fatal)
+
+    log.info(f"Currículos processados : {stats.curriculos_processados} de {len(pendentes)}")
+    log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
+             f"({ia.custo_total['chamadas']} chamadas)")
+    return stats.como_dict()
+
+
 def executar() -> Dict:
     """Execução completa do pipeline diário."""
     log.info("=" * 60)
@@ -509,6 +793,13 @@ def executar() -> Dict:
                 reavaliar_pendentes(pendentes, vagas, cfg, stats)
         except Exception as e:
             log.error(f"Falha nas reavaliações: {e}", exc_info=True)
+
+        # Currículos enviados manualmente no painel, antes dos e-mails novos
+        try:
+            log.info("-" * 60)
+            processar_uploads_manuais_pendentes(vagas, cfg, stats)
+        except Exception as e:
+            log.error(f"Falha nos uploads manuais: {e}", exc_info=True)
 
         # E-mails de outros setores ficam não lidos; o marcador de progresso
         # (último UID analisado) evita relê-los a cada execução.

@@ -115,6 +115,15 @@ def remetente_bloqueado(email: str) -> bool:
 # ─────────────────────────────────────────────
 # IDEMPOTÊNCIA
 # ─────────────────────────────────────────────
+def candidatura_existe_para_mensagem(message_id: str) -> bool:
+    """Só candidaturas — diferente de email_ja_processado(), que também conta exceção
+    (por isso não serve aqui: a exceção que estamos reprocessando sempre existe)."""
+    if not message_id:
+        return False
+    return bool(conectar().table("candidaturas").select("id")
+                  .eq("email_message_id", message_id).limit(1).execute().data)
+
+
 def email_ja_processado(message_id: str) -> bool:
     """Evita reprocessar o mesmo e-mail em execuções futuras."""
     if not message_id:
@@ -222,6 +231,47 @@ def registrar_excecao(dados: Dict) -> None:
     conectar().table("excecoes").insert(dados).execute()
 
 
+def atualizar_excecao(excecao_id: str, dados: Dict) -> None:
+    if MODO_SIMULACAO:
+        log.info(f"  [simulação] atualizaria exceção {excecao_id[:8]}: {dados.get('tipo') or dados}")
+        return
+    conectar().table("excecoes").update(dados).eq("id", excecao_id).execute()
+
+
+def listar_excecoes_para_reprocessar() -> List[Dict]:
+    """Exceções que o RH marcou para tentar de novo no painel (fila de exceções)."""
+    return conectar().table("excecoes").select("id,email_remetente,email_message_id")\
+        .not_.is_("reprocessar_solicitado_em", "null")\
+        .order("reprocessar_solicitado_em").execute().data or []
+
+
+# ─────────────────────────────────────────────
+# UPLOADS MANUAIS (currículo enviado direto no painel, sem e-mail)
+# ─────────────────────────────────────────────
+def listar_uploads_manuais_pendentes() -> List[Dict]:
+    """Currículos que o RH enviou pelo painel (botão "Enviar currículo"), ainda não processados."""
+    return conectar().table("uploads_manuais").select("*")\
+        .eq("status", "pendente").order("enviado_em").execute().data or []
+
+
+def atualizar_upload_manual(upload_id: str, dados: Dict) -> None:
+    if MODO_SIMULACAO:
+        log.info(f"  [simulação] atualizaria upload manual {upload_id[:8]}: {dados.get('status') or dados}")
+        return
+    conectar().table("uploads_manuais").update(dados).eq("id", upload_id).execute()
+
+
+def obter_upload_manual(upload_id: str) -> Optional[Dict]:
+    r = conectar().table("uploads_manuais").select("*").eq("id", upload_id).limit(1).execute()
+    return r.data[0] if r.data else None
+
+
+def usuario_ativo(usuario_id: str) -> bool:
+    """Mesma regra da política de banco fn_usuario_ativo() — usada pelo servidor HTTP (api.py)."""
+    r = conectar().table("usuarios").select("ativo").eq("id", usuario_id).limit(1).execute()
+    return bool(r.data and r.data[0]["ativo"])
+
+
 # ─────────────────────────────────────────────
 # STORAGE
 # ─────────────────────────────────────────────
@@ -236,6 +286,16 @@ def enviar_arquivo(caminho: str, conteudo: bytes, tipo_mime: str) -> Optional[st
         return caminho
     except Exception as e:
         log.error(f"  Falha ao enviar arquivo: {e}")
+        return None
+
+
+def baixar_arquivo(caminho: str) -> Optional[bytes]:
+    if MODO_SIMULACAO:
+        return None
+    try:
+        return conectar().storage.from_(BUCKET_CURRICULOS).download(caminho)
+    except Exception as e:
+        log.error(f"  Falha ao baixar arquivo do Storage: {e}")
         return None
 
 

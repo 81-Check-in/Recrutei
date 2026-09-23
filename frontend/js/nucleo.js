@@ -5,6 +5,12 @@
 const SUPABASE_URL  = 'https://iragwjfaczpfbldbgsjv.supabase.co';
 const SUPABASE_KEY  = 'sb_publishable_IbWdbj93GKSLp_KXIkm1nw_s9L00E2f';
 
+// URL do serviço "web" do backend no Railway (backend/api.py — uvicorn api:app),
+// SEPARADO do worker que lê e-mail. Habilita a avaliação imediata do "Enviar
+// currículo" (vagas.js). Vazio = o botão continua funcionando, só que o currículo
+// fica na fila normal (avaliado na próxima execução da rotina) em vez de na hora.
+const API_URL = '';
+
 // Link de "Esqueci minha senha": o Supabase devolve o token no # da URL e o supabase-js
 // o apaga ao processar, então o que interessa é guardado antes de criar o cliente.
 const RECUPERANDO_SENHA = /[#&]type=recovery(&|$)/.test(location.hash);

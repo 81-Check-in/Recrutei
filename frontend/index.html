@@ -152,7 +152,7 @@
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--blue-light);color:var(--blue)"><i class="ti ti-file-text"></i></div></div>
             <div class="card-val" id="m-curriculos">—</div>
-            <div class="card-lbl">Currículos recebidos</div>
+            <div class="card-lbl">Currículos recebidos (total)</div>
           </div>
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--green-light);color:var(--green)"><i class="ti ti-user-check"></i></div></div>
@@ -221,7 +221,15 @@
               <i class="ti ti-alert-triangle" style="font-size:15px"></i>Fila de exceções
               <span class="cnt" id="count-exc">0</span></button>
           </div>
-          <button class="btn-primary" onclick="abrirModalVaga()"><i class="ti ti-plus"></i>Nova vaga</button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button class="btn-sm azul" id="btn-reprocessar-tudo" style="display:none" onclick="reprocessarTudo()"
+              title="Pede reprocessamento de todas as exceções pendentes">
+              <i class="ti ti-refresh"></i>Reprocessar tudo</button>
+            <button class="btn-sm" onclick="abrirModalUploadManual()"
+              title="Envia um currículo recebido fora do e-mail (WhatsApp, indicação, etc.) para a IA avaliar">
+              <i class="ti ti-upload"></i>Enviar currículo</button>
+            <button class="btn-primary" onclick="abrirModalVaga()"><i class="ti ti-plus"></i>Nova vaga</button>
+          </div>
         </div>
         <div class="sub-screen active" id="sub-vagas"><div class="vagas-grid" id="vagas-grid"></div></div>
         <div class="sub-screen" id="sub-excecoes">
@@ -505,6 +513,46 @@
     <div><strong>Remarcar</strong><span>Nova data e aviso pelo WhatsApp</span></div></button>
   <div class="f-campo" style="margin-top:14px"><label>Observações (opcional)</label>
     <textarea id="res-obs" placeholder="Anotações sobre a entrevista..." style="min-height:66px"></textarea></div>
+</div></div>
+
+<div class="modal-overlay" id="modal-ver-email"><div class="modal" style="width:560px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-mail" style="color:var(--blue)"></i>E-mail original</div>
+    <button class="modal-x" onclick="fecharModal('modal-ver-email')"><i class="ti ti-x"></i></button></div>
+  <div class="dados" style="margin-bottom:14px">
+    <div class="dado"><div class="dado-lbl">De</div><div class="dado-val" id="ve-remetente">—</div></div>
+    <div class="dado"><div class="dado-lbl">Recebido</div><div class="dado-val" id="ve-data">—</div></div>
+    <div class="dado" style="grid-column:1/-1"><div class="dado-lbl">Assunto</div><div class="dado-val" id="ve-assunto">—</div></div>
+  </div>
+  <div class="drawer-sec"><div class="drawer-sec-tit">Corpo do e-mail</div>
+    <div class="ve-corpo" id="ve-corpo"></div></div>
+  <div class="drawer-sec" id="ve-sec-texto" style="display:none">
+    <div class="drawer-sec-tit">Texto extraído do anexo/link (o que a IA analisou)</div>
+    <div class="ve-corpo" id="ve-texto"></div></div>
+  <p class="troca-ajuda" id="ve-vazio" style="display:none">
+    Sem conteúdo salvo para esta exceção — ela é de antes desta função existir.
+    Clique em "Reprocessar" na Fila de exceções para tentar de novo e guardar o conteúdo.</p>
+</div></div>
+
+<div class="modal-overlay" id="modal-upload-manual"><div class="modal" style="width:520px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-upload" style="color:var(--blue)"></i>Enviar currículo</div>
+    <button class="modal-x" onclick="fecharModal('modal-upload-manual')"><i class="ti ti-x"></i></button></div>
+  <p style="font-size:12.5px;color:var(--gray-text);margin-bottom:15px">
+    Para um currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão). A IA avalia
+    contra a vaga escolhida na próxima execução da rotina — o mesmo processo dos e-mails.</p>
+  <div class="f-campo"><label>Vaga</label>
+    <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
+  <div class="f-campo"><label>Arquivo <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC ou DOCX — até 10 MB)</span></label>
+    <input id="up-arquivo" type="file"
+      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></div>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-upload-manual')">Cancelar</button>
+    <button class="btn-primary" id="up-btn-enviar" onclick="enviarUploadManual()">
+      <i class="ti ti-send"></i>Enviar para avaliação</button></div>
+
+  <div class="f-sec" style="margin-top:20px">Últimos envios</div>
+  <div id="up-lista" style="margin-top:8px"></div>
 </div></div>
 
 <div class="modal-overlay" id="modal-forgot"><div class="modal" style="width:360px">

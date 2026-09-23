@@ -133,6 +133,10 @@ def limpar_texto(texto: str, limite: int = 20000) -> str:
     """Remove ruído de extração e limita tamanho para a API."""
     if not texto:
         return ""
+    # PDF/OCR malformado às vezes gera \x00 e outros caracteres de controle;
+    # o Postgres rejeita \u0000 em texto (erro 22P05) e derruba a gravação inteira.
+    texto = texto.replace("\x00", "").translate(
+        {c: None for c in range(32) if c not in (9, 10, 13)})
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n{3,}", "\n\n", texto)
     texto = texto.strip()

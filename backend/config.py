@@ -24,6 +24,12 @@ def _req(chave: str) -> str:
 # ── Supabase ──
 SUPABASE_URL = _req("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = _req("SUPABASE_SERVICE_KEY")
+# Chave pública do projeto — a mesma embutida em frontend/js/nucleo.js (SUPABASE_KEY).
+# Não é segredo: só identifica o projeto nas chamadas à API de Auth. Usada pelo
+# servidor HTTP (api.py) pra validar o token de sessão de quem chamou o endpoint de
+# avaliação imediata; o worker de e-mail (main.py/pipeline.py) não usa isto.
+SUPABASE_PUBLISHABLE_KEY = os.getenv(
+    "SUPABASE_PUBLISHABLE_KEY", "sb_publishable_IbWdbj93GKSLp_KXIkm1nw_s9L00E2f")
 
 # ── Claude ──
 ANTHROPIC_API_KEY = _req("ANTHROPIC_API_KEY")
@@ -60,6 +66,12 @@ LIMITE_EMAILS = int(os.getenv("LIMITE_EMAILS", "0"))
 # não lidos na caixa. Vazio = todo e-mail processado é marcado como lido.
 SETOR_MARCAR_LIDO = os.getenv("SETOR_MARCAR_LIDO", "Logística").strip()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# ── Servidor HTTP (api.py) ──
+# Origens que podem chamar o endpoint de avaliação imediata (CORS), separadas por
+# vírgula — ex.: "https://recrutei.vercel.app". Vazio = aceita qualquer origem
+# (ok pra testar; defina em produção). O worker de e-mail não usa isto.
+CORS_ORIGENS = [o.strip() for o in os.getenv("CORS_ORIGENS", "").split(",") if o.strip()]
 
 # ── Constantes ──
 BUCKET_CURRICULOS = "curriculos"

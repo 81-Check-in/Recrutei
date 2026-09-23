@@ -43,6 +43,7 @@ def _limite_de_tempo(segundos: int):
 def _de_pdf(conteudo: bytes) -> Tuple[Optional[str], bool]:
     """Retorna (texto, ocr_aplicado)."""
     texto = ""
+    pag1_tem_imagem = False
 
     # 1ª tentativa: extração direta
     try:
@@ -50,6 +51,8 @@ def _de_pdf(conteudo: bytes) -> Tuple[Optional[str], bool]:
         with pdfplumber.open(io.BytesIO(conteudo)) as pdf:
             paginas = [p.extract_text() or "" for p in pdf.pages[:15]]
             texto = "\n".join(paginas)
+            if pdf.pages:
+                pag1_tem_imagem = bool(pdf.pages[0].images)
     except Exception as e:
         log.debug(f"  pdfplumber falhou: {e}")
 
@@ -65,21 +68,29 @@ def _de_pdf(conteudo: bytes) -> Tuple[Optional[str], bool]:
     # 3ª tentativa: OCR (PDF escaneado)
     if len(texto.strip()) < 100:
         log.info("  PDF sem texto — aplicando OCR")
-        texto_ocr = _ocr_pdf(conteudo)
+        texto_ocr = _ocr_pdf(conteudo, ultima_pagina=5)
         if texto_ocr and len(texto_ocr.strip()) >= 100:
             return texto_ocr, True
         return (texto or None), False
 
+    # Achou texto, mas a 1ª página tem imagem: modelos de currículo (Canva e afins)
+    # costumam "achatar" o cabeçalho (nome, contato, foto) como gráfico — texto
+    # normal não pega isso. Soma o OCR só da 1ª página ao invés de descartar o resto.
+    if pag1_tem_imagem:
+        cabecalho = _ocr_pdf(conteudo, ultima_pagina=1)
+        if cabecalho and cabecalho.strip():
+            texto = cabecalho.strip() + "\n" + texto
+
     return texto, False
 
 
-def _ocr_pdf(conteudo: bytes) -> Optional[str]:
+def _ocr_pdf(conteudo: bytes, ultima_pagina: int = 5) -> Optional[str]:
     try:
         from pdf2image import convert_from_bytes
         import pytesseract
         # size limita o lado maior da página: páginas gigantes não estouram a memória
         imagens = convert_from_bytes(conteudo, size=LADO_MAX_PDF_PX,
-                                     first_page=1, last_page=5,
+                                     first_page=1, last_page=ultima_pagina,
                                      timeout=TEMPO_MAX_OCR)
         partes = [pytesseract.image_to_string(img, lang="por+eng",
                                               timeout=TEMPO_MAX_OCR)
@@ -137,11 +148,17 @@ def _de_docx(conteudo: bytes) -> Optional[str]:
         return None
 
 
-def _de_google_docs(url: str) -> Optional[str]:
-    """Baixa o documento se o compartilhamento for público."""
+def _de_google_docs(url: str) -> Tuple[Optional[str], bool]:
+    """
+    Baixa o documento se o compartilhamento for público. Retorna (texto, ocr_aplicado).
+    O link mais comum (app do Drive no celular) é de um PDF/DOCX enviado ao Drive, não
+    um Google Docs nativo: o download devolve os bytes do arquivo, não texto puro, e
+    precisa passar pelos mesmos extratores usados para anexo (senão vira texto ilegível
+    e a IA rejeita como "não é currículo").
+    """
     m = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
     if not m:
-        return None
+        return None, False
     doc_id = m.group(1)
 
     endpoints = [
@@ -151,14 +168,31 @@ def _de_google_docs(url: str) -> Optional[str]:
     for ep in endpoints:
         try:
             r = requests.get(ep, timeout=20, allow_redirects=True)
-            if r.status_code == 200 and len(r.text) > 100:
-                # Página de login = documento privado
-                if "accounts.google.com" in r.url or "<!DOCTYPE html" in r.text[:200]:
-                    continue
-                return r.text
+            if r.status_code != 200 or len(r.content) < 100:
+                continue
+            if "accounts.google.com" in r.url:
+                continue  # documento privado, pede login
+
+            tipo = r.headers.get("Content-Type", "")
+            if "application/pdf" in tipo or r.content[:5] == b"%PDF-":
+                texto, ocr = _de_pdf(r.content)
+                if texto and len(texto.strip()) >= 100:
+                    return texto, ocr
+                continue
+            if "wordprocessingml" in tipo or r.content[:2] == b"PK":
+                texto = _de_docx(r.content)
+                if texto and len(texto.strip()) >= 100:
+                    return texto, False
+                continue
+            if "text/html" in tipo:
+                continue  # página de aviso/confirmação do Drive, não é o arquivo
+
+            texto = r.content.decode("utf-8", errors="ignore")
+            if len(texto.strip()) >= 100:
+                return texto, False
         except Exception as e:
-            log.debug(f"  Google Docs ({ep}): {e}")
-    return None
+            log.debug(f"  Google Docs/Drive ({ep}): {e}")
+    return None, False
 
 
 def _extrair(conteudo: bytes, tipo_mime: str) -> Tuple[Optional[str], bool]:
@@ -188,6 +222,7 @@ def extrair(conteudo: bytes, tipo_mime: str) -> Tuple[Optional[str], bool]:
         return None, False
 
 
-def extrair_google_docs(url: str) -> Optional[str]:
-    texto = _de_google_docs(url)
-    return limpar_texto(texto) if texto else None
+def extrair_google_docs(url: str) -> Tuple[Optional[str], bool]:
+    """Retorna (texto, ocr_aplicado)."""
+    texto, ocr = _de_google_docs(url)
+    return (limpar_texto(texto) if texto else None), ocr
