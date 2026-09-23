@@ -99,6 +99,8 @@ continuam não lidos e podem ser tratados depois, recuando a data.
 ```bash
 python main.py --manutencao     # só inativação e expurgo (LGPD)
 python main.py --reavaliar      # só as reavaliações pedidas no painel (troca de vaga)
+python main.py --reprocessar-excecoes   # só as exceções marcadas para tentar de novo no painel
+python main.py --uploads-manuais        # só os currículos enviados manualmente no painel
 ```
 
 ---
@@ -143,6 +145,7 @@ entre aspas (ou com `#`) chegam erradas.
 | Arquivo | Responsabilidade |
 |---|---|
 | `main.py` | Entrada, argumentos de linha de comando |
+| `api.py` | Servidor HTTP — avaliação imediata do upload manual (serviço à parte, opcional) |
 | `pipeline.py` | Orquestra o fluxo completo |
 | `leitor_email.py` | IMAP: busca, lê e move mensagens |
 | `extrator.py` | PDF, DOCX, OCR e Google Docs → texto |
@@ -193,6 +196,56 @@ seguinte, crie no Railway um segundo serviço a partir do mesmo repositório (Ro
 Directory `backend`, mesmas variáveis), com *Custom Start Command* `python main.py
 --reavaliar` e Cron Schedule `*/15 * * * *`. Sem nada pendente ele só consulta o banco
 e encerra: não chama a IA nem registra execução.
+
+**Reprocessar uma exceção** — exige rodar `backend/sql/017_reprocessar_excecoes.sql`
+uma vez no banco. Na Fila de exceções, o RH clica em "Reprocessar" quando acha que
+o e-mail era um currículo de verdade (link do Drive que estava privado e já foi
+corrigido, ou a IA errou o veredito). O painel só grava o pedido; a rotina diária
+(ou `python main.py --reprocessar-excecoes`) busca o e-mail original de novo pelo
+`Message-ID` e roda o mesmo caminho de sempre — extração, classificação, avaliação.
+Precisa do e-mail ainda estar na caixa (não vale para mensagens apagadas por outro
+cliente) e do `Message-ID` ter sido salvo na exceção original (sempre é, exceto em
+exceções muito antigas de antes desta função existir). Dando certo, a exceção some
+da fila (fica "revisado", com uma nota); falhando de novo, o motivo do erro é
+atualizado na mesma linha, sem duplicar. Mesma recomendação do `--reavaliar`: crie
+um segundo serviço no Railway com esse comando e Cron Schedule mais frequente, se
+quiser o resultado em minutos em vez de esperar a execução diária.
+
+**Enviar currículo manualmente** — exige rodar `backend/sql/019_uploads_manuais.sql`
+uma vez no banco. No painel (Vagas → "Enviar currículo"), o RH escolhe uma vaga aberta
+e sobe um arquivo (PDF/DOC/DOCX) direto pro Storage — para currículo recebido fora do
+e-mail (WhatsApp, indicação, entrega em mão). O painel grava o pedido na fila (tabela
+`uploads_manuais`) e, se o serviço web estiver no ar (ver "Avaliação imediata" abaixo),
+chama a avaliação na hora e mostra o resultado assim que a IA termina. Sem o serviço
+web (ou se ele estiver fora do ar), o currículo fica na fila normal: a rotina diária
+(ou `python main.py --uploads-manuais`) baixa o arquivo, extrai o texto e avalia contra
+a vaga já escolhida — a IA só confirma que é currículo de verdade, sem precisar decidir
+qual vaga combina. Dando certo, vira candidatura normal (`origem = upload_manual` em
+`curriculos`); falhando (não é currículo, arquivo ilegível, vaga fechada nesse
+meio-tempo), o motivo fica em `detalhe_erro`, visível na lista "Últimos envios" do
+próprio modal.
+
+**Avaliação imediata do upload manual (`backend/api.py`)** — um servidor HTTP pequeno
+(FastAPI), com uma única rota (`POST /uploads-manuais/{id}/avaliar`), que roda o mesmo
+`pipeline.processar_upload_manual()` na hora, em vez de esperar a rotina agendada. Não
+tem segredo fixo: cada chamada leva o token de sessão do RH já logado no painel, e o
+servidor confirma com o próprio Supabase Auth que a sessão é válida e o usuário está
+ativo (mesma regra da política `fn_usuario_ativo()`). Pra habilitar:
+
+1. No Railway, **New Service** a partir do mesmo repositório (Root Directory `backend`,
+   mesmas variáveis de ambiente do worker). Em **Settings → Deploy**, defina *Custom
+   Start Command*: `uvicorn api:app --host 0.0.0.0 --port $PORT`. **Não** defina Cron
+   Schedule neste serviço — ele precisa ficar sempre no ar, ao contrário do worker.
+2. Em **Settings → Networking**, gere um domínio público. Anote a URL
+   (ex.: `https://recrutei-api.up.railway.app`).
+3. (Recomendado) Defina a variável `CORS_ORIGENS` com o domínio do painel publicado
+   (ex.: `https://recrutei.vercel.app`) — vazio aceita qualquer origem, ok só para testar.
+4. Em `frontend/js/nucleo.js`, preencha `API_URL` com a URL do passo 2 e publique o
+   painel de novo.
+
+Sem isto tudo configurado, o botão "Enviar currículo" continua funcionando do mesmo
+jeito de antes — só cai direto na fila normal (avaliado na próxima execução da rotina),
+sem travar nem avisar erro.
 
 **Requisito obrigatório limita a nota** — faltando qualquer obrigatório,
 a nota não passa de 45, e o candidato aparece marcado como fora do perfil.

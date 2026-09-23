@@ -9,3 +9,5 @@ pdf2image==1.17.0
 Pillow==12.3.0
 requests==2.34.2
 tenacity==9.0.0
+fastapi==0.121.2
+uvicorn==0.38.0
