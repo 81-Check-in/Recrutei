@@ -7,6 +7,7 @@ from config import (
     SUPABASE_URL, SUPABASE_SERVICE_KEY, BUCKET_CURRICULOS,
     MODO_SIMULACAO, log,
 )
+from utils import normalizar_texto
 
 _cliente: Optional[Client] = None
 
@@ -88,8 +89,63 @@ def listar_vagas_abertas() -> List[Dict]:
         todos = por_vaga.get(v["id"], [])
         v["obrigatorios"] = [r for r in todos if r["tipo"] == "obrigatorio"]
         v["desejaveis"]   = [r for r in todos if r["tipo"] == "desejavel"]
+        v["diferenciais"] = [r for r in todos if r["tipo"] == "diferencial"]
         v["setor_nome"]   = (v.get("setores") or {}).get("nome", "")
     return vagas
+
+
+def listar_areas() -> List[str]:
+    """Nomes dos setores ativos: o vocabulário de "área" da análise da IA (Logística, Vendas…)."""
+    r = conectar().table("setores").select("nome").eq("ativo", True).order("ordem").execute()
+    return [x["nome"] for x in (r.data or [])]
+
+
+_vocabulario_cache: Dict = {"quando": 0.0, "dados": None}
+
+
+def carregar_vocabulario_qualificacao() -> Dict:
+    """
+    Valores que a IA pode escolher ao qualificar um currículo, além dos setores (listar_areas):
+      {"funcoes": {setor: [função, ...]}, "niveis": [{"codigo", "nome", "descricao"}, ...],
+       "iniciantes": {setor: [função que aceita jovem_aprendiz e trainee, ...]}}
+    Só o que está ativo, na ordem do cadastro. Guardado na memória por 10 minutos (as tabelas quase não mudam e o
+    serviço web consultaria a cada currículo). Sem as tabelas (migração 031 ainda não aplicada) levanta erro: quem
+    chama adia a análise em vez de qualificar sem lista.
+    """
+    import time
+    if _vocabulario_cache["dados"] is not None and time.time() - _vocabulario_cache["quando"] < 600:
+        return _vocabulario_cache["dados"]
+    db = conectar()
+    setores = db.table("setores").select("id,nome").eq("ativo", True).order("ordem").execute().data or []
+    linhas = db.table("funcoes_setor").select("setor_id,nome,aceita_iniciante").eq("ativo", True).order("nome").execute().data or []
+    funcoes: Dict[str, List[str]] = {}
+    iniciantes: Dict[str, List[str]] = {}      # cargos que aceitam jovem_aprendiz e trainee
+    for setor in setores:
+        do_setor = [f for f in linhas if f["setor_id"] == setor["id"]]
+        if do_setor:
+            funcoes[setor["nome"]] = [f["nome"] for f in do_setor]
+            if any(f.get("aceita_iniciante") for f in do_setor):
+                iniciantes[setor["nome"]] = [f["nome"] for f in do_setor if f.get("aceita_iniciante")]
+    niveis = db.table("niveis_funcao").select("codigo,nome,descricao").eq("ativo", True).order("ordem").execute().data or []
+    _vocabulario_cache.update(quando=time.time(), dados={"funcoes": funcoes, "niveis": niveis, "iniciantes": iniciantes})
+    return _vocabulario_cache["dados"]
+
+
+_regioes_cache: Dict = {"quando": 0.0, "dados": []}
+
+
+def listar_regioes() -> List[Dict]:
+    """
+    Regiões do DF e entorno (regioes_df) com os apelidos: o vocabulário de "onde mora" da identificação e do casamento
+    local do texto. Guardada na memória por 10 minutos: a tabela quase não muda e o serviço web ficaria consultando
+    a cada currículo.
+    """
+    import time
+    if time.time() - _regioes_cache["quando"] < 600 and _regioes_cache["dados"]:
+        return _regioes_cache["dados"]
+    r = conectar().table("regioes_df").select("id,nome,apelidos").order("nome").execute()
+    _regioes_cache.update(quando=time.time(), dados=r.data or [])
+    return _regioes_cache["dados"]
 
 
 # ─────────────────────────────────────────────
@@ -115,12 +171,12 @@ def remetente_bloqueado(email: str) -> bool:
 # ─────────────────────────────────────────────
 # IDEMPOTÊNCIA
 # ─────────────────────────────────────────────
-def candidatura_existe_para_mensagem(message_id: str) -> bool:
-    """Só candidaturas — diferente de email_ja_processado(), que também conta exceção
+def curriculo_existe_para_mensagem(message_id: str) -> bool:
+    """Só currículos — diferente de email_ja_processado(), que também conta exceção
     (por isso não serve aqui: a exceção que estamos reprocessando sempre existe)."""
     if not message_id:
         return False
-    return bool(conectar().table("candidaturas").select("id")
+    return bool(conectar().table("curriculos").select("id")
                   .eq("email_message_id", message_id).limit(1).execute().data)
 
 
@@ -129,37 +185,97 @@ def email_ja_processado(message_id: str) -> bool:
     if not message_id:
         return False
     db = conectar()
-    if db.table("candidaturas").select("id")\
+    if db.table("curriculos").select("id")\
          .eq("email_message_id", message_id).limit(1).execute().data:
         return True
     return bool(db.table("excecoes").select("id")
                   .eq("email_message_id", message_id).limit(1).execute().data)
 
 
-def buscar_duplicata(hash_identidade: str, vaga_id: str,
-                     dias_carencia: int = 90) -> Optional[Dict]:
-    """Mesma pessoa, mesma vaga, dentro do prazo de carência."""
-    if not hash_identidade or not vaga_id:
+# ─────────────────────────────────────────────
+# BANCO DE TALENTOS — candidatos, currículos e análises
+# ─────────────────────────────────────────────
+CAMPOS_CANDIDATO = ("id,nome,sexo,data_nascimento,idade_informada,cidade,uf,telefone,telefone_e164,email,"
+                    "escolaridade,anos_experiencia,cnh,status_banco,retencao_permanente,lista_negra,"
+                    "regiao_id,regiao_origem,analise_atual_id,reanalise_solicitada_em")
+
+
+def buscar_candidato_existente(hash_identidade: Optional[str], email: Optional[str],
+                               nome: Optional[str]) -> Optional[Dict]:
+    """
+    A mesma pessoa já está no banco? Duas chaves, da mais forte para a mais fraca:
+      1. hash de identidade (nome + telefone) — o chamador só passa o hash quando tem os dois
+      2. mesmo e-mail E mesmo nome (só e-mail não basta: agência ou família dividem o endereço)
+    Inclui candidatos expurgados: o hash sobrevive à exclusão e o reenvio reaproveita o cadastro.
+    """
+    db = conectar()
+    if hash_identidade:
+        r = db.table("candidatos").select(CAMPOS_CANDIDATO).eq("hash_identidade", hash_identidade)\
+              .order("data_entrada").limit(1).execute()
+        if r.data:
+            return r.data[0]
+    if email and nome:
+        r = db.table("candidatos").select(CAMPOS_CANDIDATO).eq("email", email.lower())\
+              .eq("nome_norm", normalizar_texto(nome)).neq("status_banco", "expurgado")\
+              .order("data_entrada").limit(1).execute()
+        if r.data:
+            return r.data[0]
+    return None
+
+
+def buscar_candidato_por_arquivo(arquivo_hash: Optional[str]) -> Optional[Dict]:
+    """
+    O candidato dono de um currículo com este arquivo (mesma impressão digital), ou None. Serve para NÃO ler de
+    novo o mesmo arquivo: vale para quem já foi sanitizado também (o hash sobrevive à exclusão dos dados).
+    """
+    if not arquivo_hash:
         return None
-    from datetime import timedelta
-    limite = (datetime.now(timezone.utc) - timedelta(days=dias_carencia)).isoformat()
-    r = conectar().table("candidaturas").select("id,recebido_em,status")\
-        .eq("hash_identidade", hash_identidade)\
-        .eq("vaga_id", vaga_id)\
-        .gte("recebido_em", limite)\
-        .limit(1).execute()
-    return r.data[0] if r.data else None
+    db = conectar()
+    r = db.table("curriculos").select("candidato_id").eq("arquivo_hash", arquivo_hash).limit(1).execute().data
+    if not r:
+        return None
+    return obter_candidato(r[0]["candidato_id"])
 
 
-# ─────────────────────────────────────────────
-# CANDIDATURAS
-# ─────────────────────────────────────────────
-def criar_candidatura(dados: Dict) -> Optional[Dict]:
+def ultima_importacao(candidato_id: str) -> Optional[datetime]:
+    """Quando o último currículo deste candidato foi importado (None se ele não tem nenhum registro)."""
+    r = conectar().table("curriculos").select("created_at").eq("candidato_id", candidato_id)\
+        .order("created_at", desc=True).limit(1).execute().data
+    if not r or not r[0].get("created_at"):
+        return None
+    return datetime.fromisoformat(r[0]["created_at"].replace("Z", "+00:00"))
+
+
+def atualizar_curriculo(curriculo_id: str, dados: Dict) -> None:
+    if MODO_SIMULACAO or not dados:
+        return
+    conectar().table("curriculos").update(dados).eq("id", curriculo_id).execute()
+
+
+def criar_candidato(dados: Dict) -> Optional[Dict]:
     if MODO_SIMULACAO:
-        log.info("  [simulação] candidatura não gravada")
-        return {"id": "simulado"}
-    r = conectar().table("candidaturas").insert(dados).execute()
+        log.info("  [simulação] candidato não gravado")
+        return {"id": "simulado", "status_banco": "ativo"}
+    r = conectar().table("candidatos").insert(dados).execute()
     return r.data[0] if r.data else None
+
+
+def atualizar_candidato(candidato_id: str, dados: Dict) -> None:
+    if MODO_SIMULACAO or not dados:
+        return
+    conectar().table("candidatos").update(dados).eq("id", candidato_id).execute()
+
+
+def obter_candidato(candidato_id: str) -> Optional[Dict]:
+    r = conectar().table("candidatos").select(CAMPOS_CANDIDATO).eq("id", candidato_id).limit(1).execute()
+    return r.data[0] if r.data else None
+
+
+def obter_curriculo_atual(candidato_id: str) -> Optional[Dict]:
+    """Currículo vigente do candidato (id, texto, arquivo). None se não houver (ex.: dados já expurgados)."""
+    r = conectar().table("curriculos").select("id,texto_extraido,storage_path,nome_arquivo,tipo_mime,arquivo_hash")\
+        .eq("candidato_id", candidato_id).eq("atual", True).limit(1).execute().data
+    return r[0] if r else None
 
 
 def salvar_curriculo(dados: Dict) -> Optional[Dict]:
@@ -169,6 +285,68 @@ def salvar_curriculo(dados: Dict) -> Optional[Dict]:
     return r.data[0] if r.data else None
 
 
+def proxima_sequencia_analise(candidato_id: str) -> int:
+    """Sequência da próxima análise do candidato, acima de todas as anteriores (a mais nova é a vigente)."""
+    r = conectar().table("analises_ia").select("sequencia")\
+        .eq("candidato_id", candidato_id).order("sequencia", desc=True).limit(1).execute().data
+    return r[0]["sequencia"] + 1 if r else 1
+
+
+def obter_qualificacao_da_vaga(vaga_id: str) -> Optional[Dict]:
+    """
+    Setor, função e nível que a vaga pede: valem para o currículo enviado à mão a partir dela (o RH já decidiu que ele
+    serve). Vaga antiga sem função ou nível devolve None nesses campos: a IA classifica o que faltar.
+    """
+    db = conectar()
+    v = db.table("vagas").select("setor_id,funcao_setor,nivel_funcao").eq("id", vaga_id).limit(1).execute().data
+    if not v:
+        return None
+    setor = db.table("setores").select("nome").eq("id", v[0]["setor_id"]).limit(1).execute().data
+    return {"setor": setor[0]["nome"] if setor else None, "funcao": v[0].get("funcao_setor"),
+            "nivel": v[0].get("nivel_funcao")}
+
+
+def salvar_analise(dados: Dict) -> Optional[Dict]:
+    """Grava a análise; o gatilho do banco copia a sugestão para o candidato e limpa o pedido de reanálise."""
+    if MODO_SIMULACAO:
+        return {"id": "simulado"}
+    r = conectar().table("analises_ia").insert(dados).execute()
+    return r.data[0] if r.data else None
+
+
+def listar_reanalises(limite: int = 0) -> List[Dict]:
+    """Candidatos com (re)análise da IA pedida: recém-migrados, currículo reenviado, botão do painel, ou falha anterior."""
+    q = conectar().table("candidatos")\
+        .select("id,nome,escolaridade,anos_experiencia,cnh,sexo,data_nascimento,idade_informada,status_banco,"
+                "regiao_id,regiao_origem")\
+        .not_.is_("reanalise_solicitada_em", "null").neq("status_banco", "expurgado")\
+        .order("reanalise_solicitada_em")
+    if limite:
+        q = q.limit(limite)
+    return q.execute().data or []
+
+
+# ─────────────────────────────────────────────
+# CANDIDATURAS (vínculo candidato ↔ vaga, sempre por atribuição do RH)
+# ─────────────────────────────────────────────
+def atualizar_candidatura(cand_id: str, dados: Dict) -> None:
+    if MODO_SIMULACAO:
+        return
+    conectar().table("candidaturas").update(dados).eq("id", cand_id).execute()
+
+
+def atribuir_candidato_vaga(candidato_id: str, vaga_id: str, usuario_id: str) -> Optional[str]:
+    """Atribui o candidato à vaga em nome de um usuário do RH (upload manual que já escolhe a vaga).
+    Levanta erro (mensagem em português) se o candidato já está em processo ou a vaga fechou."""
+    if MODO_SIMULACAO:
+        log.info("  [simulação] atribuição não gravada")
+        return "simulado"
+    r = conectar().rpc("fn_atribuir_candidato_vaga", {
+        "p_candidato_id": candidato_id, "p_vaga_id": vaga_id, "p_usuario_id": usuario_id,
+    }).execute()
+    return r.data
+
+
 def salvar_avaliacao(dados: Dict) -> Optional[Dict]:
     if MODO_SIMULACAO:
         return {"id": "simulado"}
@@ -176,39 +354,14 @@ def salvar_avaliacao(dados: Dict) -> Optional[Dict]:
     return r.data[0] if r.data else None
 
 
-def atualizar_candidatura(cand_id: str, dados: Dict) -> None:
-    if MODO_SIMULACAO:
-        return
-    conectar().table("candidaturas").update(dados).eq("id", cand_id).execute()
-
-
-def listar_sem_perfil(limite: int = 0) -> List[Dict]:
-    """
-    Candidaturas ativas cujo perfil de busca (idade, escolaridade, experiência, CNH)
-    ainda não foi extraído: as que chegaram antes dos filtros avançados.
-    """
-    q = conectar().table("candidaturas").select("id,dados_pessoais")\
-        .eq("status_registro", "ativo").is_("dados_pessoais->>perfil_v", "null")\
-        .order("recebido_em")
-    if limite:
-        q = q.limit(limite)
-    return q.execute().data or []
-
-
 # ─────────────────────────────────────────────
-# REAVALIAÇÃO (o RH trocou a vaga no painel)
+# AVALIAÇÃO PARA A VAGA (depois que o RH atribui o candidato a ela)
 # ─────────────────────────────────────────────
 def listar_reavaliacoes() -> List[Dict]:
-    """Candidaturas que o painel deixou em análise: a IA ainda vai (re)avaliar."""
-    return conectar().table("candidaturas").select("id,vaga_id,dados_pessoais")\
-        .eq("status", "em_analise").order("updated_at").execute().data or []
-
-
-def obter_texto_curriculo(cand_id: str) -> Optional[str]:
-    """Texto extraído do currículo; None se não houver (ex.: dados já expurgados)."""
-    r = conectar().table("curriculos").select("texto_extraido")\
-        .eq("candidatura_id", cand_id).limit(1).execute().data
-    return (r[0].get("texto_extraido") or None) if r else None
+    """Candidaturas abertas à espera da nota da IA para a vaga (o painel marca ao atribuir)."""
+    return conectar().table("candidaturas").select("id,vaga_id,candidato_id")\
+        .eq("avaliacao_pendente", True).is_("encerrada_em", "null")\
+        .order("updated_at").execute().data or []
 
 
 def proxima_sequencia(cand_id: str) -> int:
@@ -299,15 +452,18 @@ def baixar_arquivo(caminho: str) -> Optional[bytes]:
         return None
 
 
-def remover_arquivos(caminhos: List[str]) -> None:
-    """Usado pelo expurgo LGPD."""
+def remover_arquivos(caminhos: List[str]) -> bool:
+    """Remove do Storage (exclusão de dados/sanitização). True = todos os lotes foram aceitos."""
     if not caminhos or MODO_SIMULACAO:
-        return
+        return True
     try:
-        conectar().storage.from_(BUCKET_CURRICULOS).remove(caminhos)
+        for i in range(0, len(caminhos), 100):
+            conectar().storage.from_(BUCKET_CURRICULOS).remove(caminhos[i:i + 100])
         log.info(f"  {len(caminhos)} arquivo(s) removido(s) do Storage")
+        return True
     except Exception as e:
         log.error(f"  Falha ao remover arquivos: {e}")
+        return False
 
 
 # ─────────────────────────────────────────────
@@ -333,15 +489,44 @@ def finalizar_execucao(exec_id: Optional[str], stats: Dict,
 
 
 # ─────────────────────────────────────────────
-# MANUTENÇÃO (retenção e expurgo)
+# MANUTENÇÃO E SANITIZAÇÃO
 # ─────────────────────────────────────────────
 def executar_manutencao() -> Dict:
-    """Chama a rotina do banco e remove os arquivos expurgados."""
+    """
+    Manutenção diária do banco (partições da auditoria) + remoção dos arquivos de currículo cujos dados
+    já foram excluídos. NÃO inativa nem expurga candidatos sozinha: isso é decisão do RH na sanitização.
+    """
     if MODO_SIMULACAO:
-        return {"inativadas": 0, "expurgadas": 0}
+        return {"arquivos_removidos": 0, "sanitizacao_pendentes": 0}
     r = conectar().rpc("fn_manutencao_diaria").execute()
     resultado = r.data or {}
     arquivos = resultado.get("arquivos_para_remover") or []
-    if arquivos:
-        remover_arquivos(arquivos)
+    resultado["arquivos_removidos"] = 0
+    if arquivos and remover_arquivos(arquivos):
+        conectar().rpc("fn_marcar_arquivos_removidos", {"p_caminhos": arquivos}).execute()
+        resultado["arquivos_removidos"] = len(arquivos)
     return resultado
+
+
+def gerar_sugestoes_sanitizacao(origem: str = "job", forcar: bool = False) -> Dict:
+    """
+    Pede ao banco a lista de sugestões de sanitização. Sem `forcar`, o banco só gera quando o intervalo
+    configurado (sanitizacao_intervalo_meses) venceu; senão devolve {"gerada": False, "proxima_em": ...}.
+    """
+    r = conectar().rpc("fn_gerar_sugestoes_sanitizacao", {"p_origem": origem, "p_forcar": forcar}).execute()
+    return r.data or {}
+
+
+def contar_sugestoes_pendentes() -> Dict[str, int]:
+    """{"total": N, "alta": n, "media": n, "baixa": n} das sugestões ainda sem decisão do RH."""
+    linhas = conectar().table("sanitizacao_sugestoes").select("prioridade").eq("status", "pendente").execute().data or []
+    contagem = {"total": len(linhas), "alta": 0, "media": 0, "baixa": 0}
+    for linha in linhas:
+        contagem[linha["prioridade"]] += 1
+    return contagem
+
+
+def marcar_ciclo_notificado(ciclo_id: str) -> None:
+    if MODO_SIMULACAO:
+        return
+    conectar().table("sanitizacao_ciclos").update({"notificada_em": agora()}).eq("id", ciclo_id).execute()

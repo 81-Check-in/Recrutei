@@ -1,4 +1,14 @@
 -- ════════════════════════════════════════════════════════════════════════
+--  ⚠ OBSOLETO desde o Banco de Talentos (backend/sql/020 a 025) — NÃO RODE ESTE ARQUIVO.
+--
+--  A Triagem virou o Banco de Talentos: vw_triagem e filtrar_triagem (abaixo) foram removidas na 024, e
+--  os mesmos filtros (palavras-chave, local, rotatividade + idade, escolaridade, experiência, CNH) passaram a
+--  ser feitos por filtrar_banco_talentos() e por colunas indexadas de "candidatos". Rodar este arquivo agora
+--  falha (vw_triagem não existe mais). norm_busca() continua existindo — a 021 a recria.
+--  Mantido só como histórico do que rodava até a versão 1.8.1.
+-- ════════════════════════════════════════════════════════════════════════
+
+-- ════════════════════════════════════════════════════════════════════════
 --  RECRUTEI — Filtros avançados da Triagem
 --
 --  Rode UMA vez: Supabase → SQL Editor → New query → cole este arquivo → Run.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Recrutei — Triagem de Currículos</title>
+<title>Recrutei — Banco de Talentos</title>
 <!-- Abre a conexão com cada domínio externo antes de precisar dele, para o
      primeiro carregamento não esperar o DNS/TLS na hora de usar cada recurso. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -71,11 +71,11 @@
         <div class="login-ico" aria-hidden="true"><svg class="brand-mark" viewBox="12 10 42 44" focusable="false"><path d="M21 47V17h13c7 0 11 4 11 10s-4 10-11 10H21" fill="none" stroke="#F5FBFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m32 37 13 10" fill="none" stroke="#72D0EA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="login-nome">Recrut<span>ei</span></div>
       </div>
-      <div class="login-tag">Triagem inteligente de currículos com IA</div>
+      <div class="login-tag">Banco de Talentos com análise por IA</div>
     </div>
     <form class="login-form" id="form-login" onsubmit="entrar(event)" novalidate>
       <h2>Bem-vindo de volta</h2>
-      <p>Acesse o painel de triagem de candidatos</p>
+      <p>Acesse o painel do Banco de Talentos</p>
       <div class="campo">
         <label for="l-email">E-mail</label>
         <div class="inp-wrap"><i class="ti ti-mail"></i>
@@ -111,9 +111,11 @@
       <div class="nav-sec">Menu</div>
       <button type="button" class="nav-item active" aria-current="page" title="Dashboard" data-tela="dashboard" onclick="irPara('dashboard',this)"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span class="nav-label">Dashboard</span></button>
       <button type="button" class="nav-item" title="Vagas" data-tela="vagas" onclick="irPara('vagas',this)"><i class="ti ti-briefcase" aria-hidden="true"></i><span class="nav-label">Vagas</span></button>
-      <button type="button" class="nav-item" title="Triagem de Currículos" data-tela="triagem" onclick="irPara('triagem',this)"><i class="ti ti-files" aria-hidden="true"></i><span class="nav-label">Triagem de Currículos</span></button>
-      <button type="button" class="nav-item" title="Candidatos" data-tela="candidatos" onclick="irPara('candidatos',this)"><i class="ti ti-users" aria-hidden="true"></i><span class="nav-label">Candidatos</span></button>
+      <button type="button" class="nav-item" title="Banco de Talentos" data-tela="banco" onclick="irPara('banco',this)"><i class="ti ti-users-group" aria-hidden="true"></i><span class="nav-label">Banco de Talentos</span></button>
+      <button type="button" class="nav-item" title="Em processo" data-tela="candidatos" onclick="irPara('candidatos',this)"><i class="ti ti-user-check" aria-hidden="true"></i><span class="nav-label">Em processo</span></button>
       <button type="button" class="nav-item" title="Entrevistas" data-tela="entrevistas" onclick="irPara('entrevistas',this)"><i class="ti ti-calendar-event" aria-hidden="true"></i><span class="nav-label">Entrevistas</span></button>
+      <button type="button" class="nav-item" title="Sanitização" data-tela="sanitizacao" onclick="irPara('sanitizacao',this)"><i class="ti ti-recycle" aria-hidden="true"></i><span class="nav-label">Sanitização</span><span class="nav-badge" id="nav-san-badge" style="display:none" aria-label="sugestões pendentes">0</span></button>
+      <button type="button" class="nav-item" title="Lista negra" data-tela="listanegra" onclick="irPara('listanegra',this)"><i class="ti ti-ban" aria-hidden="true"></i><span class="nav-label">Lista negra</span></button>
       <button type="button" class="nav-item" id="nav-config" title="Configurações" data-tela="config" onclick="irPara('config',this)" style="display:none"><i class="ti ti-settings" aria-hidden="true"></i><span class="nav-label">Configurações</span></button>
     </nav>
     <div class="sb-rodape">
@@ -152,12 +154,12 @@
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--blue-light);color:var(--blue)"><i class="ti ti-file-text"></i></div></div>
             <div class="card-val" id="m-curriculos">—</div>
-            <div class="card-lbl">Currículos recebidos (total)</div>
+            <div class="card-lbl">Candidatos no Banco de Talentos</div>
           </div>
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--green-light);color:var(--green)"><i class="ti ti-user-check"></i></div></div>
             <div class="card-val" id="m-selecionados">—</div>
-            <div class="card-lbl">Selecionados para entrevista</div>
+            <div class="card-lbl">Atribuídos a vagas</div>
           </div>
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--yellow-light);color:var(--yellow)"><i class="ti ti-calendar-event"></i></div></div>
@@ -173,18 +175,24 @@
 
         <div class="duas-col">
           <div class="painel">
-            <div class="painel-hd"><div><div class="painel-tit">Funil de seleção</div>
+            <div class="painel-hd"><div><div class="painel-tit">Do banco à contratação</div>
               <div class="painel-sub" id="periodo-label">Últimos 7 dias</div></div></div>
             <div class="funil" id="funil"></div>
           </div>
           <div class="painel">
             <div class="painel-hd"><div class="painel-tit">Pendências</div></div>
             <div style="display:flex;flex-direction:column;gap:11px">
-              <div class="exc-row" onclick="irPara('triagem')" style="cursor:pointer">
-                <i class="ti ti-files" style="color:var(--blue);font-size:19px"></i>
-                <div style="flex:1"><div class="exc-email">Aguardando triagem</div>
-                  <div class="exc-meta">Currículos avaliados sem decisão do RH</div></div>
-                <span class="pill pill-blue" id="m-triagem">0</span>
+              <div class="exc-row" onclick="irBancoRevisao()" style="cursor:pointer">
+                <i class="ti ti-eye-check" style="color:var(--blue);font-size:19px"></i>
+                <div style="flex:1"><div class="exc-email">Revisão manual necessária</div>
+                  <div class="exc-meta">A IA não classificou com segurança: confira o currículo</div></div>
+                <span class="pill pill-blue" id="m-revisao">0</span>
+              </div>
+              <div class="exc-row" onclick="irPara('sanitizacao')" style="cursor:pointer">
+                <i class="ti ti-recycle" style="color:var(--purple);font-size:19px"></i>
+                <div style="flex:1"><div class="exc-email">Sugestões de sanitização</div>
+                  <div class="exc-meta">Candidatos sugeridos para limpeza aguardando a sua decisão</div></div>
+                <span class="pill pill-purple" id="m-sanitizacao">0</span>
               </div>
               <div class="exc-row" onclick="irPara('vagas')" style="cursor:pointer">
                 <i class="ti ti-alert-triangle" style="color:var(--yellow);font-size:19px"></i>
@@ -242,27 +250,58 @@
         </div>
       </div>
 
-      <!-- ══ TRIAGEM ══ -->
-      <div class="screen" id="screen-triagem">
-        <div class="filtros">
+      <!-- ══ BANCO DE TALENTOS ══ -->
+      <div class="screen" id="screen-banco">
+        <div class="banco-ranking" id="banco-ranking" style="display:none" role="region" aria-label="Currículos selecionados para a vaga">
+          <i class="ti ti-target-arrow" aria-hidden="true"></i>
+          <div class="banco-ranking-txt"><strong>Currículos selecionados para <span id="banco-ranking-titulo">a vaga</span></strong>
+            <span>Setor, função e nível iguais aos da vaga, da maior nota para a menor. Só quem está disponível para esta vaga aparece.</span></div>
+          <div class="banco-ranking-ctl">
+            <select class="sel" id="rk-ordem" aria-label="Ordenar os currículos por" onchange="mudarFiltroRanking()">
+              <option value="nota">Maior nota</option>
+              <option value="distancia">Mais perto da loja</option>
+            </select>
+            <select class="sel" id="rk-km" aria-label="Distância máxima até a loja mais próxima" onchange="mudarFiltroRanking()"
+              title="Distância em linha reta até a loja mais próxima da vaga (estimativa). Quem não tem região identificada fica de fora quando há limite">
+              <option value="">Qualquer distância</option>
+              <option value="5">Até 5 km</option>
+              <option value="10">Até 10 km</option>
+              <option value="20">Até 20 km</option>
+              <option value="30">Até 30 km</option>
+            </select>
+          </div>
+          <button type="button" class="btn-sm" onclick="sairDoRanking()"><i class="ti ti-arrow-left"></i>Voltar ao banco inteiro</button>
+        </div>
+        <div class="filtros" id="banco-filtros">
           <div class="busca"><i class="ti ti-search"></i>
-            <input id="busca-triagem" type="text" placeholder="Buscar candidato..."></div>
-          <select class="sel" id="filtro-vaga"><option value="">Todas as vagas</option></select>
-          <select class="sel" id="filtro-nota">
-            <option value="">Todas as notas</option>
-            <option value="alta">Alta (76–100)</option>
-            <option value="media">Média (51–75)</option>
-            <option value="baixa">Baixa (0–50)</option>
+            <input id="busca-banco" type="text" placeholder="Buscar por nome..." aria-label="Buscar por nome"></div>
+          <div class="busca busca-cidade"><i class="ti ti-map-pin"></i>
+            <input id="filtro-b-cidade" type="text" placeholder="Cidade onde mora..." aria-label="Cidade onde mora"></div>
+          <select class="sel" id="filtro-b-area" aria-label="Área sugerida"><option value="">Todas as áreas</option></select>
+          <select class="sel" id="filtro-b-cargo" aria-label="Cargo sugerido"><option value="">Todos os cargos</option></select>
+          <select class="sel" id="filtro-b-nivel" aria-label="Nível sugerido">
+            <option value="">Todos os níveis</option>
+            <option value="jovem_aprendiz">Jovem Aprendiz</option>
+            <option value="trainee">Trainee</option>
+            <option value="junior">Júnior</option>
+            <option value="pleno">Pleno</option>
+            <option value="senior">Sênior</option>
           </select>
-          <select class="sel" id="filtro-status">
-            <option value="">Todos os status</option>
-            <option value="avaliado">Aguardando triagem</option>
-            <option value="selecionado">Selecionado</option>
-            <option value="descartado">Descartado</option>
+          <select class="sel" id="filtro-b-sexo" aria-label="Sexo">
+            <option value="">Qualquer sexo</option>
+            <option value="feminino">Feminino</option>
+            <option value="masculino">Masculino</option>
+            <option value="nao_informado">Não informado</option>
+          </select>
+          <select class="sel" id="filtro-b-status" aria-label="Situação no banco">
+            <option value="ativo">Disponíveis</option>
+            <option value="">Todos</option>
+            <option value="em_processo">Em processo</option>
+            <option value="inativo">Inativos</option>
           </select>
           <button type="button" class="btn-filtros-av" id="btn-filtros-av" onclick="alternarFiltrosAvancados()"
                   aria-expanded="false" aria-controls="painel-filtros-av">
-            <i class="ti ti-adjustments-horizontal"></i>Filtros avançados
+            <i class="ti ti-adjustments-horizontal"></i>Mais filtros
             <span class="badge-cnt" id="badge-filtros-av" style="display:none">0</span></button>
         </div>
 
@@ -281,8 +320,8 @@
                 <option value="analise">Na análise da IA</option>
                 <option value="ambos">Nos dois</option>
               </select></div>
-            <div class="f-campo"><label for="av-local">Mora em</label>
-              <input id="av-local" type="text" placeholder="cidade ou bairro"></div>
+            <div class="f-campo"><label for="av-local">Endereço/bairro contém</label>
+              <input id="av-local" type="text" placeholder="cidade ou bairro (busca no currículo)"></div>
             <div class="f-campo"><label for="av-excluir-locais">Exceto quem mora em</label>
               <input id="av-excluir-locais" type="text" placeholder="separe por vírgula"></div>
             <div class="f-campo"><label for="av-escolaridade">Escolaridade mínima</label>
@@ -308,6 +347,7 @@
             <div class="f-campo"><label for="av-idade-max">Idade máxima</label>
               <input id="av-idade-max" type="number" min="14" max="85" placeholder="anos"></div>
             <label class="av-check"><input type="checkbox" id="av-cnh"> Só quem informa CNH</label>
+            <label class="av-check"><input type="checkbox" id="av-revisao"> Só revisão manual necessária</label>
             <label class="av-check"><input type="checkbox" id="av-sem-info" checked>
               Incluir quem não informou idade/escolaridade/experiência</label>
           </div>
@@ -318,24 +358,40 @@
         </div>
 
         <div class="sec-hd"><div class="sec-tit">
-          <span id="triagem-total">0 currículos</span>
-          <span style="font-size:12px;font-weight:400;color:var(--gray-text)">· ordenados por nota</span>
-        </div></div>
-        <div class="curr-list" id="triagem-lista"></div>
+          <span id="banco-total">0 candidatos</span>
+          <select class="sel sel-ordem" id="ordem-banco" aria-label="Ordenar por">
+            <option value="entrada">Mais recentes primeiro</option>
+            <option value="nome">Nome (A–Z)</option>
+            <option value="movimentacao">Parados há mais tempo primeiro</option>
+          </select>
+        </div>
+          <button class="btn-sm" onclick="abrirModalUploadManual()"
+            title="Envia um currículo recebido fora do e-mail (WhatsApp, indicação, etc.) direto para o banco">
+            <i class="ti ti-upload"></i>Enviar currículo</button>
+        </div>
+        <div class="curr-list" id="banco-lista"></div>
         <div class="lista-rodape">
-          <button type="button" class="btn-mais" id="triagem-mais" style="display:none" onclick="maisTriagem()">
+          <button type="button" class="btn-mais" id="banco-mais" style="display:none" onclick="maisBanco()">
             <i class="ti ti-chevron-down"></i>Carregar mais</button>
         </div>
       </div>
 
       <!-- ══ CANDIDATOS ══ -->
       <div class="screen" id="screen-candidatos">
+        <div class="banco-ranking" id="cand-vaga-banner" style="display:none" role="region" aria-label="Candidatos selecionados para a vaga">
+          <i class="ti ti-users" aria-hidden="true"></i>
+          <div class="banco-ranking-txt"><strong>Candidatos selecionados para <span id="cand-vaga-titulo">a vaga</span></strong>
+            <span>Os currículos que você direcionou para esta vaga. <b>Cancelar a seleção</b> devolve o currículo ao Banco de Talentos, sem perder a qualificação que ele já tem.</span></div>
+          <div class="banco-ranking-ctl">
+            <button type="button" class="btn-sm azul" onclick="selecionarMaisCVsDaVaga()"><i class="ti ti-target-arrow"></i>Selecionar CVs</button></div>
+          <button type="button" class="btn-sm" onclick="sairDaVagaEmProcesso()"><i class="ti ti-arrow-left"></i>Voltar às vagas</button>
+        </div>
         <div class="filtros">
           <div class="busca"><i class="ti ti-search"></i>
-            <input id="busca-candidatos" type="text" placeholder="Buscar candidato..."></div>
+            <input id="busca-candidatos" type="text" placeholder="Buscar candidato em processo..."></div>
           <select class="sel" id="filtro-cand-status">
             <option value="">Todos os status</option>
-            <option value="selecionado">Aguardando entrevista</option>
+            <option value="aguardando">Aguardando entrevista</option>
             <option value="entrevista_agendada">Entrevista agendada</option>
             <option value="aprovado">Aprovado</option>
             <option value="reprovado">Reprovado</option>
@@ -344,8 +400,8 @@
           </select>
         </div>
         <div class="tabela"><table>
-          <thead><tr><th>Candidato</th><th>Setor</th><th>Nota IA</th>
-            <th>Selecionado em</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Candidato</th><th id="th-cand-vaga">Vaga</th><th id="th-cand-nota" title="Nota que a IA deu ao currículo">Nota do CV</th>
+            <th>Atribuído em</th><th>Status</th><th></th></tr></thead>
           <tbody id="candidatos-body"></tbody>
         </table></div>
         <div class="lista-rodape">
@@ -388,6 +444,83 @@
         </table></div>
       </div>
 
+      <!-- ══ SANITIZAÇÃO ══ -->
+      <div class="screen" id="screen-sanitizacao">
+        <div class="painel san-info">
+          <div class="painel-hd" style="margin-bottom:8px">
+            <div><div class="painel-tit"><i class="ti ti-recycle" style="margin-right:6px;color:var(--purple)"></i>Sugestões de sanitização</div>
+              <div class="painel-sub" id="san-ciclo">Carregando…</div></div>
+            <button type="button" class="btn-sm azul" id="san-btn-gerar" style="display:none" onclick="gerarSugestoesAgora()"
+              title="Só administrador: gera a lista agora, sem esperar o próximo ciclo">
+              <i class="ti ti-refresh"></i>Gerar sugestões agora</button>
+          </div>
+          <p class="san-explica">O sistema <strong>não apaga nada sozinho</strong>. A cada ciclo ele sugere candidatos para limpeza — parados há muito
+            tempo, reprovados várias vezes, com currículo que a IA não conseguiu classificar, duplicados ou com prazo de
+            armazenamento vencido — e <strong>você decide</strong>: manter, inativar ou excluir definitivamente.</p>
+        </div>
+        <div class="filtros">
+          <select class="sel" id="san-visao" aria-label="Mostrar">
+            <option value="pendente">Pendentes de decisão</option>
+            <option value="decididas">Já decididas</option>
+          </select>
+          <select class="sel" id="san-prioridade" aria-label="Prioridade">
+            <option value="">Todas as prioridades</option>
+            <option value="alta">Prioridade alta</option>
+            <option value="media">Prioridade média</option>
+            <option value="baixa">Prioridade baixa</option>
+          </select>
+          <div class="busca"><i class="ti ti-search"></i>
+            <input id="san-busca" type="text" placeholder="Buscar candidato..." aria-label="Buscar candidato"></div>
+          <button type="button" class="btn-sm" id="san-sel-alta" onclick="selecionarPorPrioridade('alta')"
+            title="Marca todas as sugestões pendentes de prioridade alta, mesmo as que ainda não foram carregadas">
+            <i class="ti ti-checks"></i>Selecionar todas de prioridade alta</button>
+        </div>
+        <div class="bulk-bar" id="san-bulk" style="display:none" role="region" aria-label="Ação em lote">
+          <span id="san-bulk-txt">0 selecionadas</span>
+          <div class="bulk-acoes">
+            <button type="button" class="btn-sm" onclick="decidirLote('manter')"><i class="ti ti-shield-check"></i>Manter</button>
+            <button type="button" class="btn-sm" onclick="decidirLote('inativar')"><i class="ti ti-user-off"></i>Inativar</button>
+            <button type="button" class="btn-sm vermelho san-so-admin" style="display:none" onclick="decidirLote('excluir')"><i class="ti ti-trash"></i>Excluir definitivamente</button>
+            <button type="button" class="btn-sm" onclick="limparSelecaoSanitizacao()">Limpar seleção</button>
+          </div>
+        </div>
+        <div class="tabela"><table id="san-tabela">
+          <thead id="san-head"></thead>
+          <tbody id="san-body"></tbody>
+        </table></div>
+        <div class="lista-rodape">
+          <span class="contador-lista" id="san-contador"></span>
+          <button type="button" class="btn-mais" id="san-mais" style="display:none" onclick="maisSanitizacao()">
+            <i class="ti ti-chevron-down"></i>Carregar mais</button>
+        </div>
+      </div>
+
+      <!-- ══ LISTA NEGRA ══ -->
+      <div class="screen" id="screen-listanegra">
+        <div class="painel san-info">
+          <div class="painel-hd" style="margin-bottom:8px">
+            <div><div class="painel-tit"><i class="ti ti-ban" style="margin-right:6px;color:var(--red)"></i>Lista negra de e-mails</div>
+              <div class="painel-sub" id="ln-contador">Carregando…</div></div>
+          </div>
+          <p class="san-explica">Endereços dos quais o RH <strong>não quer mais receber nada</strong> — por exemplo, de quem oferece risco à empresa.
+            O sistema ignora esses e-mails e também os currículos que trouxerem um deles. Para bloquear um candidato que já está no banco, use o botão
+            <strong>Lista negra</strong> no cadastro dele: assim ele também sai das listas e nunca mais é atribuído a uma vaga.</p>
+          <form class="ln-form" onsubmit="event.preventDefault();bloquearEmailManual()">
+            <input id="ln-email" type="email" placeholder="e-mail a bloquear" aria-label="E-mail a bloquear" autocomplete="off" required>
+            <input id="ln-motivo" type="text" placeholder="motivo (obrigatório)" aria-label="Motivo do bloqueio" maxlength="300" required>
+            <button type="submit" class="btn-sm vermelho" id="ln-btn"><i class="ti ti-ban"></i>Bloquear</button>
+          </form>
+        </div>
+        <div class="filtros">
+          <div class="busca"><i class="ti ti-search"></i>
+            <input id="ln-busca" type="text" placeholder="Buscar e-mail ou motivo..." aria-label="Buscar na lista negra" oninput="carregarListaNegra()"></div>
+        </div>
+        <div class="tabela"><table id="ln-tabela">
+          <thead><tr><th>E-mail</th><th>Motivo</th><th>Bloqueado por</th><th>Candidato</th><th></th></tr></thead>
+          <tbody id="ln-body"></tbody>
+        </table></div>
+      </div>
+
       <!-- ══ CONFIGURAÇÕES ══ -->
       <div class="screen" id="screen-config">
         <div class="sec-hd"><div class="sec-tit">Parâmetros do sistema</div></div>
@@ -398,52 +531,103 @@
   </div>
 </div>
 
-<!-- ═══════════════════ DRAWER ═══════════════════ -->
+<!-- ═══════════════════ DRAWERS ═══════════════════ -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="fecharDrawer()"></div>
+
+<!-- Candidatura (candidato ↔ vaga): a nota da IA para aquela vaga -->
 <div class="drawer" id="drawer">
   <div class="drawer-hd">
     <div><div class="drawer-nome" id="d-nome">—</div><div class="drawer-sub" id="d-sub">—</div></div>
-    <button class="drawer-x" onclick="fecharDrawer()"><i class="ti ti-x"></i></button>
+    <button class="drawer-x" onclick="fecharDrawer()" aria-label="Fechar"><i class="ti ti-x"></i></button>
   </div>
   <div class="drawer-body">
     <div class="nota-box">
       <div class="nota-circulo nota-vazia" id="d-nota">—</div>
-      <div><div class="nota-lbl">Nota de aderência à vaga</div>
+      <div><div class="nota-lbl">Nota do currículo</div>
         <div class="nota-txt" id="d-nota-txt">—</div></div>
     </div>
-    <div class="drawer-sec" id="d-sec-troca" style="display:none">
-      <div class="drawer-sec-tit">Vaga avaliada</div>
-      <div class="troca-vaga">
-        <select class="sel" id="d-vaga-troca" aria-label="Vaga para avaliar este candidato"></select>
-        <button type="button" class="btn-sm azul" id="d-btn-trocar" onclick="trocarVagaCandidato()">
-          <i class="ti ti-refresh"></i>Reavaliar</button>
-      </div>
-      <p class="troca-ajuda" id="d-troca-ajuda"></p></div>
+    <div class="drawer-sec" id="d-sec-resultado" style="display:none">
+      <div class="drawer-sec-tit">Resultado da candidatura</div>
+      <p style="font-size:13.5px;color:var(--text-2);line-height:1.6" id="d-resultado">—</p></div>
     <div class="drawer-sec"><div class="drawer-sec-tit">Dados do candidato</div>
       <div class="dados" id="d-dados"></div></div>
-    <div class="drawer-sec"><div class="drawer-sec-tit">Pontos fortes</div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Pontos fortes (para esta vaga)</div>
       <div class="tags" id="d-fortes"></div></div>
-    <div class="drawer-sec"><div class="drawer-sec-tit">Lacunas</div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Lacunas (para esta vaga)</div>
       <div class="tags" id="d-lacunas"></div></div>
     <div class="drawer-sec" id="d-sec-faltantes" style="display:none">
       <div class="drawer-sec-tit">Requisitos obrigatórios não atendidos</div>
       <div class="tags" id="d-faltantes"></div></div>
     <div class="drawer-sec"><div class="drawer-sec-tit">Resumo gerado pela IA</div>
       <p style="font-size:13.5px;color:var(--text-2);line-height:1.7" id="d-resumo">—</p></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Considerações do RH
+      <span class="consid-dica" title="Ficam presas ao candidato: continuam com ele se ele voltar ao Banco de Talentos">ficam com o candidato</span></div>
+      <div class="consid-lista" id="d-consid-lista" data-consid></div>
+      <textarea class="consid-campo" id="d-consid" maxlength="4000" placeholder="Escreva uma consideração sobre este candidato…"></textarea>
+      <button type="button" class="btn-sm azul" onclick="adicionarConsideracao('d')"><i class="ti ti-message-plus"></i>Adicionar consideração</button></div>
   </div>
   <div class="drawer-rodape">
     <div class="aviso-arquivo" id="d-sem-arquivo" style="display:none">
       <i class="ti ti-info-circle"></i>Arquivo original não disponível para este candidato</div>
     <button class="btn-drawer" id="d-btn-curriculo" onclick="verCurriculo()">
       <i class="ti ti-file-text"></i>Ver currículo</button>
-    <button class="btn-drawer" onclick="baixarCurriculo()"><i class="ti ti-download"></i></button>
-    <button class="btn-drawer vermelho" id="d-btn-descartar" onclick="descartarCandidato()">
-      <i class="ti ti-x"></i>Descartar</button>
-    <button class="btn-drawer verde" id="d-btn-chamar" onclick="selecionarCandidato()">
-      <i class="ti ti-user-check"></i>Chamar para entrevista</button>
+    <button class="btn-drawer" onclick="baixarCurriculo()" aria-label="Baixar currículo"><i class="ti ti-download"></i></button>
+    <button class="btn-drawer" id="d-btn-banco" onclick="abrirTalentoDaCandidatura()">
+      <i class="ti ti-users-group"></i>Ver no banco</button>
+    <button class="btn-drawer vermelho" id="d-btn-reprovar" onclick="reprovarCandidatura()"
+      title="Reprova o candidato nesta vaga: ele volta ao Banco de Talentos">
+      <i class="ti ti-x"></i>Reprovar</button>
+    <button class="btn-drawer vermelho" id="d-btn-devolver" onclick="devolverAoBanco()"
+      title="Encerra esta candidatura e o candidato volta ao Banco de Talentos">
+      <i class="ti ti-arrow-back-up"></i>Devolver ao banco</button>
     <button class="btn-drawer verde" id="d-btn-agendar" style="display:none"
       onclick="fecharDrawer();abrirAgendamento(app.candidatoAberto.id,app.candidatoAberto.nome,app.candidatoAberto.telefone_e164||app.candidatoAberto.telefone)">
       <i class="ti ti-brand-whatsapp"></i>Agendar entrevista</button>
+  </div>
+</div>
+
+<!-- Candidato no Banco de Talentos: sugestão da IA, dados, histórico de vagas -->
+<div class="drawer" id="drawer-talento">
+  <div class="drawer-hd">
+    <div><div class="drawer-nome" id="t-nome">—</div><div class="drawer-sub" id="t-sub">—</div></div>
+    <button class="drawer-x" onclick="fecharDrawer()" aria-label="Fechar"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="drawer-body">
+    <div class="aviso-negra" id="t-negra" style="display:none" role="alert"></div>
+    <div class="ia-box" id="t-ia"></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Dados do candidato</div>
+      <div class="dados" id="t-dados"></div></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Pontos positivos</div>
+      <div class="tags" id="t-positivos"></div></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Pontos negativos</div>
+      <div class="tags" id="t-negativos"></div></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Resumo gerado pela IA</div>
+      <p style="font-size:13.5px;color:var(--text-2);line-height:1.7" id="t-resumo">—</p></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Histórico de vagas</div>
+      <div id="t-historico"></div></div>
+    <div class="drawer-sec"><div class="drawer-sec-tit">Considerações do RH
+      <span class="consid-dica" title="Ficam presas ao candidato: continuam com ele se ele voltar ao Banco de Talentos">ficam com o candidato</span></div>
+      <div class="consid-lista" id="t-consid-lista" data-consid></div>
+      <textarea class="consid-campo" id="t-consid" maxlength="4000" placeholder="Escreva uma consideração sobre este candidato…"></textarea>
+      <button type="button" class="btn-sm azul" onclick="adicionarConsideracao('t')"><i class="ti ti-message-plus"></i>Adicionar consideração</button></div>
+  </div>
+  <div class="drawer-rodape">
+    <div class="aviso-arquivo" id="t-sem-arquivo" style="display:none">
+      <i class="ti ti-info-circle"></i>Arquivo original não disponível para este candidato</div>
+    <button class="btn-drawer verde" id="t-btn-atribuir" onclick="abrirAtribuicao()">
+      <i class="ti ti-arrow-right-circle"></i>Atribuir a uma vaga</button>
+    <button class="btn-drawer" id="t-btn-curriculo" onclick="verCurriculoDoCandidato()">
+      <i class="ti ti-file-text"></i>Ver currículo</button>
+    <button class="btn-drawer" id="t-btn-baixar" onclick="baixarCurriculoDoCandidato()" aria-label="Baixar currículo"><i class="ti ti-download"></i></button>
+    <button class="btn-drawer" onclick="registrarContato()" title="Marca que você falou com o candidato (conta como movimentação)">
+      <i class="ti ti-phone-call"></i>Registrei contato</button>
+    <button class="btn-drawer" onclick="abrirEdicaoCandidato()"><i class="ti ti-pencil"></i>Editar dados</button>
+    <button class="btn-drawer" id="t-btn-status" onclick="alternarInativo()"><i class="ti ti-user-off"></i>Inativar</button>
+    <button class="btn-drawer vermelho" id="t-btn-negra" onclick="abrirBloqueioCandidato()"
+      title="Bloqueia o e-mail dele, cancela as candidaturas abertas e nunca mais o atribui a uma vaga"><i class="ti ti-ban"></i>Lista negra</button>
+    <button class="btn-drawer" id="t-btn-liberar" style="display:none" onclick="tirarCandidatoDaListaNegra()"><i class="ti ti-ban"></i>Tirar da lista negra</button>
+    <button class="btn-drawer vermelho" id="t-btn-excluir" style="display:none" onclick="excluirDadosCandidato()"
+      title="Só administrador. Apaga os dados pessoais (LGPD art. 18)"><i class="ti ti-trash"></i>Excluir dados</button>
   </div>
 </div>
 
@@ -457,15 +641,30 @@
       <input id="vaga-titulo" type="text" placeholder="Ex: Logística"></div>
     <div class="f-campo"><label>Setor</label><select id="vaga-setor"></select></div>
   </div>
+  <div class="f-grid2">
+    <div class="f-campo"><label for="vaga-funcao">Função</label><select id="vaga-funcao"></select></div>
+    <div class="f-campo"><label for="vaga-nivel">Nível</label><select id="vaga-nivel"></select></div>
+  </div>
+  <p style="font-size:12px;color:var(--gray-text);margin:-4px 0 12px">
+    O setor, a função e o nível são o que o sistema usa para selecionar os currículos do Banco de Talentos para esta vaga.</p>
   <div class="f-campo"><label>Quantidade de vagas</label>
     <input id="vaga-qtd" type="number" min="1" value="1" style="max-width:120px"></div>
   <div class="f-campo"><label>Empresas</label>
     <div class="empresas-grid" id="vaga-empresas"></div></div>
+  <div class="ia-vaga" id="ia-vaga">
+    <div class="ia-vaga-tit"><i class="ti ti-sparkles" aria-hidden="true"></i>Escrever com IA <span>(opcional)</span></div>
+    <textarea id="ia-vaga-pedido" maxlength="1500" style="min-height:58px"
+      placeholder="Descreva a vaga em uma ou duas frases. Ex.: auxiliar contábil para o financeiro, nível júnior; precisa saber Excel e conciliação bancária"></textarea>
+    <div class="ia-vaga-rodape">
+      <span id="ia-vaga-aviso">A IA escreve um rascunho da descrição, do perfil e dos requisitos; você revisa antes de salvar.</span>
+      <button type="button" class="btn-sm azul" id="ia-vaga-btn" onclick="gerarRascunhoVaga()"><i class="ti ti-wand"></i>Gerar rascunho</button>
+    </div>
+  </div>
   <div class="f-campo"><label>Descrição da vaga</label>
     <textarea id="vaga-descricao" placeholder="Atividades e responsabilidades..."></textarea></div>
   <div class="f-campo"><label>Perfil comportamental esperado</label>
     <textarea id="vaga-perfil" placeholder="Ex: Proativo, organizado..." style="min-height:60px"></textarea></div>
-  <div class="f-sec">Requisitos <span style="text-transform:none;font-weight:400">— obrigatórios eliminam, desejáveis pontuam</span></div>
+  <div class="f-sec">Requisitos <span style="text-transform:none;font-weight:400">— obrigatórios eliminam, desejáveis pontuam, diferenciais dão pontos extras</span></div>
   <div id="req-list"></div>
   <button class="btn-add" onclick="addRequisito()"><i class="ti ti-plus"></i>Adicionar requisito</button>
   <div class="modal-acoes">
@@ -497,8 +696,19 @@
   <div class="modal-hd"><div class="modal-tit">
     <i class="ti ti-clipboard-check" style="color:var(--blue)"></i>Registrar resultado</div>
     <button class="modal-x" onclick="fecharModal('modal-resultado')"><i class="ti ti-x"></i></button></div>
-  <p style="font-size:13px;color:var(--gray-text);margin-bottom:15px">
+  <p style="font-size:13px;color:var(--gray-text);margin-bottom:12px">
     Entrevista — <strong id="res-nome"></strong></p>
+  <div class="res-abas" role="tablist">
+    <button type="button" class="res-aba ativa" id="res-aba-resultado" role="tab" aria-selected="true" onclick="abaResultado('resultado')">Resultado</button>
+    <button type="button" class="res-aba" id="res-aba-consid" role="tab" aria-selected="false" onclick="abaResultado('consid')">Considerações <span id="res-consid-n"></span></button>
+  </div>
+  <div id="res-painel-consid" style="display:none">
+    <p class="consid-explica">Anote o que achou do candidato. As considerações ficam no <strong>cadastro dele</strong> e continuam lá se ele voltar ao Banco de Talentos.</p>
+    <div class="consid-lista" id="res-consid-lista" data-consid></div>
+    <textarea class="consid-campo" id="res-consid" maxlength="4000" placeholder="Considerações sobre o candidato depois da entrevista…"></textarea>
+    <button type="button" class="btn-sm azul" onclick="adicionarConsideracao('res')"><i class="ti ti-message-plus"></i>Adicionar consideração</button>
+  </div>
+  <div id="res-painel-resultado">
   <button class="res-btn res-aprovado" onclick="registrarResultado('aprovado')">
     <i class="ti ti-check" style="font-size:18px"></i>
     <div><strong>Aprovado</strong><span>Candidato segue no processo</span></div></button>
@@ -513,6 +723,7 @@
     <div><strong>Remarcar</strong><span>Nova data e aviso pelo WhatsApp</span></div></button>
   <div class="f-campo" style="margin-top:14px"><label>Observações (opcional)</label>
     <textarea id="res-obs" placeholder="Anotações sobre a entrevista..." style="min-height:66px"></textarea></div>
+  </div>
 </div></div>
 
 <div class="modal-overlay" id="modal-ver-email"><div class="modal" style="width:560px">
@@ -534,14 +745,104 @@
     Clique em "Reprocessar" na Fila de exceções para tentar de novo e guardar o conteúdo.</p>
 </div></div>
 
+<div class="modal-overlay" id="modal-atribuir"><div class="modal" style="width:940px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-arrow-right-circle" style="color:var(--green)"></i>Atribuir candidato a uma vaga</div>
+    <button class="modal-x" onclick="fecharModal('modal-atribuir')" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
+  <div class="atrib-aviso"><i class="ti ti-info-circle"></i>
+    A sugestão da IA é só um apoio para a decisão. Quem atribui — e pode escolher qualquer vaga aberta — é você.</div>
+  <div class="atrib-grid">
+    <section class="atrib-col" aria-labelledby="atr-tit-ia">
+      <h3 id="atr-tit-ia"><i class="ti ti-sparkles"></i>Sugestão da IA para o candidato</h3>
+      <div id="atr-candidato"></div>
+    </section>
+    <section class="atrib-col" aria-labelledby="atr-tit-vaga">
+      <h3 id="atr-tit-vaga"><i class="ti ti-briefcase"></i>Vaga</h3>
+      <div class="f-campo"><label for="atr-vaga">Escolha a vaga aberta</label>
+        <select id="atr-vaga" onchange="mostrarVagaAtribuicao()"></select></div>
+      <div id="atr-vaga-info"></div>
+    </section>
+  </div>
+  <div id="atr-compat"></div>
+  <div id="atr-distancias"></div>
+  <div class="f-campo" style="margin-top:14px"><label for="atr-obs">Observação <span style="font-weight:400;color:var(--gray-text)">(opcional — fica no histórico da candidatura)</span></label>
+    <textarea id="atr-obs" placeholder="Ex.: indicação do gerente da loja, perfil forte para expedição..." style="min-height:60px"></textarea></div>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-atribuir')">Cancelar</button>
+    <button class="btn-primary" id="atr-confirmar" onclick="confirmarAtribuicao()">
+      <i class="ti ti-check"></i>Atribuir à vaga</button></div>
+</div></div>
+
+<div class="modal-overlay" id="modal-editar-candidato"><div class="modal" style="width:560px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-pencil" style="color:var(--blue)"></i>Editar dados do candidato</div>
+    <button class="modal-x" onclick="fecharModal('modal-editar-candidato')" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
+  <div class="f-campo"><label for="ed-nome">Nome</label><input id="ed-nome" type="text"></div>
+  <div class="f-grid2">
+    <div class="f-campo"><label for="ed-telefone">Telefone</label><input id="ed-telefone" type="text"></div>
+    <div class="f-campo"><label for="ed-email">E-mail</label><input id="ed-email" type="email"></div>
+    <div class="f-campo"><label for="ed-cidade">Cidade</label><input id="ed-cidade" type="text"></div>
+    <div class="f-campo"><label for="ed-uf">UF</label><input id="ed-uf" type="text" maxlength="2" placeholder="DF" style="text-transform:uppercase"></div>
+    <div class="f-campo"><label for="ed-bairro">Bairro <span style="font-weight:400;color:var(--gray-text)">(só o nome)</span></label><input id="ed-bairro" type="text" maxlength="60"></div>
+    <div class="f-campo"><label for="ed-regiao">Região onde mora</label>
+      <select id="ed-regiao" title="Usada para estimar a distância até as lojas de cada vaga"><option value="">Automática (pela cidade)</option></select></div>
+    <div class="f-campo"><label for="ed-nascimento">Data de nascimento</label><input id="ed-nascimento" type="date"></div>
+    <div class="f-campo"><label for="ed-sexo">Sexo</label>
+      <select id="ed-sexo"><option value="">Não informado</option><option value="feminino">Feminino</option><option value="masculino">Masculino</option></select></div>
+    <div class="f-campo"><label for="ed-escolaridade">Escolaridade</label>
+      <select id="ed-escolaridade"><option value="">Não informada</option><option value="nenhuma">Sem escolaridade</option>
+        <option value="fundamental">Fundamental</option><option value="medio">Médio</option><option value="tecnico">Técnico</option>
+        <option value="superior">Superior</option><option value="pos">Pós-graduação</option></select></div>
+    <div class="f-campo"><label for="ed-experiencia">Experiência (anos)</label><input id="ed-experiencia" type="number" min="0" max="60" step="0.5"></div>
+    <div class="f-campo"><label for="ed-cnh">CNH</label><input id="ed-cnh" type="text" placeholder="ex.: B, AB" style="text-transform:uppercase"></div>
+  </div>
+  <div class="f-sec">Consentimento (LGPD)</div>
+  <p class="troca-ajuda" id="ed-consent" style="margin:0 0 8px"></p>
+  <button type="button" class="btn-sm" onclick="registrarConsentimentoCandidato()">
+    <i class="ti ti-certificate"></i>Registrar que o candidato confirmou a permanência no banco</button>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-editar-candidato')">Cancelar</button>
+    <button class="btn-primary" id="ed-salvar" onclick="salvarEdicaoCandidato()">Salvar</button></div>
+</div></div>
+
+<div class="modal-overlay" id="modal-sanitizar"><div class="modal" style="width:480px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-recycle" style="color:var(--purple)" id="san-m-icone"></i><span id="san-m-titulo">Decidir</span></div>
+    <button class="modal-x" onclick="fecharModal('modal-sanitizar')" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
+  <p id="san-m-msg" style="font-size:13px;color:var(--text-2);line-height:1.65;white-space:pre-line;margin-bottom:12px"></p>
+  <div class="f-campo" id="san-m-meses-wrap"><label for="san-m-meses">Não sugerir de novo por</label>
+    <select id="san-m-meses"><option value="3">3 meses</option><option value="6" selected>6 meses</option>
+      <option value="12">12 meses</option><option value="24">24 meses</option></select></div>
+  <div class="f-campo"><label for="san-m-obs">Observação <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
+    <textarea id="san-m-obs" style="min-height:60px" placeholder="Por que esta decisão?"></textarea></div>
+  <label class="av-check" id="san-m-confirma-wrap" style="display:none;padding-bottom:0;align-self:auto">
+    <input type="checkbox" id="san-m-confirma"> Entendo que a exclusão é definitiva e não pode ser desfeita</label>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-sanitizar')">Cancelar</button>
+    <button class="btn-primary" id="san-m-ok" onclick="confirmarDecisaoSanitizacao()">Confirmar</button></div>
+</div></div>
+
+<div class="modal-overlay" id="modal-lista-negra"><div class="modal" style="width:480px">
+  <div class="modal-hd"><div class="modal-tit"><i class="ti ti-ban" style="color:var(--red)"></i>Colocar na lista negra</div>
+    <button class="modal-x" onclick="fecharModal('modal-lista-negra')" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
+  <p id="ln-m-msg" style="font-size:13px;color:var(--text-2);line-height:1.65;white-space:pre-line;margin-bottom:12px"></p>
+  <div class="f-campo"><label for="ln-m-motivo">Motivo <span style="font-weight:400;color:var(--gray-text)">(obrigatório — fica registrado com o seu nome)</span></label>
+    <textarea id="ln-m-motivo" style="min-height:70px" maxlength="300" placeholder="Ex.: ex-funcionário com ocorrências"></textarea></div>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-lista-negra')">Cancelar</button>
+    <button class="btn-primary" id="ln-m-ok" style="background:var(--red)" onclick="confirmarBloqueioCandidato()">Bloquear</button></div>
+</div></div>
+
 <div class="modal-overlay" id="modal-upload-manual"><div class="modal" style="width:520px">
   <div class="modal-hd"><div class="modal-tit">
     <i class="ti ti-upload" style="color:var(--blue)"></i>Enviar currículo</div>
     <button class="modal-x" onclick="fecharModal('modal-upload-manual')"><i class="ti ti-x"></i></button></div>
   <p style="font-size:12.5px;color:var(--gray-text);margin-bottom:15px">
-    Para um currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão). A IA avalia
-    contra a vaga escolhida na próxima execução da rotina — o mesmo processo dos e-mails.</p>
-  <div class="f-campo"><label>Vaga</label>
+    Para um currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão). Ele entra no
+    <strong>Banco de Talentos</strong> e a IA o analisa, como os e-mails. Se você já sabe a vaga, escolha-a: o candidato
+    é atribuído a ela e o currículo fica com o <strong>setor, a função e o nível dessa vaga</strong> (você já decidiu que ele serve);
+    senão, deixe "só Banco de Talentos" e a IA classifica.</p>
+  <div class="f-campo"><label for="up-vaga">Vaga <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
     <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
   <div class="f-campo"><label>Arquivo <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC ou DOCX — até 10 MB)</span></label>
     <input id="up-arquivo" type="file"
@@ -549,7 +850,7 @@
   <div class="modal-acoes">
     <button class="btn-cancel" onclick="fecharModal('modal-upload-manual')">Cancelar</button>
     <button class="btn-primary" id="up-btn-enviar" onclick="enviarUploadManual()">
-      <i class="ti ti-send"></i>Enviar para avaliação</button></div>
+      <i class="ti ti-send"></i>Enviar para o banco</button></div>
 
   <div class="f-sec" style="margin-top:20px">Últimos envios</div>
   <div id="up-lista" style="margin-top:8px"></div>
@@ -603,9 +904,12 @@
 <script src="js/navegacao.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/vagas.js"></script>
-<script src="js/triagem.js"></script>
+<script src="js/banco-talentos.js"></script>
 <script src="js/candidatos.js"></script>
 <script src="js/entrevistas.js"></script>
+<script src="js/sanitizacao.js"></script>
+<script src="js/lista-negra.js"></script>
+<script src="js/consideracoes.js"></script>
 <script src="js/configuracoes.js"></script>
 <script src="js/ui-global.js"></script>
 <script src="js/inicializacao.js"></script>

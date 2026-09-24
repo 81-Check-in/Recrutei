@@ -10,8 +10,10 @@ async function carregarConfig() {
   if (error) { erro(el, error.message); return; }
 
   const GRUPOS = {
-    'Retenção de dados': ['retencao_meses_ate_inativar','retencao_meses_ate_expurgar','reincidencia_dias_carencia'],
-    'Avaliação por IA':  ['faixa_ambigua_min','faixa_ambigua_max','modelo_ia_classificacao','modelo_ia_avaliacao'],
+    'Banco de Talentos — sanitização': ['sanitizacao_intervalo_meses','sanitizacao_meses_sem_movimentacao','sanitizacao_reprovacoes_max',
+      'sanitizacao_aderencia_min','sanitizacao_confianca_min','sanitizacao_detectar_duplicidade','sanitizacao_retencao_maxima_meses',
+      'sanitizacao_adiar_meses','sanitizacao_pesos','sanitizacao_emails_aviso'],
+    'Avaliação por IA':  ['ia_confianca_minima','faixa_ambigua_min','faixa_ambigua_max','modelo_ia_classificacao','modelo_ia_avaliacao'],
     'Captação de e-mail':['horario_execucao_pipeline','imap_servidor','imap_porta','tamanho_minimo_anexo_bytes'],
     'WhatsApp':          ['mensagem_convocacao_padrao','ddi_padrao','ddd_padrao']
   };
@@ -56,6 +58,50 @@ async function carregarConfig() {
     </div>`;
   }).join('');
   sincronizarSegundaAvaliacao();
+  await carregarNiveisConfig(el);
+}
+
+// ── Níveis da qualificação dos currículos ──
+// O administrador habilita/desabilita Jovem Aprendiz e Trainee (para auditar a classificação) e reescreve o critério de qualquer
+// nível. Desabilitado: a IA deixa de receber o nível e o formulário da vaga deixa de oferecê-lo; o que já o tem continua como está.
+// Cada mudança fica na auditoria (alterar_nivel_funcao, backend/sql/036). Júnior, Pleno e Sênior não desabilitam.
+async function carregarNiveisConfig(el) {
+  const { data, error } = await db.from('niveis_funcao').select('codigo,nome,descricao,ativo,ordem').order('ordem');
+  if (error || !data?.length) return;
+  el.insertAdjacentHTML('beforeend', `<div class="config-grupo" id="config-niveis">
+    <h3>Níveis de experiência (qualificação dos currículos)</h3>
+    <div class="config-desc" style="margin:-6px 0 8px">O critério é o que a IA lê para escolher o nível. <strong>Jovem Aprendiz</strong> e <strong>Trainee</strong>
+      só existem nos cargos que os aceitam (Logística/Auxiliar, DP/Auxiliar, RH/Auxiliar, Loja/Repositor) e podem ser habilitados ou desabilitados aqui.
+      Desabilitado, a IA deixa de usar o nível e o formulário da vaga deixa de oferecê-lo; currículos e vagas que já o têm continuam como estão.
+      Cada mudança fica registrada na auditoria.</div>
+    ${data.map(n => {
+      const alternavel = NIVEIS_INICIANTES.includes(n.codigo);
+      return `<div class="config-item" style="align-items:flex-start">
+        <div class="config-info" style="flex:1">
+          <div class="config-chave">${escapeHtml(n.nome)} <span style="font-weight:400;color:var(--gray-text)">(${n.codigo})</span></div>
+          <textarea class="config-input" id="nivel-desc-${n.codigo}" rows="2" style="width:100%;margin-top:6px">${escapeHtml(n.descricao || '')}</textarea>
+        </div>
+        <label class="config-toggle" title="${alternavel ? 'Habilita ou desabilita o nível' : 'Júnior, Pleno e Sênior são a base da classificação: não podem ser desabilitados'}">
+          <input type="checkbox" id="nivel-ativo-${n.codigo}" ${n.ativo ? 'checked' : ''} ${alternavel ? '' : 'disabled'}> Habilitado
+        </label>
+        <button class="btn-sm azul" onclick="salvarNivel('${n.codigo}')">Salvar</button>
+      </div>`;
+    }).join('')}
+  </div>`);
+}
+
+async function salvarNivel(codigo) {
+  const alternavel = NIVEIS_INICIANTES.includes(codigo);
+  const { error } = await db.rpc('alterar_nivel_funcao', {
+    p_codigo: codigo,
+    p_ativo: alternavel ? $(`#nivel-ativo-${codigo}`).checked : null,     // os três níveis-base nunca mudam de estado
+    p_descricao: $(`#nivel-desc-${codigo}`).value
+  });
+  if (error) { toast(mensagemErro(error), 'erro'); return; }
+  // o formulário da vaga desta sessão já reflete a mudança; quem estiver com o painel aberto vê ao recarregar (o banco recusa de qualquer forma)
+  const { data } = await db.from('niveis_funcao').select('codigo,nome').eq('ativo', true).order('ordem');
+  if (data) app.cache.niveis = data;
+  toast('Nível salvo');
 }
 
 // Preços por 1M tokens (US$). Manter igual a PRECOS em backend/config.py.

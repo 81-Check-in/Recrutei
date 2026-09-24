@@ -59,11 +59,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Filtros
-  const recarregarTriagem = debounce(carregarTriagem);
-  ['filtro-vaga','filtro-nota','filtro-status'].forEach(id =>
-    $('#'+id).addEventListener('change', carregarTriagem));
-  $('#busca-triagem').addEventListener('input', recarregarTriagem);
+  // Filtros do Banco de Talentos (nome e cidade esperam a pessoa parar de digitar)
+  ['filtro-b-area','filtro-b-cargo','filtro-b-nivel','filtro-b-sexo','filtro-b-status','ordem-banco'].forEach(id =>
+    $('#'+id).addEventListener('change', carregarBanco));
+  const recarregarBanco = debounce(carregarBanco);
+  ['busca-banco','filtro-b-cidade'].forEach(id => $('#'+id).addEventListener('input', recarregarBanco));
+
+  // Sanitização: trocar de visão descarta a seleção (as linhas são outras)
+  $('#san-visao').addEventListener('change', () => { selecaoSanitizacao.clear(); carregarSanitizacao(); });
+  $('#san-prioridade').addEventListener('change', carregarSanitizacao);
+  $('#san-busca').addEventListener('input', debounce(carregarSanitizacao));
 
   $('#filtro-cand-status').addEventListener('change', carregarCandidatos);
   $('#busca-candidatos').addEventListener('input', debounce(carregarCandidatos));

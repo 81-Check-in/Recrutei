@@ -6,6 +6,7 @@ CLOSE, MOVE nem COPY. A única alteração feita na caixa é marcar como lida (\
 """
 import imaplib
 import email
+import email.message      # usado nas anotações; sem isto o módulo só importa se outro já tiver carregado o submódulo
 import ssl
 from datetime import date
 from email.header import decode_header
@@ -154,12 +155,12 @@ _MESES_IMAP = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def _criterio_busca(apos_uid: int = 0) -> tuple:
+def _criterio_busca(apos_uid: int = 0, todas: bool = False) -> tuple:
     """
-    UNSEEN, limitado por IMAP_DESDE (data) e por apos_uid (só UIDs maiores).
+    UNSEEN (ou ALL, com todas=True), limitado por IMAP_DESDE (data) e por apos_uid (só UIDs maiores).
     O IMAP exige DD-Mon-AAAA com mês em inglês.
     """
-    criterio: tuple = ("UNSEEN",)
+    criterio: tuple = ("ALL",) if todas else ("UNSEEN",)
     if apos_uid > 0:
         criterio += ("UID", f"{apos_uid + 1}:*")
     if IMAP_DESDE:
@@ -203,13 +204,18 @@ def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
 
 
 def buscar_novos(limite: int = 0, apos_uid: int = 0,
-                 uidvalidity_salvo: int = 0) -> Tuple[List[Dict], int]:
+                 uidvalidity_salvo: int = 0, todas: bool = False, ate_uid: int = 0) -> Tuple[List[Dict], int]:
     """
     Lê os e-mails não lidos da caixa de entrada, do mais antigo para o mais novo.
 
     apos_uid: ignora UIDs até esse valor (e-mails já analisados que ficaram não lidos).
+    todas: lê também os já lidos (--reler-caixa). Exige IMAP_DESDE: sem data seria a caixa inteira,
+           anos de e-mail que nada têm a ver com currículos.
+    ate_uid: não passa desse UID (0 = sem limite). Serve para reler só o que o pipeline já tinha lido.
     Devolve (mensagens, UIDVALIDITY da caixa).
     """
+    if todas and not IMAP_DESDE:
+        raise RuntimeError("Reler a caixa exige uma data inicial (IMAP_DESDE ou --desde AAAA-MM-DD).")
     mensagens: List[Dict] = []
 
     with conexao_imap() as conn:
@@ -220,18 +226,18 @@ def buscar_novos(limite: int = 0, apos_uid: int = 0,
                         "marcador de progresso ignorado")
             apos_uid = 0
 
-        status, dados = conn.uid("SEARCH", *_criterio_busca(apos_uid))
+        status, dados = conn.uid("SEARCH", *_criterio_busca(apos_uid, todas))
         if status != "OK":
             log.error("Falha ao buscar mensagens")
             return [], validade
 
         # "UID n:*" sempre inclui o maior UID da caixa, mesmo abaixo de n: filtrar aqui
-        ids = [u for u in dados[0].split() if int(u) > apos_uid]
+        ids = [u for u in dados[0].split() if int(u) > apos_uid and (not ate_uid or int(u) <= ate_uid)]
         if limite > 0:
             ids = ids[:limite]
         desde = f" desde {IMAP_DESDE}" if IMAP_DESDE else ""
-        apos = f", após o UID {apos_uid}" if apos_uid else ""
-        log.info(f"{len(ids)} mensagem(ns) não lida(s){desde}{apos}")
+        apos = (f", após o UID {apos_uid}" if apos_uid else "") + (f", até o UID {ate_uid}" if ate_uid else "")
+        log.info(f"{len(ids)} mensagem(ns) {'na caixa' if todas else 'não lida(s)'}{desde}{apos}")
 
         for uid in ids:
             try:

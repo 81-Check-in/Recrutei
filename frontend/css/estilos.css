@@ -258,6 +258,10 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .vaga-empresa{font-size:12px;color:var(--gray-text)}
 .vaga-stats{display:flex;gap:12px;margin-top:13px;padding-top:13px;border-top:1px solid var(--gray-border)}
 .vaga-stat{text-align:center;flex:1}
+.vaga-stat-link{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;border-radius:8px}
+.vaga-stat-link:hover .vaga-stat-val{text-decoration:underline}
+.vaga-stat-link:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
 .vaga-stat-val{font-size:18px;font-weight:700;color:var(--navy)}
 .vaga-stat-lbl{font-size:10.5px;color:var(--gray-text);margin-top:1px}
 .vaga-footer{display:flex;align-items:center;justify-content:space-between;margin-top:13px}
@@ -870,3 +874,159 @@ body{background:var(--bg);color:var(--fg)}
 :root[data-theme="dark"] :is(.modal-overlay,.drawer-overlay){background:rgba(3,7,12,.62)}
 :root[data-theme="dark"] .toast{background:#242e3b;border:1px solid #344253;color:var(--text)}
 
+
+/* ══ BANCO DE TALENTOS ══
+   Lista com filtros, sugestão da IA (Área / Cargo / Nível), atribuição lado a lado e sanitização.
+   Só variáveis de tema: o modo escuro e os selos coloridos vêm dos tokens acima. */
+.busca-cidade{flex:0 1 210px;min-width:170px}
+.sel-ordem{height:30px;margin-left:12px;font-size:12px;font-weight:400;vertical-align:middle}
+.tag-mini.amarelo{background:var(--yellow-light);color:var(--yellow)}
+.tag-mini.roxo{background:var(--purple-light);color:var(--purple)}
+.nav-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#7c3aed;color:#fff;
+  font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+@media (min-width:901px){
+  .sidebar-collapsed .nav-badge{position:absolute;top:5px;right:8px;min-width:16px;height:16px;padding:0 4px;font-size:9.5px}
+}
+
+/* sugestão da IA */
+.ia-box{background:var(--gray-bg);border-radius:12px;padding:16px 18px;margin-bottom:18px}
+.ia-box-tit{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--gray-text);
+  text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.ia-box-tit i{color:var(--purple);font-size:15px}
+.ia-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ia-chip{background:var(--surface);border:1px solid var(--gray-border);border-radius:9px;padding:9px 11px;min-width:0}
+.ia-chip span{display:block;font-size:10.5px;color:var(--gray-text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.ia-chip strong{font-size:13.5px;font-weight:600;color:var(--text);word-break:break-word}
+.conf{margin-top:12px}
+.conf-lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--gray-text);margin-bottom:5px}
+.conf-lbl b{color:var(--text)}
+.conf-barra{height:7px;border-radius:5px;background:var(--gray-border);overflow:hidden}
+.conf-barra i{display:block;height:100%;border-radius:5px;background:var(--green)}
+.conf.media .conf-barra i{background:var(--yellow)}
+.conf.baixa .conf-barra i{background:var(--red)}
+.ia-alerta{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:10px 12px;border-radius:9px;
+  background:var(--yellow-light);color:var(--yellow);font-size:12.5px;line-height:1.5}
+.ia-alerta.info{background:var(--blue-light);color:var(--blue-mid)}
+.ia-alerta i{font-size:16px;flex-shrink:0;margin-top:1px}
+.ia-alerta strong{font-weight:600}
+.ia-rodape{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;
+  font-size:11.5px;color:var(--gray-text)}
+
+/* histórico de vagas do candidato */
+.hist-item{border:1px solid var(--gray-border);border-radius:10px;padding:11px 13px;margin-bottom:8px;background:var(--surface)}
+.hist-item.legado{opacity:.7;border-style:dashed}
+.hist-topo{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--text)}
+.hist-meta{font-size:12px;color:var(--gray-text);margin-top:4px}
+.hist-res{font-size:12.5px;color:var(--text-2);margin-top:6px;line-height:1.5}
+
+/* atribuição manual: sugestão da IA × vaga, lado a lado */
+.atrib-aviso{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--blue-mid);background:var(--blue-light);
+  border-radius:9px;padding:10px 13px;margin-bottom:14px;line-height:1.5}
+.atrib-aviso i{font-size:16px;flex-shrink:0;margin-top:1px}
+.atrib-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.atrib-col{border:1px solid var(--gray-border);border-radius:12px;padding:16px 18px;background:var(--surface);min-width:0}
+.atrib-col h3{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--gray-text);
+  text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+.atrib-col h3 i{font-size:15px;color:var(--purple)}
+.atr-nome{font-size:16px;font-weight:600;color:var(--navy)}
+.atr-local{font-size:12.5px;color:var(--gray-text);margin:2px 0 12px}
+.atr-resumo{font-size:12.5px;color:var(--text-2);line-height:1.6;margin-top:12px}
+.vaga-det{background:var(--gray-bg);border-radius:10px;padding:13px 15px}
+.vaga-det-topo{display:flex;align-items:center;gap:11px}
+.vaga-det-ico{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.vaga-det-topo strong{font-size:14px;color:var(--navy)}
+.vaga-det-sub{font-size:12px;color:var(--gray-text)}
+.vaga-det-meta{font-size:12px;color:var(--gray-text);margin-top:10px}
+.compat{display:flex;align-items:flex-start;gap:8px;margin-top:14px;padding:10px 13px;border-radius:9px;font-size:12.5px;line-height:1.5}
+.compat i{font-size:16px;flex-shrink:0;margin-top:1px}
+.compat.ok{background:var(--green-light);color:var(--green)}
+.compat.difere{background:var(--yellow-light);color:var(--yellow)}
+.compat.neutro{background:var(--gray-bg);color:var(--gray-text)}
+@media(max-width:900px){.atrib-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.ia-chips{grid-template-columns:1fr}.sel-ordem{margin:8px 0 0;display:block}}
+
+/* sanitização */
+.san-info{margin-bottom:16px}
+.san-explica{font-size:12.5px;color:var(--text-2);line-height:1.65;max-width:900px}
+.bulk-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;
+  padding:10px 14px;border:1px solid var(--blue);border-radius:10px;background:var(--blue-light);
+  color:var(--blue-mid);font-size:13px;font-weight:500}
+.bulk-acoes{display:flex;gap:8px;flex-wrap:wrap}
+.link-nome{color:var(--blue-mid);font-weight:500;text-decoration:none}
+.link-nome:hover{text-decoration:underline}
+.san-motivo{max-width:340px;font-size:12.5px;line-height:1.5;color:var(--text-2);white-space:normal}
+tbody tr.linha-sel td{background:var(--blue-light)}
+#san-tabela{min-width:900px}
+#san-tabela input[type=checkbox]{width:16px;height:16px;cursor:pointer}
+
+/* lista negra */
+.tag-mini.preto{background:var(--red);color:#fff}
+.ln-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.ln-form input{flex:1 1 220px;min-width:0;height:38px;padding:0 12px;border:1px solid var(--gray-border);border-radius:9px;
+  background:var(--white);color:var(--text);font:inherit;font-size:13px}
+.ln-form input:focus{outline:2px solid var(--blue);outline-offset:1px}
+#ln-tabela{min-width:760px}
+.ln-sub{font-size:11.5px;color:var(--gray-text);margin-top:2px}
+.ln-link{color:var(--blue-mid);font-weight:500;text-decoration:none}
+.ln-link:hover{text-decoration:underline}
+.ln-acoes{text-align:right;white-space:nowrap}
+.aviso-negra{display:flex;gap:10px;align-items:flex-start;margin:0 0 14px;padding:11px 14px;border-radius:10px;
+  background:var(--red-light);color:var(--red);font-size:13px;line-height:1.5}
+.aviso-negra i{font-size:18px;flex-shrink:0;margin-top:1px}
+.aviso-negra-meta{font-size:11.5px;opacity:.85;margin-top:2px}
+
+/* Etapa 2: ranking por vaga, requisito diferencial e assistente de IA */
+.tag.azul{background:var(--blue-light);color:var(--blue-mid)}
+.banco-ranking{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;
+  border:1px solid var(--blue);border-radius:12px;background:var(--blue-light);color:var(--blue-mid)}
+.banco-ranking>i{font-size:22px;flex-shrink:0}
+.banco-ranking-txt{display:flex;flex-direction:column;gap:2px;flex:1 1 260px;min-width:0;font-size:12.5px;line-height:1.5}
+.banco-ranking-txt strong{font-size:14px;color:var(--navy)}
+.aderencia{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:52px;margin-right:4px}
+.aderencia b{font-size:15px;font-weight:700}
+.aderencia i{display:block;height:4px;border-radius:4px;background:currentColor;min-width:2px;max-width:100%}
+.aderencia.alta{color:var(--green)}.aderencia.media{color:var(--yellow)}.aderencia.baixa{color:var(--gray-text)}
+.curr-termos{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;color:var(--gray-text)}
+.curr-termos i{font-size:14px;color:var(--blue-mid)}
+.curr-termos span{background:var(--blue-light);color:var(--blue-mid);padding:1px 8px;border-radius:20px;font-weight:500}
+.ia-vaga{margin:0 0 14px;padding:12px 14px;border:1px dashed var(--gray-border);border-radius:11px;background:var(--gray-bg)}
+.ia-vaga-tit{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:8px}
+.ia-vaga-tit i{color:var(--purple)}
+.ia-vaga-tit span{font-weight:400;color:var(--gray-text)}
+.ia-vaga textarea{width:100%;box-sizing:border-box}
+.ia-vaga-rodape{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;flex-wrap:wrap}
+.ia-vaga-rodape span{font-size:11.5px;color:var(--gray-text);flex:1 1 200px;line-height:1.5}
+
+/* Etapa 3: distância até as lojas e considerações do RH */
+.banco-ranking-ctl{display:flex;gap:8px;flex-wrap:wrap}
+.dist-box{margin-top:14px;padding:12px 14px;border:1px solid var(--gray-border);border-radius:10px;background:var(--gray-bg)}
+.dist-tit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:9px}
+.dist-tit i{color:var(--blue-mid);font-size:16px}
+.dist-tit span{font-weight:400;font-size:11.5px;color:var(--gray-text)}
+.dist-lojas{display:flex;flex-direction:column;gap:6px}
+.dist-loja{display:grid;grid-template-columns:52px 1fr auto 58px;align-items:center;gap:8px;font-size:12.5px}
+.dist-loja b{color:var(--navy)}
+.dist-loja span{color:var(--gray-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dist-loja em{font-style:normal;font-weight:600;color:var(--text)}
+.dist-loja i{font-style:normal;font-size:10.5px;font-weight:600;text-align:center;padding:2px 0;border-radius:20px}
+.dist-loja.perto i{background:var(--green-light);color:var(--green)}
+.dist-loja.medio i{background:var(--yellow-light);color:var(--yellow)}
+.dist-loja.longe i{background:var(--red-light);color:var(--red)}
+.consid-lista{display:flex;flex-direction:column;gap:9px;margin-bottom:10px}
+.consid-item{padding:10px 12px;border:1px solid var(--gray-border);border-radius:10px;background:var(--gray-bg)}
+.consid-topo{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.consid-topo strong{color:var(--navy)}
+.consid-topo span{color:var(--gray-text);font-size:11.5px;flex:1}
+.consid-del{border:0;background:transparent;color:var(--gray-text);cursor:pointer;font-size:15px;padding:2px 4px;border-radius:6px}
+.consid-del:hover{color:var(--red);background:var(--red-light)}
+.consid-ctx{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--blue-mid);margin-top:3px}
+.consid-item p{margin:6px 0 0;font-size:13px;line-height:1.6;color:var(--text-2);white-space:pre-line}
+.consid-campo{width:100%;box-sizing:border-box;min-height:64px;margin-bottom:8px;padding:9px 11px;border:1px solid var(--gray-border);
+  border-radius:9px;background:var(--white);color:var(--text);font:inherit;font-size:13px;resize:vertical}
+.consid-campo:focus{outline:2px solid var(--blue);outline-offset:1px}
+.consid-dica{font-weight:400;text-transform:none;letter-spacing:0;color:var(--gray-text);margin-left:6px}
+.consid-explica{font-size:12.5px;color:var(--text-2);line-height:1.6;margin:0 0 12px}
+.res-abas{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--gray-border)}
+.res-aba{border:0;background:transparent;padding:8px 14px;font:inherit;font-size:13px;font-weight:500;color:var(--gray-text);cursor:pointer;
+  border-bottom:2px solid transparent;margin-bottom:-1px}
+.res-aba.ativa{color:var(--blue-mid);border-bottom-color:var(--blue-mid)}

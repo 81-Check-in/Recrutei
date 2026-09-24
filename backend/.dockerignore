@@ -10,6 +10,7 @@ __pycache__/
 *.log
 temp/
 sql/
+tests/
 .git
 .idea/
 .vscode/

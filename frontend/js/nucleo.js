@@ -33,8 +33,9 @@ const app = {
   perfil: null,
   periodo: 7,
   telaAtual: 'dashboard',
-  cache: { setores: [], empresas: [], vagas: [] },
-  candidatoAberto: null,
+  cache: { setores: [], empresas: [], vagas: [], funcoes: [], niveis: [] },
+  candidatoAberto: null,     // candidatura aberta no drawer (candidato ↔ vaga)
+  talentoAberto: null,       // candidato aberto no drawer do Banco de Talentos
   entrevistaAberta: null
 };
 
@@ -82,6 +83,13 @@ function fmtDataHora(iso) {
     { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// Data e hora completas (com o ano), para o que precisa ser exato: quando um e-mail foi enviado
+function fmtDataHoraCompleta(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('pt-BR',
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function fmtHora(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString('pt-BR',
@@ -113,6 +121,53 @@ function escapeHtml(s) {
     c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+// ─────────────────────────────────────────────
+// BANCO DE TALENTOS — vocabulário e helpers compartilhados
+// ─────────────────────────────────────────────
+// Níveis do modelo real (Jovem Aprendiz e Trainee só existem em alguns cargos: funcoes_setor.aceita_iniciante).
+// Gerente, Encarregado e Supervisor são cargos, não níveis.
+const NIVEIS = { jovem_aprendiz: 'Jovem Aprendiz', trainee: 'Trainee', junior: 'Júnior', pleno: 'Pleno', senior: 'Sênior' };
+const NIVEIS_INICIANTES = ['jovem_aprendiz', 'trainee'];
+const rotuloNivel = n => NIVEIS[n] || '';
+
+// Situação do candidato no banco: [classe do selo, rótulo]
+const STATUS_BANCO = {
+  ativo:       ['pill-green', 'Disponível'],
+  em_processo: ['pill-blue',  'Em processo'],
+  inativo:     ['pill-gray',  'Inativo'],
+  expurgado:   ['pill-red',   'Excluído']
+};
+
+// Mesma normalização do banco (função norm_busca): minúsculas e sem acento. É com ela que a busca por
+// nome/cidade casa com as colunas nome_norm/cidade_norm, que têm índice.
+function normBusca(t) {
+  return String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Termo do usuário para dentro de um LIKE: % e _ digitados valem como texto, não como curinga
+const escaparLike = t => t.replace(/[\\%_]/g, c => '\\' + c);
+
+// "Cidade/UF" para mostrar
+const rotuloLocal = c => [c.cidade, c.uf].filter(Boolean).join('/') || '—';
+
+// Rótulo de uma vaga no seletor: "Título — Setor" (sem repetir quando são iguais)
+function rotuloVaga(v) {
+  const setor = (v.setor_nome || '').trim();
+  return setor && setor.toLowerCase() !== (v.titulo || '').trim().toLowerCase()
+    ? `${v.titulo} — ${setor}` : v.titulo;
+}
+
+// As funções do banco levantam erros em português (ex.: "Este candidato já está em um processo seletivo.").
+// PGRST202 = a função não existe: as migrações 020–025 ainda não foram aplicadas.
+function mensagemErro(error) {
+  if (error?.code === 'PGRST202' || error?.code === 'PGRST205' || /schema cache/.test(error?.message || '')) {
+    return 'O Banco de Talentos ainda não foi habilitado no banco de dados. Rode backend/sql/020 a 025.';
+  }
+  return error?.message || 'Erro inesperado';
+}
+
+const ehAdministrador = () => app.perfil?.perfil === 'administrador';
+
 function loading(container, msg = 'Carregando...') {
   container.innerHTML =
     `<div class="estado-vazio"><i class="ti ti-loader-2 girando"></i><p>${msg}</p></div>`;
@@ -137,7 +192,7 @@ function erro(container, msg) {
 // ═══════════════════════════════════════════════════════════
 
 function novoEstadoLista(tamanhoPagina = 50) {
-  return { tamanhoPagina, limite: tamanhoPagina, total: 0, chave: null };
+  return { tamanhoPagina, limite: tamanhoPagina, total: 0, chave: null, versao: 0 };
 }
 
 function paginaInicialSeFiltroMudou(estado, chaveAtual) {
@@ -149,7 +204,10 @@ function paginaInicialSeFiltroMudou(estado, chaveAtual) {
 // e os filtros, mas NÃO o .limit() — este helper aplica o limite da página atual.
 async function carregarLista(el, estado, montarQuery, { icone, msg, sub = '', mensagemErro }) {
   if (estado.limite === estado.tamanhoPagina) loading(el);   // só pisca na 1ª página
+  const versao = ++estado.versao;
   const { data, error, count } = await montarQuery().limit(estado.limite);
+  // Mudou um filtro enquanto esta consulta esperava: a resposta antiga não pode sobrescrever a mais nova
+  if (versao !== estado.versao) return null;
   if (error) { erro(el, mensagemErro ? mensagemErro(error) : error.message); return null; }
   estado.total = count ?? data.length;
   if (!data.length) vazio(el, icone, msg, sub);

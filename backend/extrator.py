@@ -5,12 +5,13 @@ import signal
 import threading
 import zipfile
 from contextlib import contextmanager
-from typing import Optional, Tuple
+from urllib.parse import unquote
+from typing import Dict, Optional, Tuple
 
 import requests
 
 from config import (
-    log, LIMITE_PIXELS_IMAGEM, LIMITE_ZIP_DESCOMPRIMIDO, LIMITE_ZIP_ENTRADAS,
+    log, TAMANHO_MAXIMO_ANEXO, LIMITE_PIXELS_IMAGEM, LIMITE_ZIP_DESCOMPRIMIDO, LIMITE_ZIP_ENTRADAS,
     LADO_MAX_PDF_PX, TEMPO_MAX_OCR, TEMPO_MAX_EXTRACAO,
 )
 from utils import limpar_texto
@@ -193,6 +194,75 @@ def _de_google_docs(url: str) -> Tuple[Optional[str], bool]:
         except Exception as e:
             log.debug(f"  Google Docs/Drive ({ep}): {e}")
     return None, False
+
+
+_MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _e_docx(conteudo: bytes) -> bool:
+    try:
+        with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+            return "word/document.xml" in z.namelist()
+    except Exception:
+        return False
+
+
+def _nome_do_download(resposta, extensao: str) -> str:
+    """
+    O nome que o Drive informa (Content-Disposition), sem caminho e sempre terminando na extensão do arquivo; sem ele, um nome
+    genérico. Prefere a forma filename*=UTF-8''… (percent-encoded); a forma simples vem em UTF-8 mas o requests a lê como
+    latin-1 ("currÃ­culo"), então é desfeita.
+    """
+    cab = resposta.headers.get("Content-Disposition", "")
+    nome = ""
+    m = re.search(r"filename\*=(?:UTF-8|utf-8)''([^;]+)", cab)
+    if m:
+        nome = unquote(m.group(1))
+    else:
+        m = re.search(r'filename="?([^";]+)"?', cab)
+        if m:
+            nome = m.group(1)
+            try:
+                nome = nome.encode("latin-1").decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+    nome = re.sub(r"[\\/\x00-\x1f]", "", nome).strip()[:120]
+    if not nome:
+        return f"curriculo-google-docs{extensao}"
+    return nome if nome.lower().endswith(extensao) else nome + extensao
+
+
+def arquivo_do_google_docs(url: str) -> Optional[Dict]:
+    """
+    O ARQUIVO original de um link do Google Docs/Drive, para ser guardado e o RH poder abri-lo no painel (só o texto não
+    basta: sem o arquivo o painel diz "arquivo original não disponível"). Google Docs nativo: exportado em PDF. Arquivo
+    enviado ao Drive: os próprios bytes do PDF ou DOCX. Devolve {"conteudo", "tipo_mime", "nome", "tamanho"}, ou None
+    (documento privado, exportação bloqueada, formato que não é PDF nem DOCX, pequeno ou grande demais). Nunca levanta erro:
+    sem o arquivo o currículo entra igual, só sem o botão de abrir.
+    """
+    m = re.search(r"/d/([a-zA-Z0-9_-]+)", url or "")
+    if not m:
+        return None
+    doc_id = m.group(1)
+    for ep in (f"https://docs.google.com/document/d/{doc_id}/export?format=pdf",
+               f"https://drive.google.com/uc?export=download&id={doc_id}"):
+        try:
+            r = requests.get(ep, timeout=30, allow_redirects=True)
+            if r.status_code != 200 or "accounts.google.com" in r.url:
+                continue                                  # não existe como Google Docs, ou é privado (pede login)
+            conteudo = r.content
+            if not 100 <= len(conteudo) <= TAMANHO_MAXIMO_ANEXO:
+                continue
+            if conteudo[:5] == b"%PDF-":
+                tipo, ext = "application/pdf", ".pdf"
+            elif conteudo[:2] == b"PK" and _e_docx(conteudo):
+                tipo, ext = _MIME_DOCX, ".docx"
+            else:
+                continue                                  # página de aviso do Drive (HTML), texto puro etc.
+            return {"conteudo": conteudo, "tipo_mime": tipo, "nome": _nome_do_download(r, ext), "tamanho": len(conteudo)}
+        except Exception as e:
+            log.debug(f"  Arquivo do Google Docs/Drive ({ep}): {type(e).__name__}")
+    return None
 
 
 def _extrair(conteudo: bytes, tipo_mime: str) -> Tuple[Optional[str], bool]:

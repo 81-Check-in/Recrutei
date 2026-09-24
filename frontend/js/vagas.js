@@ -34,22 +34,27 @@ async function carregarVagas() {
       </div>
       <div class="vaga-titulo">${escapeHtml(v.titulo)}</div>
       <div class="vaga-empresa">${escapeHtml(v.empresas || '—')} · ${escapeHtml(v.setor_nome)}</div>
+      <div class="vaga-empresa vaga-qualificacao" title="Setor, função e nível filtram os currículos do Banco de Talentos ao selecionar CVs">${
+        v.funcao_setor && v.nivel_funcao
+          ? `${escapeHtml(v.funcao_setor)} · ${escapeHtml(rotuloNivel(v.nivel_funcao))}`
+          : '<span style="color:var(--yellow)"><i class="ti ti-alert-triangle"></i> Defina a função e o nível (Editar)</span>'}</div>
       <div class="vaga-stats">
-        <div class="vaga-stat"><div class="vaga-stat-val">${v.total_curriculos}</div><div class="vaga-stat-lbl">Currículos</div></div>
-        <div class="vaga-stat"><div class="vaga-stat-val">${v.total_selecionados}</div><div class="vaga-stat-lbl">Selecionados</div></div>
+        <button type="button" class="vaga-stat vaga-stat-link" data-vaga="${v.id}" data-titulo="${escapeHtml(v.titulo)}"
+          data-pronta="${v.funcao_setor && v.nivel_funcao ? '1' : ''}"
+          onclick="abrirCandidatosDaVaga(this.dataset.vaga, this.dataset.titulo, !!this.dataset.pronta)"
+          title="Currículos selecionados para esta vaga. Clique para abrir a lista completa (ver, agendar entrevista, cancelar a seleção)"><div class="vaga-stat-val">${v.total_em_aberto}</div><div class="vaga-stat-lbl">Candidatos</div></button>
         <div class="vaga-stat"><div class="vaga-stat-val">${v.total_entrevistas}</div><div class="vaga-stat-lbl">Entrevistas</div></div>
+        <div class="vaga-stat" title="Currículos disponíveis no banco com o mesmo setor, função e nível desta vaga"><div class="vaga-stat-val">${v.compativeis_no_banco}</div><div class="vaga-stat-lbl">No banco</div></div>
       </div>
       <div class="vaga-footer">
         <span class="pill pill-green"><i class="ti ti-point-filled" style="font-size:10px"></i>
           Ativa · ${v.dias_aberta}d</span>
-        <button class="btn-triagem" onclick="irTriagemVaga('${v.id}')">Ver triagem</button>
+        <button class="btn-triagem" data-vaga="${v.id}" data-titulo="${escapeHtml(v.titulo)}"
+          data-pronta="${v.funcao_setor && v.nivel_funcao ? '1' : ''}"
+          onclick="verCandidatosDaVaga(this.dataset.vaga, this.dataset.titulo, !!this.dataset.pronta)"
+          title="Os currículos do Banco de Talentos com o mesmo setor, função e nível desta vaga, da maior nota para a menor">Selecionar CVs</button>
       </div>
     </div>`).join('');
-}
-
-function irTriagemVaga(vagaId) {
-  irPara('triagem');
-  setTimeout(() => { $('#filtro-vaga').value = vagaId; carregarTriagem(); }, 100);
 }
 
 // "TODAS" reflete o estado das lojas: marcada só quando todas estão marcadas
@@ -65,6 +70,9 @@ async function abrirModalVaga(vagaId) {
 
   $('#vaga-setor').innerHTML = app.cache.setores
     .map(s => `<option value="${s.id}">${escapeHtml(s.nome)}</option>`).join('');
+  $('#vaga-setor').onchange = () => preencherFuncoesDaVaga();
+  $('#vaga-funcao').onchange = () => preencherNiveisDaVaga();
+  preencherFuncoesDaVaga();
 
   $('#vaga-empresas').innerHTML = app.cache.empresas.map(e => `
     <label class="chk-empresa">
@@ -86,6 +94,7 @@ async function abrirModalVaga(vagaId) {
   $('#vaga-perfil').value = '';
   $('#vaga-qtd').value = 1;
   $('#req-list').innerHTML = '';
+  prepararAssistenteVaga();
 
   if (ehEdicao) {
     const [{ data: v }, { data: reqs }, { data: emps }] = await Promise.all([
@@ -98,7 +107,14 @@ async function abrirModalVaga(vagaId) {
       $('#vaga-descricao').value = v.descricao || '';
       $('#vaga-perfil').value = v.perfil_comportamental || '';
       $('#vaga-qtd').value = v.quantidade || 1;
+      // vaga de um setor que saiu do modelo (desativado): continua aparecendo, marcado, para o RH ver e trocar
+      if (!app.cache.setores.some(s => s.id === v.setor_id)) {
+        const { data: antigo } = await db.from('setores').select('nome').eq('id', v.setor_id).maybeSingle();
+        $('#vaga-setor').insertAdjacentHTML('beforeend',
+          `<option value="${v.setor_id}">${escapeHtml(antigo?.nome || 'Setor antigo')} — setor desativado, escolha outro</option>`);
+      }
       $('#vaga-setor').value = v.setor_id;
+      preencherFuncoesDaVaga(v.funcao_setor, v.nivel_funcao);
     }
     (emps || []).forEach(e => {
       const c = $(`#vaga-empresas input[value="${e.empresa_id}"]`);
@@ -112,6 +128,26 @@ async function abrirModalVaga(vagaId) {
   abrirModal('modal-vaga');
 }
 
+// A função depende do setor: só as do setor escolhido. Junto com o setor e o nível, é o que filtra os currículos.
+function preencherFuncoesDaVaga(selecionada = '', nivel = '') {
+  const setorId = $('#vaga-setor').value;
+  const funcoes = app.cache.funcoes.filter(f => f.setor_id === setorId);
+  $('#vaga-funcao').innerHTML = '<option value="">Selecione a função…</option>' +
+    funcoes.map(f => `<option value="${escapeHtml(f.nome)}">${escapeHtml(f.nome)}</option>`).join('');
+  $('#vaga-funcao').value = funcoes.some(f => f.nome === selecionada) ? selecionada : '';
+  preencherNiveisDaVaga(nivel);
+}
+
+// O nível também depende da função: Jovem Aprendiz e Trainee só existem nos cargos que os aceitam
+// (Logística/Auxiliar, DP/Auxiliar, RH/Auxiliar, Loja/Repositor). Nos demais: Júnior, Pleno e Sênior.
+function preencherNiveisDaVaga(selecionado = $('#vaga-nivel').value) {
+  const funcao = app.cache.funcoes.find(f => f.setor_id === $('#vaga-setor').value && f.nome === $('#vaga-funcao').value);
+  const permitidos = app.cache.niveis.filter(n => !NIVEIS_INICIANTES.includes(n.codigo) || funcao?.aceita_iniciante);
+  $('#vaga-nivel').innerHTML = '<option value="">Selecione o nível…</option>' +
+    permitidos.map(n => `<option value="${n.codigo}">${escapeHtml(n.nome)}</option>`).join('');
+  $('#vaga-nivel').value = permitidos.some(n => n.codigo === selecionado) ? selecionado : '';
+}
+
 function addRequisito(desc = '', tipo = 'obrigatorio', peso = 1) {
   const row = document.createElement('div');
   row.className = 'req-row';
@@ -120,19 +156,87 @@ function addRequisito(desc = '', tipo = 'obrigatorio', peso = 1) {
     <select class="req-tipo">
       <option value="obrigatorio" ${tipo==='obrigatorio'?'selected':''}>Obrigatório</option>
       <option value="desejavel"  ${tipo==='desejavel' ?'selected':''}>Desejável</option>
+      <option value="diferencial" ${tipo==='diferencial'?'selected':''}>Diferencial</option>
     </select>
     <input class="req-peso" type="number" min="1" max="10" value="${peso}" title="Peso 1-10">
     <button class="req-del" onclick="this.parentElement.remove()"><i class="ti ti-trash"></i></button>`;
   $('#req-list').appendChild(row);
 }
 
+// ── Assistente de IA: rascunho de descrição, perfil e requisitos ──
+// Precisa do serviço HTTP do backend (api.py, POST /vagas/rascunho): sem API_URL o botão fica desligado e o formulário
+// funciona como sempre. O rascunho só preenche os campos; nada é salvo até o RH clicar em "Salvar vaga".
+function prepararAssistenteVaga() {
+  $('#ia-vaga-pedido').value = '';
+  const disponivel = !!API_URL;
+  $('#ia-vaga-btn').disabled = !disponivel;
+  $('#ia-vaga-pedido').disabled = !disponivel;
+  $('#ia-vaga-aviso').textContent = disponivel
+    ? 'A IA escreve um rascunho da descrição, do perfil e dos requisitos; você revisa antes de salvar.'
+    : 'Indisponível: o serviço de IA (API_URL, em js/nucleo.js) ainda não foi configurado. Preencha a vaga à mão.';
+}
+
+function aplicarRascunhoVaga(r) {
+  $('#vaga-descricao').value = r.descricao || '';
+  $('#vaga-perfil').value = r.perfil_comportamental || '';
+  $('#req-list').innerHTML = '';
+  (r.requisitos || []).forEach(q => addRequisito(q.descricao, q.tipo, q.peso));
+  if (!$('#req-list').children.length) addRequisito();
+}
+
+async function gerarRascunhoVaga() {
+  const pedido = $('#ia-vaga-pedido').value.trim();
+  if (pedido.length < 10) { toast('Descreva a vaga em uma ou duas frases', 'erro'); return; }
+  if (!API_URL) { toast('O serviço de IA ainda não foi configurado', 'erro'); return; }
+
+  const jaTemTexto = $('#vaga-descricao').value.trim() || $('#vaga-perfil').value.trim() ||
+    [...$$('#req-list .req-input')].some(i => i.value.trim());
+  if (jaTemTexto && !await confirmar({
+    titulo: 'Substituir o que já está escrito?', rotulo: 'Substituir', perigo: false,
+    mensagem: 'O rascunho da IA vai substituir a descrição, o perfil comportamental e os requisitos do formulário. Você pode editar tudo antes de salvar.'
+  })) return;
+
+  const btn = $('#ia-vaga-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader-2 girando"></i>Escrevendo…';
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    const setor = app.cache.setores.find(x => x.id === $('#vaga-setor').value)?.nome || null;
+    let resp;
+    try {
+      resp = await fetch(`${API_URL}/vagas/rascunho`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedido, titulo: $('#vaga-titulo').value.trim() || null, setor })
+      });
+    } catch { toast('Não consegui falar com o serviço de IA. Tente de novo em instantes', 'erro'); return; }
+    if (!resp.ok) {
+      const det = (await resp.json().catch(() => ({}))).detail;
+      toast(typeof det === 'string' ? det : 'Não foi possível gerar o rascunho agora', 'erro');
+      return;
+    }
+    aplicarRascunhoVaga(await resp.json());
+    toast('Rascunho pronto: revise a descrição e os requisitos antes de salvar');
+  } finally {
+    btn.disabled = !API_URL;
+    btn.innerHTML = '<i class="ti ti-wand"></i>Gerar rascunho';
+  }
+}
+
 async function salvarVaga() {
   const id     = $('#vaga-id').value;
   const titulo = $('#vaga-titulo').value.trim();
   if (!titulo) { toast('Informe o título da vaga', 'erro'); return; }
+  const funcao = $('#vaga-funcao').value, nivel = $('#vaga-nivel').value;
+  if (!funcao || !nivel) {
+    toast('Escolha a função e o nível da vaga: é com o setor, a função e o nível que o sistema seleciona os currículos', 'erro');
+    return;
+  }
 
   const payload = {
     setor_id: $('#vaga-setor').value,
+    funcao_setor: funcao,
+    nivel_funcao: nivel,
     titulo,
     descricao: $('#vaga-descricao').value.trim() || null,
     perfil_comportamental: $('#vaga-perfil').value.trim() || null,
@@ -176,7 +280,7 @@ async function salvarVaga() {
 async function encerrarVaga(id, titulo) {
   if (!await confirmar({
     titulo: 'Encerrar vaga', rotulo: 'Encerrar', perigo: false,
-    mensagem: `Encerrar a vaga "${titulo}"?\n\nAs candidaturas recebidas são preservadas no histórico.`
+    mensagem: `Encerrar a vaga "${titulo}"?\n\nO histórico das candidaturas é preservado. Candidatos que estão em processo nela continuam até você decidir; ao encerrar cada candidatura, eles voltam ao Banco de Talentos.`
   })) return;
   const { error } = await db.from('vagas').update({
     status: 'inativo',
@@ -220,7 +324,7 @@ async function carregarExcecoes() {
     sem_anexo:            ['ti-mail-off','Sem currículo','yellow'],
     formato_invalido:     ['ti-file-x','Formato inválido','red'],
     arquivo_corrompido:   ['ti-file-x','Sem leitura','red'],
-    ocr_falhou:           ['ti-scan-off','OCR falhou','red'],
+    ocr_falhou:           ['ti-scan','OCR falhou','red'],
     docs_privado:         ['ti-lock','Docs privado','blue'],
     nao_e_curriculo:      ['ti-file-off','Não é currículo','yellow'],
     vaga_nao_identificada:['ti-help-circle','Vaga indefinida','blue'],
@@ -343,12 +447,11 @@ async function reprocessarTudo() {
 }
 
 // ── Upload manual de currículo ──
-// Para currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão). O
-// modal sobe o arquivo pro Storage e grava a fila (backend/sql/019_uploads_manuais.sql
-// precisa estar aplicado — sem isso a tabela não existe). Com API_URL configurada
-// (nucleo.js), chama backend/api.py na hora — a IA avalia e a resposta já volta com
-// o resultado, sem esperar a próxima execução da rotina. Sem API_URL (ou se o serviço
-// estiver fora do ar), cai no comportamento antigo: fica na fila normal, avaliado na
+// Para currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão). O currículo entra no
+// Banco de Talentos como qualquer outro; a vaga é OPCIONAL (se escolhida, o candidato já é atribuído a ela).
+// O modal sobe o arquivo pro Storage e grava a fila (backend/sql/019_uploads_manuais.sql + 021).
+// Com API_URL configurada (nucleo.js), chama backend/api.py na hora — a IA analisa e a resposta já volta com
+// o resultado. Sem API_URL (ou se o serviço estiver fora do ar), fica na fila normal, processado na
 // próxima execução do pipeline Python (backend/pipeline.py, processar_uploads_manuais()).
 const FORMATOS_UPLOAD_MANUAL = {
   'application/pdf': '.pdf',
@@ -363,10 +466,8 @@ async function abrirModalUploadManual() {
   abrirModal('modal-upload-manual');
 
   const { data, error } = await db.from('vw_vagas_resumo').select('id,titulo,setor_nome').order('titulo');
-  $('#up-vaga').innerHTML = error
-    ? '<option value="">Não foi possível carregar as vagas</option>'
-    : (data.length ? '<option value="">Escolha a vaga…</option>' : '<option value="">Nenhuma vaga aberta</option>')
-      + data.map(v => `<option value="${v.id}">${escapeHtml(rotuloVaga(v))}</option>`).join('');
+  $('#up-vaga').innerHTML = '<option value="">— Só Banco de Talentos (sem vaga) —</option>' +
+    (error ? '' : data.map(v => `<option value="${v.id}">${escapeHtml(rotuloVaga(v))}</option>`).join(''));
 
   carregarUploadsManuais();
 }
@@ -374,7 +475,6 @@ async function abrirModalUploadManual() {
 async function enviarUploadManual() {
   const vagaId = $('#up-vaga').value;
   const arquivo = $('#up-arquivo').files[0];
-  if (!vagaId) { toast('Escolha a vaga', 'erro'); return; }
   if (!arquivo) { toast('Escolha um arquivo', 'erro'); return; }
   const ext = FORMATOS_UPLOAD_MANUAL[arquivo.type];
   if (!ext) { toast('Formato não aceito — envie PDF, DOC ou DOCX', 'erro'); return; }
@@ -389,12 +489,12 @@ async function enviarUploadManual() {
 
   if (erroUpload) {
     toast(erroUpload.message, 'erro');
-    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para avaliação';
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
     return;
   }
 
   const { data: registro, error } = await db.from('uploads_manuais').insert({
-    vaga_id: vagaId,
+    vaga_id: vagaId || null,
     nome_arquivo: arquivo.name,
     tipo_mime: arquivo.type,
     tamanho_bytes: arquivo.size,
@@ -403,7 +503,7 @@ async function enviarUploadManual() {
   }).select('id').single();
 
   if (error) {
-    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para avaliação';
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
     toast(error.code === 'PGRST205' || /schema cache/.test(error.message)
       ? 'Envio manual ainda não habilitado no banco. Rode backend/sql/019_uploads_manuais.sql.'
       : error.message, 'erro');
@@ -413,24 +513,25 @@ async function enviarUploadManual() {
   $('#up-arquivo').value = '';
 
   if (!API_URL) {
-    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para avaliação';
-    toast('Currículo enviado — a IA avalia na próxima execução da rotina');
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
+    toast('Currículo enviado — a IA analisa na próxima execução da rotina');
     carregarUploadsManuais();
     return;
   }
 
-  btn.innerHTML = '<i class="ti ti-loader-2 girando"></i>Avaliando…';
+  btn.innerHTML = '<i class="ti ti-loader-2 girando"></i>Analisando…';
   await avaliarUploadAgora(registro.id);
-  btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para avaliação';
+  btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
   carregarUploadsManuais();
+  if (app.telaAtual === 'banco') { opcoesBancoCarregadas = false; carregarBanco(); }
 }
 
-// Chama backend/api.py pra avaliar na hora. Se o serviço estiver fora do ar (ou
+// Chama backend/api.py pra analisar na hora. Se o serviço estiver fora do ar (ou
 // API_URL não configurada), o currículo já está gravado na fila — a rotina agendada
 // processa depois, então aqui só avisamos que vai demorar mais, sem tratar como erro.
 async function avaliarUploadAgora(uploadId) {
   const { data: { session } } = await db.auth.getSession();
-  if (!session) { toast('Currículo enviado — a IA avalia na próxima execução da rotina'); return; }
+  if (!session) { toast('Currículo enviado — a IA analisa na próxima execução da rotina'); return; }
 
   let resp;
   try {
@@ -439,27 +540,30 @@ async function avaliarUploadAgora(uploadId) {
       headers: { Authorization: `Bearer ${session.access_token}` }
     });
   } catch {
-    toast('Currículo enviado — avaliação imediata indisponível agora, entra na fila normal');
+    toast('Currículo enviado — análise imediata indisponível agora, entra na fila normal');
     return;
   }
 
   if (!resp.ok) {
-    toast('Currículo enviado — avaliação imediata falhou, entra na fila normal', 'erro');
+    toast('Currículo enviado — análise imediata falhou, entra na fila normal', 'erro');
     return;
   }
 
   const resultado = await resp.json();
   if (resultado.status === 'erro') {
-    toast(resultado.detalhe_erro || 'Não foi possível avaliar este currículo', 'erro');
+    toast(resultado.detalhe_erro || 'Não foi possível analisar este currículo', 'erro');
     return;
   }
-  if (resultado.status === 'processado' && resultado.candidatura_gerada_id) {
-    const { data: c } = await db.from('vw_triagem').select('nome,nota')
-      .eq('id', resultado.candidatura_gerada_id).single();
-    toast(c?.nota != null ? `Avaliado — ${c.nome || 'candidato'} (nota ${c.nota})` : 'Currículo avaliado');
+  if (resultado.status === 'processado' && resultado.candidato_gerado_id) {
+    const { data: c } = await db.from('vw_banco_talentos')
+      .select('nome,area_sugerida,cargo_sugerido,nivel_sugerido').eq('id', resultado.candidato_gerado_id).maybeSingle();
+    const sugestao = c ? [c.area_sugerida, c.cargo_sugerido, rotuloNivel(c.nivel_sugerido)].filter(Boolean).join(' / ') : '';
+    const aviso = resultado.detalhe_erro ? ` (${resultado.detalhe_erro})` : '';
+    toast(`${c?.nome || 'Candidato'} entrou no Banco de Talentos${sugestao ? ' — ' + sugestao : ''}${aviso}`,
+          resultado.detalhe_erro ? 'erro' : 'ok');
     return;
   }
-  toast('Currículo enviado — a IA avalia na próxima execução da rotina');
+  toast('Currículo enviado — a IA analisa na próxima execução da rotina');
 }
 
 async function carregarUploadsManuais() {
@@ -480,12 +584,12 @@ async function carregarUploadsManuais() {
   };
   el.innerHTML = data.map(u => {
     const [ic, lbl, cor] = CFG[u.status] || ['ti-file', u.status, 'gray'];
-    const detalhe = u.status === 'erro' && u.detalhe_erro ? ' · ' + escapeHtml(u.detalhe_erro) : '';
+    const detalhe = u.detalhe_erro ? ' · ' + escapeHtml(u.detalhe_erro) : '';
     return `<div class="exc-full" style="padding:10px 12px">
       <div class="exc-icon-box pill-${cor}"><i class="ti ${ic}"></i></div>
       <div class="exc-info">
         <div class="exc-email">${escapeHtml(u.nome_arquivo)}</div>
-        <div class="exc-meta">${escapeHtml((u.vagas || {}).titulo || '—')} · ${tempoRelativo(u.enviado_em)}${detalhe}</div>
+        <div class="exc-meta">${escapeHtml((u.vagas || {}).titulo || 'Só Banco de Talentos')} · ${tempoRelativo(u.enviado_em)}${detalhe}</div>
       </div>
       <span class="pill pill-${cor}"><i class="ti ${ic}"></i>${lbl}</span>
     </div>`;

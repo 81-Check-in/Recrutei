@@ -269,7 +269,7 @@ async function confirmarAgendamento() {
 
     if (app.telaAtual === 'entrevistas') carregarEntrevistas();
     if (app.telaAtual === 'candidatos')  carregarCandidatos();
-    if (app.telaAtual === 'triagem')     carregarTriagem();
+    if (app.telaAtual === 'banco')       carregarBanco();
   } finally {
     agendando = false;
     btn.disabled = false;
@@ -277,11 +277,27 @@ async function confirmarAgendamento() {
 }
 
 // ── Resultado da entrevista ──
-function abrirResultado(entrevistaId, nome, candidaturaId, telefone) {
-  app.entrevistaAberta = { entrevistaId, nome, candidaturaId, telefone };
+async function abrirResultado(entrevistaId, nome, candidaturaId, telefone) {
+  app.entrevistaAberta = { entrevistaId, nome, candidaturaId, telefone, candidatoId: null };
   $('#res-nome').textContent = nome;
   $('#res-obs').value = '';
+  abaResultado('resultado');
   abrirModal('modal-resultado');
+  // as considerações são do CANDIDATO (não da candidatura): descobre quem é para mostrar as de antes, se houver
+  const { data } = await db.from('vw_candidaturas').select('candidato_id').eq('id', candidaturaId).maybeSingle();
+  if (app.entrevistaAberta?.entrevistaId !== entrevistaId) return;          // abriu outra entrevista enquanto esperava
+  app.entrevistaAberta.candidatoId = data?.candidato_id || null;
+  await mostrarConsideracoes('res', app.entrevistaAberta.candidatoId, entrevistaId);
+}
+
+function abaResultado(qual) {
+  const consid = qual === 'consid';
+  $('#res-painel-resultado').style.display = consid ? 'none' : '';
+  $('#res-painel-consid').style.display = consid ? '' : 'none';
+  $('#res-aba-resultado').classList.toggle('ativa', !consid);
+  $('#res-aba-consid').classList.toggle('ativa', consid);
+  $('#res-aba-resultado').setAttribute('aria-selected', String(!consid));
+  $('#res-aba-consid').setAttribute('aria-selected', String(consid));
 }
 
 async function registrarResultado(resultado) {
@@ -297,10 +313,18 @@ async function registrarResultado(resultado) {
 
   if (error) { toast(error.message, 'erro'); return; }
 
+  // Consideração escrita na aba e ainda não adicionada: entra junto, para não se perder ao fechar o modal
+  const pendente = $('#res-consid').value.trim();
+  if (pendente && info.candidatoId) {
+    const { error: erroConsid } = await db.rpc('registrar_consideracao',
+      { p_candidato_id: info.candidatoId, p_texto: pendente, p_entrevista_id: info.entrevistaId });
+    if (erroConsid) toast('Resultado registrado, mas a consideração não foi salva: ' + mensagemErro(erroConsid), 'erro');
+  }
+
   fecharModal('modal-resultado');
   const MSG = {
     aprovado: `${info.nome} aprovado`,
-    reprovado: `Resultado registrado — ${info.nome} reprovado`,
+    reprovado: `Resultado registrado — ${info.nome} reprovado e de volta ao Banco de Talentos`,
     nao_compareceu: `Falta registrada — ${info.nome} não compareceu`
   };
   toast(MSG[resultado] || 'Resultado registrado');

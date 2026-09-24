@@ -4,7 +4,7 @@ import hmac
 import hashlib
 import unicodedata
 from datetime import date
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 from config import IDENTIDADE_CHAVE
 
@@ -73,6 +73,15 @@ def gerar_hash_identidade(nome: Optional[str], telefone: Optional[str]) -> Optio
     return hmac.new(IDENTIDADE_CHAVE.encode(), base.encode(), hashlib.sha256).hexdigest()
 
 
+def gerar_hash_arquivo(conteudo: bytes) -> str:
+    """
+    Impressão digital do ARQUIVO do currículo, para reconhecer o mesmo arquivo reenviado sem precisar lê-lo
+    (extração, OCR e IA custam). HMAC com a mesma chave do hash de identidade: sobrevive à exclusão dos dados
+    (só o texto e o caminho do arquivo são apagados) e não permite descobrir o conteúdo a partir dela.
+    """
+    return hmac.new(IDENTIDADE_CHAVE.encode(), conteudo, hashlib.sha256).hexdigest()
+
+
 def normalizar_texto(s: str) -> str:
     """Minúsculas, sem acento, espaços colapsados."""
     if not s:
@@ -80,6 +89,38 @@ def normalizar_texto(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", s).strip().lower()
+
+
+_RE_LINHA_DE_ENDERECO = re.compile(
+    r"(?im)^[ \t]*(?:endere[cç]o|end\.|bairro|resid[eê]ncia|reside|mora(?:\s+em)?|moro(?:\s+em)?|cidade|localiza[cç][aã]o)\b.*$")
+
+
+def detectar_regiao(texto: str, regioes: List[Dict]) -> Optional[str]:
+    """
+    Acha, no texto do currículo, a região onde a pessoa mora (devolve o id em regioes_df). Tudo aqui é local: casa o
+    texto com os nomes e apelidos das regiões (palavra inteira, sem acento nem caixa) e nada é enviado a ninguém —
+    inclusive as linhas de endereço, que a IA nem chega a ver (o mascaramento as troca por [ENDEREÇO]).
+    Procura primeiro nas linhas de endereço/bairro/cidade e, se não achar, no cabeçalho (primeiros 1.200 caracteres);
+    um nome citado mais adiante (empregos anteriores, escola) não conta. Com vários, vale o nome mais comprido
+    ("Novo Gama" antes de "Gama"). "Brasília" sozinho não aponta região.
+    regioes: [{"id", "nome", "apelidos": [...]}].
+    """
+    if not texto or not regioes:
+        return None
+    nomes = []                                  # (nome normalizado, id)
+    for r in regioes:
+        for n in [r.get("nome")] + list(r.get("apelidos") or []):
+            n = re.sub(r"[^a-z0-9 ]", "", normalizar_texto(n or ""))
+            if n:
+                nomes.append((n, r["id"]))
+
+    def melhor(trecho: str) -> Optional[str]:
+        alvo = f" {re.sub(r'[^a-z0-9]+', ' ', normalizar_texto(trecho))} "
+        achados = [(len(n), rid) for n, rid in nomes if f" {n} " in alvo]
+        return max(achados)[1] if achados else None
+
+    linhas = " \n".join(m.group(0) for m in _RE_LINHA_DE_ENDERECO.finditer(texto))
+    return melhor(linhas) or melhor(texto[:1200])
 
 
 _RE_NASCIMENTO = re.compile(
@@ -127,6 +168,48 @@ def extrair_idade(texto: str, hoje: Optional[date] = None) -> Optional[int]:
         if 14 <= idade <= 85:
             return idade
     return None
+
+
+def extrair_nascimento(texto: str, hoje: Optional[date] = None) -> Optional[date]:
+    """
+    Data de nascimento EXATA, quando o currículo a traz ("Nascimento: 12/03/1998"). None se só informa a
+    idade ("Idade: 27 anos") — nesse caso use extrair_idade(). Roda só localmente, como extrair_idade().
+    """
+    if not texto:
+        return None
+    hoje = hoje or date.today()
+    m = _RE_NASCIMENTO.search(texto)
+    if not m:
+        return None
+    dia, mes, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if ano < 100:                                       # "98" → 1998; "05" → 2005
+        ano += 2000 if ano <= hoje.year % 100 else 1900
+    try:
+        nasc = date(ano, mes, dia)
+    except ValueError:
+        return None
+    if nasc > hoje:
+        return None
+    idade = hoje.year - nasc.year - ((hoje.month, hoje.day) < (nasc.month, nasc.day))
+    return nasc if 14 <= idade <= 85 else None
+
+
+UFS = frozenset("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split())
+_RE_CIDADE_UF = re.compile(r"^(?P<cidade>.*?)\s*[/,–-]\s*(?P<uf>[A-Za-z]{2})\s*$")
+
+
+def separar_cidade_uf(texto: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    "Brasília/DF", "Taguatinga - DF", "Ceilândia, DF" → ("Brasília", "DF"), ("Taguatinga", "DF"), ...
+    Sem UF reconhecível ("Valparaíso de Goiás") devolve (texto, None). Mesma regra da migração 025.
+    """
+    texto = (texto or "").strip()
+    if not texto:
+        return None, None
+    m = _RE_CIDADE_UF.match(texto)
+    if m and m.group("uf").upper() in UFS:
+        return (m.group("cidade").strip() or None), m.group("uf").upper()
+    return texto, None
 
 
 def limpar_texto(texto: str, limite: int = 20000) -> str:

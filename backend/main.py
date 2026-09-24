@@ -7,10 +7,16 @@ Uso:
   python main.py --testar        testa conexões (IMAP, Supabase, Claude)
   python main.py --simular       roda sem gravar nada
   python main.py --limite 5      processa no máximo 5 e-mails
-  python main.py --manutencao    só inativação e expurgo
-  python main.py --reavaliar     só as reavaliações pedidas no painel (troca de vaga)
+  python main.py --desde 2026-09-18   só e-mails recebidos a partir da data (o mesmo que IMAP_DESDE, só nesta execução)
+  python main.py --reler-caixa --desde 2026-09-18   relê a caixa (lidos e não lidos) e recarrega o Banco de Talentos;
+                                 não marca nada como lido e pode ser repetido (e-mail já importado é ignorado)
+  python main.py --manutencao    só a manutenção (partições da auditoria e arquivos de dados excluídos)
+  python main.py --reanalisar    só as (re)análises da IA pedidas: candidatos migrados, currículo reenviado, botão do painel
+  python main.py --reavaliar     só as avaliações para vaga pedidas ao atribuir candidatos no painel
   python main.py --reprocessar-excecoes   só as exceções marcadas para tentar de novo no painel
-  python main.py --enriquecer    preenche idade, escolaridade, experiência e CNH dos já recebidos
+  python main.py --uploads-manuais        só os currículos enviados manualmente no painel
+  python main.py --sanitizacao   gera a lista de sugestões de sanitização se o intervalo venceu (e avisa o RH)
+  python main.py --sanitizacao --forcar   gera agora, mesmo antes do prazo
   python main.py --sem-segunda-avaliacao   desativa a segunda avaliação (faixa ambígua) nesta execução
 """
 import sys
@@ -34,7 +40,8 @@ def testar_conexoes() -> bool:
         for v in vagas:
             print(f"    • {v['titulo']}: "
                   f"{len(v['obrigatorios'])} obrigatório(s), "
-                  f"{len(v['desejaveis'])} desejável(is)")
+                  f"{len(v['desejaveis'])} desejável(is), "
+                  f"{len(v['diferenciais'])} diferencial(is)")
     except Exception as e:
         print(f"FALHOU\n    {e}")
         ok = False
@@ -72,20 +79,32 @@ def testar_conexoes() -> bool:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Recrutei — triagem de currículos")
+    p = argparse.ArgumentParser(description="Recrutei — Banco de Talentos")
     p.add_argument("--testar", action="store_true", help="testa conexões e sai")
     p.add_argument("--simular", action="store_true", help="não grava nada")
     p.add_argument("--limite", type=int, help="máximo de e-mails a processar")
+    p.add_argument("--desde", metavar="AAAA-MM-DD",
+                   help="só e-mails recebidos a partir desta data (o mesmo que IMAP_DESDE, só nesta execução)")
+    p.add_argument("--reler-caixa", action="store_true",
+                   help="relê a caixa (lidos e não lidos) desde --desde e põe no Banco de Talentos o que ainda não está lá; "
+                        "não marca nada como lido e pode ser repetido. Para recarregar o banco depois de zerá-lo")
+    p.add_argument("--ate-uid", type=int, metavar="N",
+                   help="com --reler-caixa: não passa deste UID (o marcador de progresso da execução diária "
+                        "é o limite natural: relê só o que o pipeline já tinha lido)")
     p.add_argument("--manutencao", action="store_true",
-                   help="só inativação e expurgo")
+                   help="só a manutenção (partições da auditoria e arquivos de dados excluídos)")
+    p.add_argument("--reanalisar", action="store_true",
+                   help="só as (re)análises da IA pedidas (candidatos migrados, currículo reenviado, botão do painel)")
     p.add_argument("--reavaliar", action="store_true",
-                   help="só as reavaliações pedidas no painel (troca de vaga)")
+                   help="só as avaliações para vaga pedidas ao atribuir candidatos no painel")
     p.add_argument("--reprocessar-excecoes", action="store_true",
                    help="só as exceções marcadas para tentar de novo no painel")
     p.add_argument("--uploads-manuais", action="store_true",
                    help="só os currículos enviados manualmente no painel (botão \"Enviar currículo\")")
-    p.add_argument("--enriquecer", action="store_true",
-                   help="preenche idade, escolaridade, experiência e CNH dos currículos já recebidos")
+    p.add_argument("--sanitizacao", action="store_true",
+                   help="gera a lista de sugestões de sanitização se o intervalo venceu, e avisa o RH")
+    p.add_argument("--forcar", action="store_true",
+                   help="com --sanitizacao: gera a lista agora, mesmo antes do prazo")
     p.add_argument("--sem-segunda-avaliacao", action="store_true",
                    help="desativa a segunda avaliação da faixa ambígua só nesta execução "
                         "(economiza tokens; não altera a configuração salva no banco)")
@@ -97,6 +116,9 @@ def main() -> int:
     if args.limite:
         import os
         os.environ["LIMITE_EMAILS"] = str(args.limite)
+    if args.desde:
+        import os
+        os.environ["IMAP_DESDE"] = args.desde
     if args.sem_segunda_avaliacao:
         import os
         os.environ["DESATIVAR_SEGUNDA_AVALIACAO"] = "true"
@@ -108,11 +130,32 @@ def main() -> int:
         import database as bd
         from config import log
         r = bd.executar_manutencao()
-        log.info(f"Inativadas: {r.get('inativadas', 0)} | "
-                 f"Expurgadas: {r.get('expurgadas', 0)}")
+        log.info(f"Arquivos removidos do Storage: {r.get('arquivos_removidos', 0)} | "
+                 f"Sugestões de sanitização pendentes: {r.get('sanitizacao_pendentes', 0)}")
         return 0
 
+    if args.sanitizacao:
+        import sanitizacao
+        sanitizacao.verificar_e_gerar(forcar=args.forcar, origem="manual" if args.forcar else "job")
+        return 0
+
+    if args.forcar:
+        p.error("--forcar só faz sentido junto com --sanitizacao")
+
     import pipeline
+    if args.reler_caixa:
+        try:
+            pipeline.reler_caixa(limite=args.limite or 0, ate_uid=args.ate_uid or 0)
+        except RuntimeError as e:
+            p.error(str(e))
+        return 0
+    if args.ate_uid:
+        p.error("--ate-uid só faz sentido junto com --reler-caixa")
+
+    if args.reanalisar:
+        pipeline.reanalisar()
+        return 0
+
     if args.reavaliar:
         pipeline.reavaliar()
         return 0
@@ -123,10 +166,6 @@ def main() -> int:
 
     if args.uploads_manuais:
         pipeline.processar_uploads_manuais()
-        return 0
-
-    if args.enriquecer:
-        pipeline.enriquecer()
         return 0
 
     pipeline.executar()

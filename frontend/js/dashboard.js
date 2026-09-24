@@ -10,64 +10,56 @@ async function carregarDashboard() {
   $('#m-selecionados').textContent = (p === 7 ? data.selecionados_7d : data.selecionados_mes).toLocaleString('pt-BR');
   $('#m-entrevistas').textContent  = (p === 7 ? data.entrevistas_7d  : data.entrevistas_mes).toLocaleString('pt-BR');
   $('#m-excecoes').textContent = data.excecoes_pendentes;
-  $('#m-triagem').textContent  = data.aguardando_triagem;
+  $('#m-revisao').textContent  = data.revisao_manual_pendente;
+  $('#m-sanitizacao').textContent = data.sanitizacao_pendentes;
+  atualizarBadgeSanitizacao(data.sanitizacao_pendentes);
+  $('#m-curriculos').textContent = data.banco_total.toLocaleString('pt-BR');
   $('#periodo-label').textContent = p === 7 ? 'Últimos 7 dias' : 'Mês atual';
 
-  await Promise.all([carregarTotalCurriculos(), carregarFunil(), carregarVagasResumo(), carregarExcecoesResumo()]);
+  await Promise.all([carregarFunil(data.banco_total), carregarVagasResumo(), carregarExcecoesResumo()]);
 }
 
-// "Currículos recebidos": total histórico de tudo que já chegou pelo pipeline de
-// e-mail (Locaweb), não o recorte do período selecionado — por pedido explícito, este
-// card não acompanha o seletor "7 dias / Mês atual" (quem quiser o recorte do período
-// vê a primeira barra do funil, "Recebidos", que continua period-scoped).
-async function carregarTotalCurriculos() {
-  const { count, error } = await db.from('candidaturas')
-    .select('*', { count: 'exact', head: true }).eq('status_registro', 'ativo');
-  $('#m-curriculos').textContent = error ? '—' : count.toLocaleString('pt-BR');
-}
-
-// Igual ao card "Currículos recebidos (total)": todo o histórico, não o recorte do
-// período — por pedido explícito, o funil também não deve variar com o seletor
-// "7 dias / Mês atual" (ficava mostrando 16 currículos enquanto o backlog real, mais
-// antigo, tinha 93 — os 77 restantes nunca apareciam aqui).
-async function carregarFunil() {
+// Do banco à contratação: todo o histórico, não o recorte do período (o funil não acompanha o seletor
+// "7 dias / Mês atual"). A base é o total do Banco de Talentos; as demais etapas contam candidaturas
+// atribuídas pelo RH (vínculos automáticos da triagem antiga não entram).
+async function carregarFunil(bancoTotal) {
   const { data, error } = await db
     .from('candidaturas')
     .select('status')
-    .eq('status_registro', 'ativo');
+    .eq('status_registro', 'ativo')
+    .neq('origem', 'triagem_legada');
 
   const el = $('#funil');
-  if (error) { erro(el, error.message); return; }
-
-  const total = data.length;
-  if (!total) { vazio(el, 'ti-chart-bar', 'Nenhum currículo no período'); return; }
+  if (error) { erro(el, mensagemErro(error)); return; }
+  if (!bancoTotal) { vazio(el, 'ti-chart-bar', 'Nenhum candidato no banco'); return; }
 
   const conta = s => data.filter(d => s.includes(d.status)).length;
   const etapas = [
-    { l: 'Recebidos',     v: total, c: '#3B82F6' },
-    { l: 'Avaliados por IA', v: conta(['avaliado','selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado','descartado']), c: '#2563EB' },
-    { l: 'Selecionados',  v: conta(['selecionado','entrevista_agendada','entrevista_realizada','aprovado','reprovado','nao_compareceu','contratado']), c: 'var(--funil-3)' },
-    { l: 'Entrevistados', v: conta(['entrevista_realizada','aprovado','reprovado','contratado']), c: '#16A34A' },
+    { l: 'No banco',      v: bancoTotal, c: '#3B82F6' },
+    { l: 'Atribuídos',    v: data.length, c: '#2563EB' },
+    { l: 'Entrevistados', v: conta(['entrevista_realizada','aprovado','reprovado','contratado']), c: 'var(--funil-3)' },
+    { l: 'Aprovados',     v: conta(['aprovado','contratado']), c: '#16A34A' },
     { l: 'Contratados',   v: conta(['contratado']), c: '#D97706' }
   ];
 
-  el.innerHTML = etapas.map(e => `
+  el.innerHTML = etapas.map(e => {
+    const pct = Math.min(100, Math.round(e.v / bancoTotal * 100));
+    return `
     <div class="funil-row">
       <div class="funil-label">${e.l}</div>
       <div class="funil-bg">
-        <div class="funil-fill" style="width:${total ? Math.round(e.v/total*100) : 0}%;background:${e.c}">
-          ${total ? Math.round(e.v/total*100) : 0}%
-        </div>
+        <div class="funil-fill" style="width:${pct}%;background:${e.c}">${pct}%</div>
       </div>
       <div class="funil-num">${e.v}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function carregarVagasResumo() {
   // Sem .limit(4) aqui: precisamos de todas as vagas abertas para contar por setor
   // (o card "Setores com vagas abertas" e a legenda de cada mini-card usam essa conta).
   const { data, error } = await db.from('vw_vagas_resumo')
-    .select('*').order('total_curriculos', { ascending: false });
+    .select('*').order('total_candidatos', { ascending: false });
 
   const el = $('#vagas-resumo');
   if (error) { erro(el, error.message); $('#m-vagas').textContent = '—'; return; }
@@ -78,7 +70,7 @@ async function carregarVagasResumo() {
 
   if (!data.length) {
     vazio(el, 'ti-briefcase', 'Nenhuma vaga aberta',
-      'Cadastre uma vaga para começar a receber candidaturas');
+      'Cadastre uma vaga para atribuir candidatos do Banco de Talentos');
     return;
   }
 
@@ -97,8 +89,8 @@ async function carregarVagasResumo() {
         <div class="vaga-mini-meta">${meta}</div>
       </div>
       <div style="text-align:right">
-        <div class="vaga-mini-num">${v.total_curriculos}</div>
-        <div class="vaga-mini-lbl">currículos</div>
+        <div class="vaga-mini-num">${v.total_candidatos}</div>
+        <div class="vaga-mini-lbl">candidatos</div>
       </div>
     </div>`;
   }).join('');
@@ -119,7 +111,7 @@ async function carregarExcecoesResumo() {
 
   const ICONES = {
     sem_anexo:'ti-mail-off', formato_invalido:'ti-file-x',
-    arquivo_corrompido:'ti-file-x', ocr_falhou:'ti-scan-off',
+    arquivo_corrompido:'ti-file-x', ocr_falhou:'ti-scan',
     docs_privado:'ti-lock', nao_e_curriculo:'ti-file-off',
     vaga_nao_identificada:'ti-help-circle', erro_processamento:'ti-alert-triangle'
   };

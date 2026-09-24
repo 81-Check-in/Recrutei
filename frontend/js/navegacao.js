@@ -13,11 +13,16 @@ const posicaoEmpresa = sigla => {
 // tela cheia de "API fora do ar" (sem os setores/empresas, o app não funciona).
 async function carregarBase() {
   try {
-    const [setores, empresas] = await Promise.all([
+    const [setores, empresas, funcoes, niveis] = await Promise.all([
       db.from('setores').select('*').eq('ativo', true).order('ordem'),
-      db.from('empresas').select('*').eq('ativo', true).order('sigla')
+      db.from('empresas').select('*').eq('ativo', true).order('sigla'),
+      db.from('funcoes_setor').select('setor_id,nome,aceita_iniciante').eq('ativo', true).order('nome'),
+      db.from('niveis_funcao').select('codigo,nome').eq('ativo', true).order('ordem')
     ]);
     if (setores.error || empresas.error) throw setores.error || empresas.error;
+    // funções e níveis só alimentam o formulário da vaga: se faltarem, o formulário avisa em vez de derrubar o app
+    app.cache.funcoes  = funcoes.data || [];
+    app.cache.niveis   = niveis.data  || [];
     app.cache.setores  = setores.data  || [];
     app.cache.empresas = (empresas.data || []).slice().sort((a, b) =>
       posicaoEmpresa(a.sigla) - posicaoEmpresa(b.sigla) ||
@@ -35,14 +40,16 @@ async function carregarBase() {
 
 const TITULOS = {
   dashboard: 'Dashboard', vagas: 'Vagas',
-  triagem: 'Triagem de Currículos', candidatos: 'Candidatos',
-  entrevistas: 'Entrevistas', config: 'Configurações'
+  banco: 'Banco de Talentos', candidatos: 'Candidatos em processo',
+  entrevistas: 'Entrevistas', sanitizacao: 'Sanitização', listanegra: 'Lista negra', config: 'Configurações'
 };
 
 let navAnterior = -1;   // posição do item de menu anterior, para a direção da animação
 
 function irPara(tela, el) {
   app.telaAtual = tela;
+  if (tela === 'banco' && el) rankingVaga = null;           // clicou no menu: banco inteiro, não o ranking de uma vaga
+  if (tela === 'candidatos' && el) vagaEmProcesso = null;   // clicou no menu: todos os candidatos em processo, não os de uma vaga
   $$('.nav-item').forEach(n => {
     n.classList.remove('active');
     n.removeAttribute('aria-current');
@@ -62,7 +69,8 @@ function irPara(tela, el) {
   fecharSidebar();
 
   ({ dashboard: carregarDashboard, vagas: carregarVagas,
-     triagem: carregarTriagem, candidatos: carregarCandidatos,
-     entrevistas: carregarEntrevistas, config: carregarConfig }[tela])?.();
+     banco: carregarBanco, candidatos: carregarCandidatos,
+     entrevistas: carregarEntrevistas, sanitizacao: carregarSanitizacao, listanegra: carregarListaNegra,
+     config: carregarConfig }[tela])?.();
 }
 

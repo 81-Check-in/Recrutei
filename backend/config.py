@@ -62,10 +62,22 @@ if len(IDENTIDADE_CHAVE) < 32:
 # ── Execução ──
 MODO_SIMULACAO = os.getenv("MODO_SIMULACAO", "false").lower() == "true"
 LIMITE_EMAILS = int(os.getenv("LIMITE_EMAILS", "0"))
-# Só e-mails classificados neste setor são marcados como lidos; os demais ficam
-# não lidos na caixa. Vazio = todo e-mail processado é marcado como lido.
-SETOR_MARCAR_LIDO = os.getenv("SETOR_MARCAR_LIDO", "Logística").strip()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Reincidência: o mesmo currículo NÃO é lido de novo, seja qual for a vaga. Só volta a ser lido depois de
+# tantos dias da importação anterior E se o candidato foi sanitizado (inativo ou com os dados excluídos).
+REENVIO_DIAS_MINIMO = 30
+
+# ── Aviso de sanitização por e-mail (opcional) ──
+# Quem recebe é definido no painel (Configurações → sanitizacao_emails_aviso); aqui só o "como enviar".
+# Sem SMTP_* usa a mesma conta e o mesmo servidor do IMAP (a Locaweb atende os dois em email-ssl.com.br).
+# (variável presente mas vazia, como no .env.example, também cai no padrão)
+SMTP_SERVIDOR = os.getenv("SMTP_SERVIDOR", "").strip() or IMAP_SERVIDOR
+SMTP_PORTA = int(os.getenv("SMTP_PORTA", "").strip() or 465)   # 465 = SSL direto; 587 = STARTTLS
+SMTP_USUARIO = os.getenv("SMTP_USUARIO", "").strip() or IMAP_USUARIO
+SMTP_SENHA = os.getenv("SMTP_SENHA", "") or IMAP_SENHA
+SMTP_REMETENTE = os.getenv("SMTP_REMETENTE", "").strip() or SMTP_USUARIO
+# Endereço do painel, para o link do e-mail ("Abrir o painel"). Vazio = e-mail sem link.
+PAINEL_URL = os.getenv("PAINEL_URL", "").strip()
 
 # ── Servidor HTTP (api.py) ──
 # Origens que podem chamar o endpoint de avaliação imediata (CORS), separadas por
@@ -84,7 +96,12 @@ FORMATOS_ACEITOS = {
     "image/png": ".png",
 }
 
-TAMANHO_MINIMO_ANEXO = 10 * 1024       # 10 KB
+# Piso de tamanho por tipo de anexo. Imagem abaixo de 10 KB é logotipo, ícone ou pixel de rastreamento de assinatura de e-mail.
+# Documento (PDF, DOC, DOCX) NÃO tem piso de verdade: um PDF só de texto, sem imagens, tem uns 3 KB e pode ser um currículo
+# completo (foi o caso de um candidato recusado como "anexo muito pequeno"). O que barra lixo é a assinatura do arquivo conferir
+# com o tipo e o texto extraído ter pelo menos 100 caracteres; o piso do documento só descarta arquivo vazio ou truncado.
+TAMANHO_MINIMO_ANEXO = 10 * 1024       # imagens: 10 KB
+TAMANHO_MINIMO_DOCUMENTO = 500         # PDF/DOC/DOCX: 500 bytes
 TAMANHO_MAXIMO_ANEXO = 10 * 1024 * 1024  # 10 MB
 MAX_ANEXOS_POR_EMAIL = 5
 
@@ -95,6 +112,18 @@ LIMITE_ZIP_ENTRADAS = 2000
 LADO_MAX_PDF_PX = 2400          # lado maior da página ao rasterizar para OCR
 TEMPO_MAX_OCR = 60              # segundos por chamada de OCR
 TEMPO_MAX_EXTRACAO = 180        # segundos por currículo (Linux/macOS)
+
+# ── Banco de Talentos: análise da IA por candidato ──
+# Versão do prompt de análise; vai em analises_ia.versao_prompt. Suba quando mudar o texto do prompt
+# de forma que altere o resultado, para dar para comparar análises antigas e novas.
+VERSAO_PROMPT_ANALISE = 4
+# Confiança (0–100) abaixo da qual a análise vira "revisão manual necessária". O valor em uso vem
+# de Configurações (ia_confianca_minima); este é só o padrão quando a configuração falta.
+CONFIANCA_MINIMA_PADRAO = 60
+# Vocabulário de nível sugerido (o banco só aceita estes valores)
+NIVEIS_SUGERIDOS = ("jovem_aprendiz", "trainee", "junior", "pleno", "senior")
+# Só os cargos marcados em funcoes_setor.aceita_iniciante (Logística/Auxiliar, DP/Auxiliar, RH/Auxiliar, Loja/Repositor) têm estes dois
+NIVEIS_INICIANTES = ("jovem_aprendiz", "trainee")
 
 # Custo por milhão de tokens (USD) — atualizar se a tabela mudar
 PRECOS = {

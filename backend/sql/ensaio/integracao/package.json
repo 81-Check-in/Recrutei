@@ -1,0 +1,10 @@
+{
+  "name": "recrutei-ensaio-integracao",
+  "private": true,
+  "description": "Roda o frontend de verdade (jsdom) contra o Postgres migrado do ensaio via PostgREST. Ver rodar.sh.",
+  "scripts": { "test": "node --test frontend.test.js" },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.45.4",
+    "jsdom": "^26.0.0"
+  }
+}
