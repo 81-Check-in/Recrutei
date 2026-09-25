@@ -60,6 +60,13 @@ async function iniciarSessao(user) {
     await db.auth.signOut();
     return;
   }
+  // Primeiro acesso: a conta nasce com senha provisória (user_metadata.senha_provisoria = true).
+  // Só entra no painel depois de criar a própria senha; recarregar a página cai aqui de novo.
+  if (user.user_metadata?.senha_provisoria) {
+    $('#l-senha').value = '';
+    abrirNovaSenha(true);
+    return;
+  }
 
   app.usuario = user;
   app.perfil  = perfil;
@@ -107,6 +114,16 @@ async function recuperarSenha() {
         error ? 'erro' : 'ok');
 }
 
+// Modal de nova senha, usado no link de recuperação e no primeiro acesso (só muda o texto)
+function abrirNovaSenha(primeiroAcesso) {
+  $('#ns-titulo').textContent = primeiroAcesso ? 'Crie sua senha' : 'Definir nova senha';
+  $('#ns-texto').textContent = primeiroAcesso
+    ? 'Este é o seu primeiro acesso. Crie a senha que você vai usar daqui para frente.'
+    : 'Escolha a senha que você vai usar para entrar no painel.';
+  abrirModal('modal-nova-senha');
+  $('#ns-senha').focus();
+}
+
 // Fim do fluxo do link de recuperação: o usuário define a nova senha (ou desiste e sai)
 function encerrarRecuperacao() {
   fecharModal('modal-nova-senha');
@@ -122,7 +139,8 @@ async function salvarNovaSenha(ev) {
 
   const btn = $('#btn-nova-senha');
   btn.disabled = true;
-  const { data, error } = await db.auth.updateUser({ password: senha });
+  // senha_provisoria: false encerra o primeiro acesso (na recuperação por e-mail também vale)
+  const { data, error } = await db.auth.updateUser({ password: senha, data: { senha_provisoria: false } });
   btn.disabled = false;
 
   if (error) { toast(MSG_AUTH[error.code] || error.message, 'erro'); return; }

@@ -912,6 +912,7 @@ test('vaga: o assistente de IA fica desligado sem API_URL e, com o serviço, pre
 test('distância: a atribuição mostra as lojas da vaga; a seleção ordena por distância e filtra por km; a região do RH vale', async () => {
   // vaga (Logística / Supervisor / pleno) com duas lojas de local conhecido (CFS → Samambaia pela migração; CFT → Taguatinga aqui) e 3 candidatos que casam
   sql(`insert into empresas (sigla, nome, regiao_id) select 'CFT', 'Castelo Forte T', id from regioes_df where nome = 'Taguatinga' on conflict do nothing`);
+  await beto.w.carregarBase();                                            // a loja nova entra no cache do painel (no uso real, o login já a traz)
   const vaga = sql(`with s as (select id from setores where nome = 'Logística'),
       v as (insert into vagas (setor_id, titulo, quantidade, funcao_setor, nivel_funcao) select id, 'Zeladoria Especial do Teste', 1, 'Supervisor', 'pleno' from s returning id),
       e as (insert into vaga_empresas (vaga_id, empresa_id) select v.id, em.id from v, empresas em where em.sigla in ('CFS', 'CFT') returning 1)
@@ -948,6 +949,50 @@ test('distância: a atribuição mostra as lojas da vaga; a seleção ordena por
   assert.deepEqual(meus().map(t => t.match(/Candidato 08\d/)[0]), ['Candidato 083'], 'até 10 km: só quem mora perto');
   assert.match(beto.$('#banco-total').textContent, /currículos/);
   beto.define('#rk-km', '');
+
+  // lojas de referência (038): a seleção começa nas lojas da vaga; o RH marca outras, várias ou TODAS
+  const marcadasLojas = () => beto.$$('#rk-lojas input[data-loja]').filter(c => c.checked).map(c => c.value).sort();
+  const marcarLoja = async (sigla, valor) => {
+    const c = sigla === 'TODAS' ? beto.$('#rk-lojas-todas') : beto.$(`#rk-lojas input[value="${sigla}"]`);
+    c.checked = valor;
+    c.dispatchEvent(new beto.w.Event('change', { bubbles: true }));
+    await esperar(700);
+  };
+  assert.deepEqual(beto.$$('#rk-lojas input[data-loja]').map(c => c.value).sort(), ['CFR', 'CFS', 'CFT'], 'um chip por loja cadastrada');
+  assert.equal(beto.$$('#rk-lojas input[data-loja]').filter(c => c.disabled).length, 0, 'todas têm região: nenhuma desabilitada');
+  assert.deepEqual(marcadasLojas(), ['CFS', 'CFT'], 'começa nas lojas da vaga');
+  assert.equal(beto.$('#rk-lojas-todas').checked, false);
+  assert.match(beto.$('#rk-lojas-nota').textContent, /entre as marcadas/);
+
+  await marcarLoja('CFS', false);
+  await marcarLoja('CFT', false);
+  await marcarLoja('CFR', true);                                          // só a CFR (Recanto das Emas): não é loja da vaga
+  assert.deepEqual(marcadasLojas(), ['CFR']);
+  assert.match(beto.$('#rk-lojas-nota').textContent, /até essa loja/i);
+  assert.match(cartaoDe('Candidato 083'), /\d+,\d km da CFR/, 'a distância é até a loja escolhida, não até as da vaga');
+  assert.match(cartaoDe('Candidato 084'), /\d+,\d km da CFR/);
+  beto.define('#rk-km', '10');
+  await beto.w.mudarFiltroRanking();
+  assert.deepEqual(meus(), [], 'até 10 km da CFR: ninguém (Ceilândia e Gama ficam a ~11 km dela)');
+  assert.match(beto.$('#banco-lista').textContent, /entre as escolhidas/, 'a mensagem de lista vazia fala das lojas escolhidas');
+
+  await marcarLoja('TODAS', true);
+  assert.deepEqual(marcadasLojas(), ['CFR', 'CFS', 'CFT'], 'TODAS marca todas as lojas');
+  assert.deepEqual(meus().map(t => t.match(/Candidato 08\d/)[0]), ['Candidato 083'], 'até 10 km de qualquer loja: quem mora perto da CFT entra');
+  assert.match(cartaoDe('Candidato 083'), /km da CFT/, 'e a loja mostrada é a mais próxima entre as escolhidas');
+
+  await marcarLoja('TODAS', false);
+  assert.deepEqual(marcadasLojas(), [], 'TODAS desmarcada limpa as lojas');
+  assert.match(beto.$('#rk-lojas-nota').textContent, /Nenhuma marcada/);
+  assert.deepEqual(meus().map(t => t.match(/Candidato 08\d/)[0]), ['Candidato 083'], 'nenhuma marcada vale como todas');
+  await marcarLoja('CFS', true);
+  assert.deepEqual(marcadasLojas(), ['CFS']);
+  assert.equal(beto.$('#rk-lojas-todas').checked, false);
+  await marcarLoja('CFR', true);
+  await marcarLoja('CFT', true);
+  assert.equal(beto.$('#rk-lojas-todas').checked, true, 'com todas as lojas marcadas, TODAS acende sozinha');
+  beto.define('#rk-km', '');
+  await beto.w.mudarFiltroRanking();
 
   // atribuição: as lojas da vaga com a distância e a faixa
   await beto.w.mudarFiltroRanking();

@@ -34,8 +34,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Sessão persistida. Vindo do link de recuperação, pede a nova senha antes de entrar.
   const { data: { session } } = await db.auth.getSession();
   if (RECUPERANDO_SENHA && session?.user) {
-    abrirModal('modal-nova-senha');
-    $('#ns-senha').focus();
+    abrirNovaSenha(false);
   } else if (session?.user) {
     await iniciarSessao(session.user);
   }

@@ -261,8 +261,8 @@
               <option value="nota">Maior nota</option>
               <option value="distancia">Mais perto da loja</option>
             </select>
-            <select class="sel" id="rk-km" aria-label="Distância máxima até a loja mais próxima" onchange="mudarFiltroRanking()"
-              title="Distância em linha reta até a loja mais próxima da vaga (estimativa). Quem não tem região identificada fica de fora quando há limite">
+            <select class="sel" id="rk-km" aria-label="Distância máxima até a loja mais próxima das escolhidas" onchange="mudarFiltroRanking()"
+              title="Distância em linha reta até a loja mais próxima entre as escolhidas abaixo (estimativa). Quem não tem região identificada fica de fora quando há limite">
               <option value="">Qualquer distância</option>
               <option value="5">Até 5 km</option>
               <option value="10">Até 10 km</option>
@@ -271,6 +271,11 @@
             </select>
           </div>
           <button type="button" class="btn-sm" onclick="sairDoRanking()"><i class="ti ti-arrow-left"></i>Voltar ao banco inteiro</button>
+          <div class="banco-ranking-lojas">
+            <span class="banco-ranking-lojas-tit"><i class="ti ti-building-store" aria-hidden="true"></i>Distância em relação a</span>
+            <div class="empresas-grid" id="rk-lojas" role="group" aria-label="Lojas usadas para medir a distância"></div>
+            <span class="banco-ranking-lojas-nota" id="rk-lojas-nota"></span>
+          </div>
         </div>
         <div class="filtros" id="banco-filtros">
           <div class="busca"><i class="ti ti-search"></i>
@@ -872,8 +877,8 @@
 <div class="modal-overlay" id="modal-nova-senha"><div class="modal" style="width:360px">
   <form onsubmit="salvarNovaSenha(event)" novalidate>
     <div class="modal-hd"><div class="modal-tit">
-      <i class="ti ti-key" style="color:var(--blue)"></i>Definir nova senha</div></div>
-    <p style="font-size:12.5px;color:var(--gray-text);margin-bottom:13px">
+      <i class="ti ti-key" style="color:var(--blue)"></i><span id="ns-titulo">Definir nova senha</span></div></div>
+    <p id="ns-texto" style="font-size:12.5px;color:var(--gray-text);margin-bottom:13px">
       Escolha a senha que você vai usar para entrar no painel.</p>
     <div class="f-campo"><label for="ns-senha">Nova senha</label>
       <input id="ns-senha" type="password" autocomplete="new-password" placeholder="Mínimo de 8 caracteres"></div>

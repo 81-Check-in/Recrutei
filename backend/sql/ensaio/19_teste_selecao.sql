@@ -31,22 +31,28 @@ begin
     values (v, 'anexo_pdf', 'Currículo de ' || p_nome, p_setor, p_funcao, p_nivel, p_nota);
   return v;
 end $$;
-create or replace function pg_temp.ordem(p_vaga uuid, p_ordem text default 'nota', p_km numeric default null)
+create or replace function pg_temp.ordem(p_vaga uuid, p_ordem text default 'nota', p_km numeric default null, p_lojas text[] default null)
 returns text[] language sql as $$
   select coalesce(array_agg(c.nome order by t.ord), '{}')
-    from selecionar_curriculos_vaga(p_vaga, 50, 0, p_ordem, p_km) with ordinality t(candidato_id, nota, total, km, loja, ord)
+    from selecionar_curriculos_vaga(p_vaga, 50, 0, p_ordem, p_km, p_lojas) with ordinality t(candidato_id, nota, total, km, loja, ord)
     join candidatos c on c.id = t.candidato_id $$;
+-- a loja mais próxima que a seleção devolveu para cada candidato (na ordem pedida; nulo = sem distância)
+create or replace function pg_temp.lojas(p_vaga uuid, p_lojas text[] default null, p_ordem text default 'nota')
+returns text[] language sql as $$
+  select coalesce(array_agg(coalesce(t.loja, '-') order by t.ord), '{}')
+    from selecionar_curriculos_vaga(p_vaga, 50, 0, p_ordem, null, p_lojas) with ordinality t(candidato_id, nota, total, km, loja, ord) $$;
 
 do $$
 declare
   beto  constant uuid := '00000000-0000-0000-0000-0000000000b1';
   dani  constant uuid := '00000000-0000-0000-0000-0000000000c9';
-  logistica uuid; vendas uuid; vaga uuid; vaga_legada uuid; cfs uuid;
+  logistica uuid; vendas uuid; vaga uuid; vaga_legada uuid; cfs uuid; cfr uuid;
   a uuid; b uuid; c uuid; d uuid; e uuid; f uuid; g uuid; h uuid; i uuid; j uuid; cid uuid; vaga3 uuid;
 begin
   select id into logistica from setores where nome = 'Logística';
   select id into vendas from setores where nome = 'Loja';
   select id into cfs from empresas where sigla = 'CFS';
+  select id into cfr from empresas where sigla = 'CFR';
 
   -- ── nota do currículo ──
   a := pg_temp.cand('Sel A', 'Logística', 'Supervisor', 'pleno', 90);
@@ -117,6 +123,34 @@ begin
   assert pg_temp.ordem(vaga, 'distancia') = array['Sel A', 'Sel F'], 'ordem por distância: quem mora mais perto da loja primeiro';
   assert pg_temp.ordem(vaga, 'nota', 5) = array['Sel A'], 'limite de km: só quem mora até 5 km da loja';
 
+  -- ── lojas de referência escolhidas pelo RH (038): a vaga só tem a CFS (Samambaia); a CFR é do Recanto das Emas ──
+  --    Sel A mora em Samambaia (0 km da CFS, ~4,5 km da CFR); Sel F mora no Gama (~16 km da CFS, ~12 km da CFR)
+  assert pg_temp.lojas(vaga) = array['CFS', 'CFS'], 'sem escolha: as lojas da vaga (como antes)';
+  assert pg_temp.lojas(vaga, '{}') = array['CFS', 'CFS'], 'lista vazia também vale as lojas da vaga';
+  assert pg_temp.lojas(vaga, array['CFR']) = array['CFR', 'CFR'], 'escolhida uma loja que NÃO é da vaga: a distância é até ela';
+  assert pg_temp.lojas(vaga, array['cfr']) = array['CFR', 'CFR'], 'a sigla vale em minúsculas';
+  assert pg_temp.lojas(vaga, array['CFS', 'CFR']) = array['CFR', 'CFS'], 'várias lojas: cada candidato mede até a mais próxima delas (F→CFR, A→CFS)';
+  assert pg_temp.ordem(vaga, 'nota', 3) = array['Sel A'], 'até 3 km da loja da vaga: só Sel A (0 km da CFS)';
+  assert pg_temp.ordem(vaga, 'nota', 3, array['CFR']) = '{}', 'até 3 km da CFR: ninguém (o limite deixa de olhar a CFS da vaga)';
+  assert pg_temp.ordem(vaga, 'nota', 5, array['CFR']) = array['Sel A'], 'até 5 km da CFR: Sel A (~4,5 km)';
+  assert pg_temp.ordem(vaga, 'nota', 13, array['CFR']) = array['Sel F', 'Sel A'], 'até 13 km da CFR: os dois; Sel F (~12 km) só entra em relação à CFR';
+  assert pg_temp.ordem(vaga, 'nota', 13) = array['Sel A'], '…e não entra em relação à CFS da vaga (~16 km)';
+  assert pg_temp.ordem(vaga, 'distancia', null, array['CFR']) = array['Sel A', 'Sel F'], 'ordem "mais perto" também segue a loja escolhida';
+  assert pg_temp.ordem(vaga, 'nota', 5, array['CFS', 'CFR']) = array['Sel A'], 'várias lojas + limite de km';
+  assert (select total from selecionar_curriculos_vaga(vaga, 1, 0, 'nota', 13, array['CFR']) limit 1) = 2, 'o total respeita o limite de km da loja escolhida';
+
+  -- loja que não conta: sigla inexistente, inativa ou sem local cadastrado (sem distância; com limite de km, fora da lista)
+  assert pg_temp.lojas(vaga, array['XXX']) = array['-', '-'], 'sigla inexistente: sem distância';
+  assert pg_temp.ordem(vaga, 'nota', 50, array['XXX']) = '{}', 'sigla inexistente + limite de km: ninguém';
+  update empresas set ativo = false where id = cfr;
+  assert pg_temp.lojas(vaga, array['CFR']) = array['-', '-'], 'loja inativa não entra no cálculo';
+  update empresas set ativo = true where id = cfr;
+  insert into empresas (sigla, nome) values ('CFX', 'Loja sem local');
+  assert pg_temp.lojas(vaga, array['CFX']) = array['-', '-'], 'loja sem região não entra no cálculo';
+  assert pg_temp.lojas(vaga, array['CFX', 'CFR']) = array['CFR', 'CFR'], '…e não atrapalha as que têm local';
+  assert (select count(*) from fn_lojas_referencia(vaga, array['CFS', 'CFR', 'CFX'])) = 2, 'fn_lojas_referencia devolve só as que têm local';
+  assert (select count(*) from fn_lojas_referencia(vaga)) = 1, 'sem escolha: uma loja (a da vaga)';
+
   -- ── o expurgo apaga a nota junto com o resto da qualificação ──
   update curriculos set texto_extraido = null where candidato_id = a;
   assert (select nota_classificacao is null and setor_adequado is null from curriculos where candidato_id = a), 'expurgo: a nota sai com a qualificação';
@@ -173,6 +207,11 @@ begin
   begin
     perform 1 from selecionar_curriculos_vaga(vaga);
     raise exception 'anon não deveria executar a seleção';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from fn_lojas_referencia(vaga, array['CFS']);
+    raise exception 'anon não deveria executar fn_lojas_referencia';
   exception when insufficient_privilege then null;
   end;
   reset role;

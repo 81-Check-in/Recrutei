@@ -464,7 +464,9 @@ sugerida não é o setor da vaga. A IA não considera idade, gênero, origem etc
 só os currículos **atuais** de candidatos disponíveis com **exatamente** o setor, a função e o nível da vaga (`selecionar_curriculos_vaga()`, 033),
 do **maior para o menor** `curriculos.nota_classificacao` (a nota que a IA deu ao qualificar; sem nota vai por último). Fora da lista: quem não
 está disponível, quem está na lista negra e quem já tem candidatura aberta, reprovada ou descartada **nesta** vaga. A janela também ordena por
-"mais perto da loja" e limita por km (região, 030). Setor, função e nível da vaga são obrigatórios no formulário (a função só pode ser do setor
+"mais perto da loja" e limita por km (região, 030), medindo até a loja mais próxima **entre as lojas que o RH marcar** nos chips
+"Distância em relação a" (uma, várias ou TODAS; começam nas lojas da vaga; loja sem região aparece desabilitada) — `p_lojas` em
+`selecionar_curriculos_vaga()`, 038 (nulo ou vazio = as lojas da vaga). Setor, função e nível da vaga são obrigatórios no formulário (a função só pode ser do setor
 escolhido); vaga antiga sem eles mostra o aviso no card e o botão leva ao formulário. O "No banco" do card conta os mesmos currículos.
 
 **Atribuir grava a qualificação da vaga (sem IA)** — quando o RH direciona um candidato a uma vaga, o banco (`fn_atribuir_candidato_vaga`, 034) grava o

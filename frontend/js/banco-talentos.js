@@ -279,7 +279,9 @@ async function carregarBanco() {
 //  Os currículos disponíveis do Banco de Talentos com EXATAMENTE o setor, a função e o nível da vaga (a qualificação que a
 //  IA gravou em cada currículo), da maior nota para a menor. Sem IA: é um filtro SQL. Quem foi reprovado/descartado nesta
 //  vaga, está na lista negra ou já está em processo não aparece. A conta está em selecionar_curriculos_vaga()
-//  (backend/sql/033); o painel só a chama e desenha.
+//  (backend/sql/033, lojas de referência na 038); o painel só a chama e desenha.
+//  A distância (limite de km, ordem "mais perto" e o "X km da CFC" do card) é medida até a loja mais próxima ENTRE AS
+//  ESCOLHIDAS nos chips "Distância em relação a": começam com as lojas da vaga e o RH marca outras, várias ou TODAS.
 // ═══════════════════════════════════════════════════════════
 let rankingVaga = null;            // { id, titulo } enquanto o Banco mostra o ranking de uma vaga
 
@@ -288,18 +290,73 @@ function mudarFiltroRanking() {
   return carregarBanco();
 }
 
-function verCandidatosDaVaga(vagaId, titulo, pronta = true) {
+async function verCandidatosDaVaga(vagaId, titulo, pronta = true) {
   // sem função e nível a vaga não filtra nada: leva o RH direto ao formulário para preencher
   if (!pronta) {
     toast('Defina a função e o nível da vaga para selecionar currículos', 'erro');
     abrirModalVaga(vagaId);
     return;
   }
+  const lojasDaVaga = await siglasDasLojasDaVaga(vagaId);
   rankingVaga = { id: vagaId, titulo };
   $('#rk-ordem').value = 'nota';
   $('#rk-km').value = '';
+  montarLojasRanking(lojasDaVaga);
   estadoBanco.limite = estadoBanco.tamanhoPagina;
   irPara('banco');
+}
+
+// ── Lojas de referência da distância ──
+// Só loja com local (região ou ponto exato) entra no cálculo: as outras aparecem desabilitadas
+const lojaTemLocal = e => !!e.regiao_id || (e.latitude != null && e.longitude != null);
+
+// As lojas cadastradas na vaga: é com elas que a seleção começa (o RH depois muda). Erro na consulta = começa por TODAS.
+async function siglasDasLojasDaVaga(vagaId) {
+  const { data } = await db.from('vaga_empresas').select('empresa_id').eq('vaga_id', vagaId);
+  const ids = new Set((data || []).map(r => r.empresa_id));
+  return app.cache.empresas.filter(e => ids.has(e.id)).map(e => e.sigla);
+}
+
+// Desenha os chips das lojas (uma por loja + TODAS). `marcadas` = siglas que começam marcadas; nenhuma → todas.
+function montarLojasRanking(marcadas = []) {
+  const alvo = new Set(marcadas.map(x => String(x).toUpperCase()));
+  const comLocal = app.cache.empresas.filter(lojaTemLocal);
+  const iniciais = comLocal.some(e => alvo.has(String(e.sigla).toUpperCase()))
+    ? comLocal.filter(e => alvo.has(String(e.sigla).toUpperCase())) : comLocal;
+  const marcada = new Set(iniciais.map(e => e.id));
+  $('#rk-lojas').innerHTML = app.cache.empresas.map(e => {
+    const ok = lojaTemLocal(e);
+    return `<label class="chk-empresa" title="${ok ? `Medir a distância até a ${escapeHtml(e.sigla)}` : `A ${escapeHtml(e.sigla)} ainda não tem região cadastrada: não dá para medir a distância até ela`}">
+      <input type="checkbox" data-loja value="${escapeHtml(e.sigla)}" ${ok ? '' : 'disabled'} ${marcada.has(e.id) ? 'checked' : ''}> ${escapeHtml(e.sigla)}</label>`;
+  }).join('') + `
+    <label class="chk-empresa chk-todas" title="Medir a distância até a loja mais próxima entre todas as lojas">
+      <input type="checkbox" id="rk-lojas-todas"> TODAS</label>`;
+  $('#rk-lojas').onchange = ev => {
+    if (ev.target.id === 'rk-lojas-todas') {
+      $$('#rk-lojas input[data-loja]:not(:disabled)').forEach(c => { c.checked = ev.target.checked; });
+    }
+    atualizarLojasRanking();
+    mudarFiltroRanking();
+  };
+  atualizarLojasRanking();
+}
+
+// "TODAS" acompanha as lojas marcadas e a legenda diz o que está valendo
+function atualizarLojasRanking() {
+  const itens = [...$$('#rk-lojas input[data-loja]:not(:disabled)')];
+  const marcadas = itens.filter(c => c.checked);
+  $('#rk-lojas-todas').checked = itens.length > 0 && marcadas.length === itens.length;
+  $('#rk-lojas-nota').textContent = !marcadas.length ? 'Nenhuma marcada: vale a loja mais próxima entre todas'
+    : marcadas.length === 1 ? 'Distância até essa loja'
+    : marcadas.length === itens.length ? 'Distância até a loja mais próxima de todas'
+    : 'Distância até a loja mais próxima entre as marcadas';
+}
+
+// As siglas que a seleção usa. Nenhuma marcada vale como TODAS (o RH só desmarca tudo para escolher outras em seguida).
+function lojasDoRanking() {
+  const itens = [...$$('#rk-lojas input[data-loja]:not(:disabled)')];
+  const marcadas = itens.filter(c => c.checked);
+  return (marcadas.length ? marcadas : itens).map(c => c.value);
 }
 
 // Volta ao Banco de Talentos normal (recarrega a lista, salvo quando quem chama vai recarregar por conta própria)
@@ -331,14 +388,14 @@ async function carregarRankingVaga() {
   const km = $('#rk-km').value;
   const { data: ranking, error } = await db.rpc('selecionar_curriculos_vaga', {
     p_vaga_id: rankingVaga.id, p_limite: estadoBanco.limite, p_deslocamento: 0,
-    p_ordem: $('#rk-ordem').value, p_km_max: km ? Number(km) : null });
+    p_ordem: $('#rk-ordem').value, p_km_max: km ? Number(km) : null, p_lojas: lojasDoRanking() });
   if (versao !== estadoBanco.versao) return;               // trocou de tela ou de vaga enquanto esperava
   if (error) { erro(el, mensagemErro(error)); destravarBotaoMais($('#banco-mais')); return; }
 
   estadoBanco.total = ranking[0]?.total ?? 0;
   if (!ranking.length) {
     vazio(el, 'ti-target-arrow', 'Nenhum currículo com o setor, a função e o nível desta vaga',
-      km ? 'Nenhum candidato mora até essa distância da loja mais próxima. Quem não tem região identificada fica de fora quando há limite de distância'
+      km ? 'Nenhum candidato mora até essa distância da loja mais próxima entre as escolhidas. Quem não tem região identificada fica de fora quando há limite de distância'
          : 'Só aparecem currículos já qualificados pela IA com exatamente esse setor, função e nível. Quem foi reprovado nesta vaga não volta a ela');
     atualizarPaginacao($('#banco-mais'), estadoBanco, $('#banco-total'), ' currículos');
     return;
@@ -358,7 +415,7 @@ async function carregarRankingVaga() {
     const selo = `<div class="aderencia ${classeNotaCv(r.nota)}" title="${r.nota == null ? 'Currículo sem nota' : `Nota de classificação do currículo (nº ${i + 1} da lista)`}">
         <b>${r.nota ?? '—'}</b><i style="width:${r.nota ?? 0}%"></i></div>`;
     const meta = r.km_mais_proxima != null
-      ? `<span title="Distância em linha reta até a loja mais próxima da vaga (estimativa)"><i class="ti ti-route"></i>${formatarKm(r.km_mais_proxima)} da ${escapeHtml(r.loja_mais_proxima)}</span>`
+      ? `<span title="Distância em linha reta até a loja mais próxima entre as escolhidas (estimativa)"><i class="ti ti-route"></i>${formatarKm(r.km_mais_proxima)} da ${escapeHtml(r.loja_mais_proxima)}</span>`
       : `<span class="sem-dados" title="Sem região identificada não dá para estimar a distância. Informe em Editar dados"><i class="ti ti-route"></i>região não identificada</span>`;
     return htmlCartaoBanco(c, { selo, termos, meta });
   }).join('');

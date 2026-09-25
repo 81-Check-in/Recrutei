@@ -20,6 +20,7 @@ MIGRACOES=(
   035_catalogo_setores_cargos_niveis.sql
   036_niveis_habilitar_desabilitar.sql
   037_candidatos_da_vaga_views.sql
+  038_selecao_por_loja.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(

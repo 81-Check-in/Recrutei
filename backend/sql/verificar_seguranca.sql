@@ -38,7 +38,9 @@ union all select 'usuário logado lê a fila de arquivos a apagar (arquivos_para
 union all select 'anônimo tem SELECT em candidatos',
        has_table_privilege('anon','public.candidatos','SELECT')
 union all select 'anônimo executa a seleção de currículos da vaga (selecionar_curriculos_vaga)',
-       has_function_privilege('anon','public.selecionar_curriculos_vaga(uuid,integer,integer,text,numeric)','EXECUTE')
+       has_function_privilege('anon','public.selecionar_curriculos_vaga(uuid,integer,integer,text,numeric,text[])','EXECUTE')
+union all select 'anônimo executa a escolha das lojas de referência da distância (fn_lojas_referencia)',
+       has_function_privilege('anon','public.fn_lojas_referencia(uuid,text[])','EXECUTE')
 union all select 'anônimo executa o filtro de currículos da vaga (fn_curriculos_da_vaga)',
        has_function_privilege('anon','public.fn_curriculos_da_vaga(uuid)','EXECUTE')
 union all select 'anônimo executa atribuir_candidato_vaga',
