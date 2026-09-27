@@ -91,8 +91,9 @@ begin
   insert into analises_ia (candidato_id, sequencia, versao_modelo_ia, area_sugerida, cargo_sugerido, nivel_sugerido, confianca)
     values (cand, 1, 'teste', 'Logística', 'Supervisor', 'pleno', null);
   assert (select ia_confianca is null and nivel_sugerido = 'pleno' from candidatos where id = cand), 'a análise sem confiança chega ao candidato';
-  assert not exists (select 1 from fn_sanitizacao_avaliar(fn_sanitizacao_parametros()) where candidato_id = cand),
-    'classificado e sem confiança registrada: não entra na sanitização';
+  update candidatos set ultima_movimentacao = now() - interval '40 days' where id = cand;   -- passou do 1º mês: só assim a sanitização avalia (043)
+  assert not exists (select 1 from fn_sanitizacao_avaliar(fn_sanitizacao_parametros()) where candidato_id = cand and 'dados_incompletos' = any(motivos)),
+    'classificado e sem confiança registrada: não conta como dado incompleto';
   insert into analises_ia (candidato_id, sequencia, versao_modelo_ia, area_sugerida, cargo_sugerido, nivel_sugerido, confianca)
     values (cand, 2, 'teste', 'Logística', 'Supervisor', 'pleno', 20);
   assert exists (select 1 from fn_sanitizacao_avaliar(fn_sanitizacao_parametros()) where candidato_id = cand and 'dados_incompletos' = any(motivos)),

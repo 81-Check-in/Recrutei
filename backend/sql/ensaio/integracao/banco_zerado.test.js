@@ -107,7 +107,7 @@ test('sanitização: sem sugestões; o administrador gera a lista e ela sai vazi
 
 test('configurações: o marcador do e-mail e os parâmetros seguem lá', async () => {
   await ana.w.carregarConfig();
-  assert.match(ana.$('#config-lista').textContent, /sanitizacao_intervalo_meses/);
+  assert.match(ana.$('#config-lista').textContent, /sanitizacao_intervalo_dias/);
   assert.deepEqual(ana.erros, []);
 });
 

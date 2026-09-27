@@ -30,6 +30,8 @@ from config import (
 
 app = FastAPI(title="Recrutei — API")
 
+MENSAGEM_IA_PAUSADA = "O envio para a IA está pausado pelo administrador (Configurações → Zona de perigo)"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGENS or ["*"],
@@ -63,6 +65,12 @@ def _usuario_autenticado(authorization: Optional[str]) -> str:
     return usuario_id
 
 
+def _exigir_ia_ativa() -> None:
+    """Pausa de emergência (Configurações → Zona de perigo): nenhum pedido chega à IA. 503 com o motivo, que o painel mostra."""
+    if bd.ia_pausada():
+        raise HTTPException(503, MENSAGEM_IA_PAUSADA)
+
+
 @app.post("/uploads-manuais/{upload_id}/avaliar")
 def avaliar_upload(upload_id: str, authorization: Optional[str] = Header(None)):
     usuario_id = _usuario_autenticado(authorization)
@@ -75,10 +83,14 @@ def avaliar_upload(upload_id: str, authorization: Optional[str] = Header(None)):
     if item["status"] != "pendente":
         return _resposta_upload(item)
 
+    _exigir_ia_ativa()
     log.info(f"► avaliação imediata — upload {upload_id[:8]} (pedida por usuário {usuario_id[:8]})")
     cfg = bd.carregar_configuracoes()
     stats = pipeline.Estatisticas()
-    pipeline.processar_upload_manual(item, cfg, bd.listar_areas(), stats)
+    try:
+        pipeline.processar_upload_manual(item, cfg, bd.listar_areas(), stats)
+    except ia.IAPausada:            # pausada no meio do pedido: o envio continua na fila
+        raise HTTPException(503, MENSAGEM_IA_PAUSADA)
 
     return _resposta_upload(bd.obter_upload_manual(upload_id))
 
@@ -104,9 +116,13 @@ def analisar_candidato(candidato_id: str, authorization: Optional[str] = Header(
     if not candidato or candidato["status_banco"] == "expurgado":
         raise HTTPException(404, "Candidato não encontrado")
 
+    _exigir_ia_ativa()
     log.info(f"► reanálise imediata — candidato {candidato_id[:8]} (pedida por usuário {usuario_id[:8]})")
     stats = pipeline.Estatisticas()
-    analise = pipeline.reanalisar_candidato(candidato, bd.carregar_configuracoes(), bd.listar_areas(), stats)
+    try:
+        analise = pipeline.reanalisar_candidato(candidato, bd.carregar_configuracoes(), bd.listar_areas(), stats)
+    except ia.IAPausada:
+        raise HTTPException(503, MENSAGEM_IA_PAUSADA)
     if not analise:
         raise HTTPException(422, "Não foi possível analisar o currículo agora (a rotina tenta de novo)")
     return {
@@ -149,6 +165,7 @@ def rascunho_de_vaga(corpo: PedidoRascunho, authorization: Optional[str] = Heade
     (Obrigatório / Desejável / Diferencial). É só um rascunho para o RH revisar; nada é gravado aqui.
     """
     usuario_id = _usuario_autenticado(authorization)
+    _exigir_ia_ativa()
     if not _dentro_do_limite(usuario_id):
         raise HTTPException(429, "Muitos pedidos seguidos. Tente de novo em alguns minutos")
 
@@ -156,6 +173,8 @@ def rascunho_de_vaga(corpo: PedidoRascunho, authorization: Optional[str] = Heade
     modelo = pipeline.modelo_configurado(bd.carregar_configuracoes(), "modelo_ia_avaliacao", MODELO_AVALIACAO_PADRAO)
     try:
         rascunho, _ = ia.rascunhar_vaga(corpo.pedido, modelo, corpo.titulo, corpo.setor)
+    except ia.IAPausada:
+        raise HTTPException(503, MENSAGEM_IA_PAUSADA)
     except Exception as e:
         log.error(f"  Falha ao gerar o rascunho da vaga: {type(e).__name__}")
         raise HTTPException(502, "A IA não respondeu agora. Tente de novo em instantes")

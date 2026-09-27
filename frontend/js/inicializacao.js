@@ -70,6 +70,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   $('#san-busca').addEventListener('input', debounce(carregarSanitizacao));
 
   $('#filtro-cand-status').addEventListener('change', carregarCandidatos);
+  $('#filtro-cand-sexo').addEventListener('change', carregarCandidatos);
   $('#busca-candidatos').addEventListener('input', debounce(carregarCandidatos));
 
   // Agendamento: atualiza mensagem ao mudar data/hora

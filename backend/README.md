@@ -101,11 +101,14 @@ continuam não lidos e podem ser tratados depois, recuando a data.
 ### Outros comandos
 
 ```bash
+python main.py --continuo               # o robô em tempo (quase) real, sempre ligado (é o comando do Railway; ver seção 4)
+python main.py --agendada               # um único ciclo do mesmo robô, para quem prefere o Cron Schedule do Railway
 python main.py --manutencao             # só a manutenção (partições da auditoria e arquivos de dados excluídos)
 python main.py --reanalisar             # só as (re)análises da IA pedidas: candidatos migrados, currículo reenviado, botão "Reanalisar"
 python main.py --reavaliar              # (sem uso desde a 033: atribuir a vaga não pede mais avaliação da IA)
 python main.py --reprocessar-excecoes   # só as exceções marcadas para tentar de novo no painel
 python main.py --uploads-manuais        # só os currículos enviados manualmente no painel
+python main.py --sexo-pelo-nome         # estima (pelo primeiro nome) o sexo de quem está no banco sem sexo; só estatística. --limite N faz só N; --simular só conta
 python main.py --sanitizacao            # gera a lista de sugestões de sanitização se o intervalo venceu (e avisa o RH)
 python main.py --sanitizacao --forcar   # gera agora, mesmo antes do prazo
 python main.py --desde 2026-09-18       # só e-mails recebidos a partir da data (o mesmo que IMAP_DESDE, só nesta execução)
@@ -127,23 +130,67 @@ experiência e CNH de quem ainda não tem.
 4. Em **Variables**, cadastre as variáveis do `.env`, **sem aspas** em volta dos valores.
    Confira estas:
    - `MODO_SIMULACAO=false` (em `true` nada é gravado).
-   - `LIMITE_EMAILS`: deixe `0` ou vazio para processar tudo; use um número pequeno
-     só no primeiro dia.
+   - `LIMITE_EMAILS`: e-mails por leitura no modo contínuo. Vazio = **50**; `0` = sem limite (uma leitura pode durar horas se a caixa
+     estiver cheia). Um número pequeno serve para o primeiro dia.
    - `IDENTIDADE_CHAVE`: a **mesma** usada até hoje. Se mudar, reenvios antigos
      deixam de ser detectados.
-5. Em **Settings → Cron Schedule**, defina:
+5. Em **Settings → Cron Schedule**, **deixe vazio**. O `Dockerfile` roda `python main.py --continuo`: o robô fica ligado o tempo todo
+   (o Railway o reinicia se cair) e o serviço aparece como sempre ativo.
 
-```
-0 8 * * *
-```
+**Como o robô trabalha** ([robo.py](robo.py), janela em [agenda.py](agenda.py)). A cada 30 segundos ele faz um ciclo:
 
-Isso executa todo dia às 05h no horário de Brasília (o Railway usa UTC).
-O `Dockerfile` instala Tesseract (com o idioma português) e Poppler. A execução roda
-uma vez e encerra; se falhar, o Railway marca a execução com erro.
+- **Pedidos do RH, na hora** (em cerca de 1 minuto): exceção marcada para "tentar de novo", currículo enviado pelo botão "Enviar currículo" e
+  reanálise pedida no painel. Uma reanálise que falha só é tentada de novo depois de 10 minutos (cada tentativa gasta IA).
+- **Leitura dos e-mails, a cada 10 minutos**: conta os não lidos e, havendo, lê no máximo `LIMITE_EMAILS` de uma vez (**50** se a variável
+  não existir; o resto fica para a leitura seguinte). Sem e-mail novo não abre execução no histórico. A primeira checagem de cada dia faz também
+  a manutenção do banco e a conferência da sanitização.
+- **Só dentro da janela**: por padrão de segunda a sábado, das **07:30 às 18:00** (fuso de Brasília; a leitura das 18:00 já não acontece). Fora dela
+  o robô continua ligado, mas não lê e-mail nem chama a IA (os pedidos do RH também esperam a janela abrir). Feriados não são tratados: nesses
+  dias ele lê normalmente.
+- **Configurações → Leitura dos e-mails** (o administrador muda sem entrar no Railway; vale no ciclo seguinte): `leitura_dias_semana`
+  (1 = segunda ... 7 = domingo), `leitura_hora_inicio`, `leitura_hora_fim` e `leitura_intervalo_minutos` (1 a 240). Campo ausente ou inválido
+  cai no padrão de `config.py`, com **um** aviso no log. Estas chaves substituem `horario_execucao_pipeline` e `pipeline_ultima_execucao_diaria`
+  (a leitura única por dia acabou; a migração `046` apaga as duas).
+- **Só uma instância trabalha por vez**: cada ciclo com trabalho reserva a linha de `pipeline_status` por 30 minutos (`lease_dono`/`lease_ate`). Um deploy que
+  sobrepõe a instância velha e a nova não lê a caixa em dobro. Sem o banco o robô não trabalha (melhor perder um ciclo que ler duas vezes).
+- **Encerramento limpo**: o deploy manda SIGTERM; o robô termina o e-mail em curso, deixa o resto **não lido** e sai. E-mail já lido e gravado nunca se perde.
+- Um ciclo que falha (banco ou caixa fora do ar) não derruba o robô: registra o erro, avisa a tela Status e tenta de novo com espera crescente
+  (até 5 minutos).
+
+**Tela Status** (menu, para todo o RH; [status.js](../frontend/js/status.js)). O robô grava o andamento na linha única de `pipeline_status` (migração `046`) e o painel só lê:
+estado (ativo, processando, fora do horário, IA pausada, erro), **e-mails aguardando** (contagem da última checagem, com a hora dela; desce a
+cada e-mail tratado), **processando agora** ("x de y" com barra), próxima leitura, exceções pendentes, resultado da última leitura e as regras da janela.
+O ponto colorido do menu mostra o estado em qualquer tela. **"Sem sinal do robô"** aparece se ele não der sinal por mais de 6 minutos: é o aviso de que o
+Railway caiu ou o deploy falhou.
+
+**Prefere o Cron Schedule?** Troque o `CMD` do `Dockerfile` e o `Procfile` por `python main.py --agendada` e use `*/5 * * * *` (o mínimo do Railway). Cada
+batida faz um ciclo e sai; o intervalo de leitura conta da última checagem gravada no banco. Os pedidos do RH ficam prontos em até 5 minutos em vez de 1.
+
+O `Dockerfile` instala Tesseract (com o idioma português) e Poppler. `python main.py` (sem flag) continua rodando **na hora**, para uso manual.
+
+**Ordem de publicação ao ligar isto:** (1) rode a migração `046` no Supabase (sem ela o robô não consegue reservar o trabalho e fica parado, com um aviso no
+log); (2) faça o commit e publique o backend; (3) confira no Railway que o **Cron Schedule está vazio** e que `IDENTIDADE_CHAVE` é a mesma de sempre; (4) abra a tela
+Status: em até 1 minuto o robô deve aparecer como ativo. **Antes de ligar, decida o que fazer com os e-mails não lidos que já estão na caixa**: o robô os lê aos
+poucos (50 por leitura, do mais antigo ao mais novo), inclusive os sem anexo, que viram exceções.
+
+**Pausa de emergência da IA (Configurações → Zona de perigo).** O botão grava `ia_pausada = true` (migração 040; só o
+administrador altera). Ao apertar, o painel abre uma janela que explica **o que vai acontecer** e **os prejuízos** e só pausa depois de o
+administrador **digitar a própria senha** (conferida no Supabase Auth com um cliente descartável, sem mexer na sessão do painel; é uma trava
+contra clique por engano — a permissão de verdade continua no banco). Retomar pede só uma confirmação simples. Enquanto estiver ligado **nada é enviado à IA**, nem pelo robô nem pelo servidor HTTP:
+
+- o robô não abre a caixa nem analisa nada (a manutenção do banco continua) e registra a execução como *interrompida*;
+- uma execução em andamento **para no próximo envio** (a checagem é a cada chamada à IA, com leitura válida por 5 s): o e-mail em
+  curso e os seguintes ficam **não lidos**, o marcador de progresso não avança além do último tratado, e **nenhum vira exceção**;
+- envios manuais e pedidos de "Reanalisar" ficam pendentes na fila; o servidor HTTP responde **503** com o motivo, que o painel mostra;
+- nada se perde: ao retomar, o robô continua de onde parou. Se a pausa cobrir o horário do dia, a leitura só volta no dia seguinte
+  (ou rodando `python main.py` à mão);
+- sem a linha no banco (040 não rodada) a IA não está pausada; se **não for possível ler** o interruptor, o robô trata como pausada
+  (na dúvida, não gasta).
 
 **A sanitização não precisa de agendamento próprio.** Ela roda dentro desta mesma execução diária:
-todo dia o sistema só pergunta ao banco "o intervalo (2 meses) venceu?" e, se sim, gera a lista
-de sugestões e avisa o RH. Fora do prazo não faz nada. (O Supabase deste projeto não tem `pg_cron`.)
+todo dia o sistema pergunta ao banco se a conferência semanal venceu (`sanitizacao_intervalo_dias`, 7); se sim, ele lista quem completou 1 mês
+sem alteração e avisa o RH se houver sugestões novas. Fora do prazo não faz nada. (O Supabase deste projeto não tem `pg_cron`.)
+O **expurgo dos inativos vencidos** também roda aqui, dentro da manutenção diária (seção 7): sem o robô no ar, ninguém é apagado e os arquivos de currículo não saem do Storage.
 
 Para testar a imagem localmente antes do deploy:
 
@@ -209,6 +256,8 @@ executados **um por vez, nesta ordem**, no Supabase → SQL Editor:
 | `021_banco_talentos_modelo.sql` | Tabelas `candidatos` e `analises_ia`, colunas novas, **índices de busca**, RLS |
 | `022_banco_talentos_regras.sql` | Gatilhos e funções: atribuir, devolver ao banco, editar, contato, consentimento, inativar |
 | `023_banco_talentos_sanitizacao.sql` | Sanitização (tabelas, parâmetros, cálculo, decisão em lote) e **fim da retenção automática** |
+| `047_sanitizacao_so_inativa_expurgo_automatico.sql` | A fila só mantém ou inativa (recusa "excluir"; inativo não volta à fila) e **volta o expurgo automático**, agora N meses depois de inativar: parâmetro `expurgo_meses_apos_inativar` (6), `fn_expurgar_inativos_vencidos` chamada por `fn_manutencao_diaria`, "Sanitizar" só para ativo. Rodar depois da 043. **Aplique antes de publicar o robô e o painel** (o painel novo lê o parâmetro; o robô novo lê `expurgo` do resultado, que o banco antigo não devolve) |
+| `048_filtros_email_telefone_cargos.sql` | Três filtros novos em `filtrar_banco_talentos()` — e-mail (cadastro e de quem enviou), telefone (só números) e cargos com experiência (do título de experiência em diante) — e a função auxiliar `trecho_de_experiencia()`. Rodar depois da 047 (funciona sem ela). O painel novo manda as chaves novas; o banco antigo as ignora em silêncio (**aplique a 048 antes de publicar o painel**) |
 | `024_banco_talentos_views.sql` | Views novas e a busca; remove `vw_triagem` e `filtrar_triagem` |
 | `025_banco_talentos_migracao_dados.sql` | **Migra o que existe hoje**, atômico e com verificações |
 | `026_banco_talentos_ajustes.sql` | Ajustes dos avisos do Supabase (`search_path` de `norm_busca`, índices nas chaves estrangeiras, políticas de `usuarios` fundidas). Não muda dados nem comportamento |
@@ -287,19 +336,48 @@ o que some, o que fica, a fila do Storage, a auditoria e o fluxo principal a par
 
 ---
 
-## 7. Sanitização periódica (o sistema não apaga nada sozinho)
+## 7. Sanitização, inativação e expurgo (três etapas)
 
-A rotina antiga inativava candidatos após 2 meses sem evento e **apagava os dados pessoais** após 4 meses inativos, sozinha.
-Isso acabou (parâmetros `retencao_meses_ate_*` removidos). No lugar: a cada ciclo (2 meses, configurável) o sistema gera uma
-**lista de sugestões**, e o RH decide. Tela: **Sanitização**.
+A rotina antiga inativava candidatos após 2 meses sem evento e apagava os dados pessoais após 4 meses inativos, sozinha; a 023 a removeu
+(parâmetros `retencao_meses_ate_*`) e pôs no lugar uma fila em que o RH decidia tudo. Desde a **047** o fluxo tem três etapas separadas:
 
-**Quem entra na lista** (candidatos `ativo` ou `inativo`; nunca `em_processo`, contratados nem quem o RH mandou manter):
+```
+ATIVO ──(1 mês parado, ou botão "Sanitizar")──▶ fila da sanitização ──▶ RH: Manter | Inativar
+INATIVO ──(expurgo_meses_apos_inativar, padrão 6; sozinho, na manutenção diária)──▶ EXPURGADO (só o esqueleto)
+```
+
+1. **Inativação** — o botão Inativar/Reativar do cadastro (`alterar_status_banco`) e a decisão "Inativar" da fila fazem a mesma coisa: `status_banco = 'inativo'`
+   e carimbam `inativado_em`. Os dados continuam guardados. **É dessa data que a contagem do expurgo parte**; reativar (ou um reenvio do currículo, que reativa)
+   a zera. Vale para toda inativação, inclusive a de quem foi descartado; só o contratado (retenção permanente) fica fora.
+2. **Sanitização** — só sugere; o RH só **mantém ou inativa**. "Excluir" saiu da fila (a decisão é recusada no banco, inclusive para administrador) e quem
+   já está inativo não volta a ser sugerido (antes voltava toda semana). Tela: **Sanitização**.
+3. **Expurgo automático** — todo dia, dentro de `fn_manutencao_diaria` (que o robô chama na manutenção), `fn_expurgar_inativos_vencidos` apaga os dados pessoais de
+   quem está **inativo há mais de N meses** (`expurgo_meses_apos_inativar`, padrão 6, mínimo efetivo 1; Configurações). Apaga nome, contatos, currículo, análises e os
+   textos livres da IA e das entrevistas; **sobram o hash de identidade (para reconhecer um reenvio), as datas, a situação e o bloqueio**. O arquivo do currículo entra na
+   fila `arquivos_para_remover` e o robô o remove **na mesma execução** (se o Storage falhar, tenta de novo no dia seguinte). Cada candidato é expurgado isoladamente
+   (um erro não trava os outros), no máximo 300 por execução (o resto sai no dia seguinte), e cada um fica na auditoria (`exclusao_manual_lgpd`, detalhe
+   "Expurgo automático: …"), mais um resumo da execução (`expurgo_automatico`). O log do robô mostra quantos foram.
+
+O que **não mudou**: o RPC `excluir_dados_candidato` (LGPD art. 18, só administrador) continua no banco, **sem botão no painel** — é o único caminho para apagar um
+titular **antes** do prazo. O Histórico do candidato (042) é uma tabela à parte e o expurgo não mexe nele.
+
+**Quando entra na lista (043).** Só depois de **1 mês sem nenhuma alteração** (`sanitizacao_meses_sem_movimentacao`, 1), contado da data em que o
+candidato **entrou no sistema** — nunca da data do e-mail: um e-mail de agosto que chegou ao sistema em outubro é sugerido em novembro.
+Qualquer alteração (candidatura, currículo novo, contato, edição) reinicia a contagem. Esse prazo é um **portão** para todos os critérios abaixo, que
+só somam pontos e prioridade para quem já passou por ele; a única exceção é o prazo máximo de armazenamento (LGPD), que é limite legal. A lista é conferida
+**toda semana** (`sanitizacao_intervalo_dias`, 7): cada candidato entra na primeira conferência depois de completar o prazo (até 6 dias depois).
+
+**Botão "Sanitizar" (043).** No cadastro do candidato, o RH pode mandá-lo direto para a fila (RPC `sanitizacao_enviar_candidato`, qualquer usuário ativo):
+entra com prioridade alta e o nome de quem enviou, sem ciclo (`sanitizacao_sugestoes.origem = 'manual'`). Nada é apagado nesse momento; a decisão é a de
+sempre. Substituiu o botão "Excluir dados". Só aparece para quem está **ativo** (quem já está inativo tem os dados apagados sozinho no prazo).
+
+**Quem pode entrar na lista** (só candidatos `ativo`; nunca `inativo`, `em_processo`, contratados nem quem o RH mandou manter):
 
 | Critério | Regra (parâmetro em Configurações) | Pontos |
 |---|---|---|
-| Sem movimentação | Nada aconteceu (candidatura, currículo novo, contato, edição) há mais de N meses (`sanitizacao_meses_sem_movimentacao`, 6) | 2 |
+| Sem movimentação | Nada aconteceu (candidatura, currículo novo, contato, edição) há mais de N meses desde a entrada no sistema (`sanitizacao_meses_sem_movimentacao`, 1). É o portão | 2 |
 | Reprovações | Reprovado em N vagas **diferentes** sem nenhuma aprovação (`sanitizacao_reprovacoes_max`, 3) | 2 |
-| Baixa aderência | A melhor nota da IA às vagas ficou abaixo de N (`sanitizacao_aderencia_min`, 40) | 1 |
+| Baixa aderência | A melhor nota da IA às vagas ficou abaixo de N (`sanitizacao_aderencia_min`, 40). **Hoje nunca dispara**: a IA não dá mais nota de vaga (não aparece em Configurações) | 1 |
 | Dados incompletos | A IA não classificou área/cargo/nível com a confiança mínima (`sanitizacao_confianca_min`, 50). Análise pendente não conta | 2 |
 | Duplicidade | Outro cadastro do mesmo candidato — mesmo hash, ou mesmo telefone/e-mail **com nome parecido**. Só o mais antigo do par é sugerido (`sanitizacao_detectar_duplicidade`) | 3 |
 | Prazo de armazenamento (LGPD) | Está no banco há mais de N meses sem consentimento registrado (`sanitizacao_retencao_maxima_meses`, 24) | 4 |
@@ -310,10 +388,9 @@ Os pesos, o intervalo e todos os limites são editáveis por administrador em Co
 **Decisão do RH** (individual ou em lote — há o atalho "Selecionar todas de prioridade alta"), sempre com confirmação explícita:
 
 - **Manter** — o candidato não volta a ser sugerido por N meses (padrão 6; `sanitizacao_adiar_meses`).
-- **Inativar** — sai da lista de disponíveis; os dados continuam guardados; pode ser reativado.
-- **Excluir definitivamente** — só administrador. Apaga nome, contatos, currículo, análises e os textos livres da IA e das entrevistas.
-  Sobram o hash de identidade (para reconhecer um reenvio), as datas e as métricas. O arquivo do currículo sai do Storage na execução seguinte
-  (fila `arquivos_para_remover`; se o Storage falhar, tenta de novo no dia seguinte).
+- **Inativar** — sai da lista de disponíveis; os dados ficam guardados por `expurgo_meses_apos_inativar` meses (o painel avisa) e depois são apagados sozinhos; até lá pode ser reativado.
+
+Não há "Excluir" na fila: o expurgo é a etapa 3 acima.
 
 **Auditoria:** cada decisão grava quem, quando, o quê e a observação (inclusive "manter"), na própria sugestão e em `logs_auditoria`
 — sem dados pessoais nos registros.
@@ -336,8 +413,8 @@ O sistema tem dois perfis (`perfil_acesso`): `gerente_rh` e `administrador`. Um 
 | Editar dados, registrar contato/consentimento, inativar/reativar | ✔ | ✔ |
 | Pedir reanálise da IA | ✔ | ✔ |
 | Sanitização: manter e inativar (individual ou em lote) | ✔ | ✔ |
-| Sanitização: **excluir definitivamente**; gerar a lista agora | — | ✔ |
-| Excluir dados de um candidato a pedido do titular (LGPD art. 18) | — | ✔ |
+| Sanitização: gerar a lista agora | — | ✔ |
+| Excluir dados de um candidato a pedido do titular (LGPD art. 18) — só pelo banco (`excluir_dados_candidato`), sem botão no painel | — | ✔ |
 | Configurações (regras, modelos, pesos) | — | ✔ |
 
 O painel **não escreve direto** em `candidatos`, `analises_ia` nem nas tabelas de sanitização: tudo passa por funções do banco
@@ -362,11 +439,23 @@ A tela filtra por nome, sexo, idade, cidade, área, cargo, nível e situação. 
 | Ordem da lista, fila de revisão manual, reanálise pendente, sanitização, duplicidade | índices parciais/de apoio | |
 
 A sugestão atual da IA é **copiada** de `analises_ia` para `candidatos` (por gatilho) justamente para poder indexar e combinar (cidade + área)
-sem juntar tabelas. Os filtros que dependem de **texto** (palavras no currículo, endereço, rotatividade) passam pela função
+sem juntar tabelas. Os filtros que dependem de **texto** (palavras no currículo, endereço, rotatividade, e-mail, telefone e cargos com experiência) passam pela função
 `filtrar_banco_talentos()`; escolaridade, experiência, CNH e idade são colunas com índice.
+
+**Filtros de e-mail, telefone e cargos (048), em "Mais filtros".** Sem diferenciar maiúsculas nem acentos:
+
+- **E-mail** — um pedaço basta (`maria`, `gmail.com`). Procura no e-mail do cadastro (o que está no currículo) **e** no endereço de quem **enviou** o currículo, de qualquer
+  currículo do candidato (quem reenviou de outro endereço é achado pelos dois).
+- **Telefone** — só os números contam (máscara, espaço e hífen são ignorados); pedaço serve, com pelo menos 3 números. Procura no telefone como veio e no normalizado (com DDI), então com ou sem o 55 dá igual.
+- **Cargos com experiência** — cargos separados por vírgula; aparece quem tem **qualquer um**. Procura no currículo **a partir do título de experiência** ("Experiência profissional",
+  "Histórico profissional", "Experiências de trabalho"…): o que vem antes (objetivo, resumo) não conta, então quem só *quer* ser repositor não entra. Currículo sem esse título é procurado inteiro.
+  Pedaço de palavra serve (`repositor` acha `repositora`); `operador de caixa` não acha `operadora de caixa` — para os dois, digite `operador`.
 
 **Medido** (`sql/ensaio/20_teste_desempenho.sql`, 50 mil candidatos sintéticos): todas as buscas típicas em ≤ 25 ms; cada uma usa o índice previsto.
 A sanitização completa (todas as regras) leva ~4,5 s para 50 mil candidatos e cresce de forma linear — com o volume real será instantânea.
+Os filtros de **texto** (`filtrar_banco_talentos`) não têm índice: leem o texto de cada currículo. Com 50 mil candidatos a função custa alguns segundos (devolve as linhas da view: sem
+nenhum filtro já são ~10 s; palavras-chave, ~19 s; cargos com experiência, ~22 s; e-mail ou telefone **específicos**, ≤ 2 s), acima do limite de 8 s da API do Supabase; com o volume atual (milhares) é uma fração de segundo.
+Se o banco crescer para dezenas de milhares, este é o ponto a otimizar (índice trigrama nos e-mails/telefones e texto normalizado guardado). `20_teste_desempenho.sql` mede e limita os filtros novos em relação às palavras-chave.
 O botão "Gerar sugestões agora" roda sob o timeout de 8 s da API do Supabase para usuários logados; o job diário não tem esse limite.
 
 ---
@@ -376,6 +465,9 @@ O botão "Gerar sugestões agora" roda sob o timeout de 8 s da API do Supabase p
 | Arquivo | Responsabilidade |
 |---|---|
 | `main.py` | Entrada, argumentos de linha de comando |
+| `robo.py` | O robô em tempo (quase) real: ciclo (janela, pedidos do RH, leitura a cada intervalo, reserva) e o laço `--continuo` |
+| `agenda.py` | A janela de leitura (dias, horários, intervalo) de Configurações, em fuso de Brasília |
+| `status_robo.py` | Andamento do robô para a tela Status (`pipeline_status`) e a reserva do trabalho entre instâncias |
 | `api.py` | Servidor HTTP — análise imediata do upload manual e do botão "Reanalisar" (serviço à parte, opcional) |
 | `pipeline.py` | Orquestra o fluxo: e-mail → Banco de Talentos → análise; reanálise; avaliação para vaga; upload manual |
 | `sanitizacao.py` | Geração da lista de sugestões (job) e aviso por e-mail |
@@ -409,14 +501,14 @@ lê sem marcar nada.
 (`curriculos.arquivo_hash`, HMAC do conteúdo, sem custo de OCR nem de IA) e a **pessoa** por nome + telefone (ou e-mail + nome). Quem já está
 no banco é **ignorado** — o e-mail é marcado como lido e o reenvio conta em "duplicados detectados". Só é lido de novo quando as **duas** coisas
 são verdade: passaram **30 dias** da importação anterior (`REENVIO_DIAS_MINIMO`, em `config.py`) **e** o candidato foi **sanitizado** (inativo
-ou com os dados excluídos). Nunca é relido quem está na **lista negra** ou tem retenção permanente (contratado). Consequência assumida: um currículo
+ou com os dados excluídos). Nunca é relido quem está **bloqueado** ou tem retenção permanente (contratado). Consequência assumida: um currículo
 **atualizado** dentro desse prazo não é lido. O RH ainda pode editar os dados do candidato à mão.
 Se a análise da IA falhar, o candidato fica com o pedido de reanálise pendente e a próxima execução tenta de novo — o currículo nunca se perde.
 
-**Lista negra de e-mails** — o RH bloqueia um endereço (tela "Lista negra") ou um candidato inteiro (botão no cadastro dele). O pipeline ignora
+**Bloqueios de e-mails** (antes "Lista negra"; os nomes internos `lista_negra*` continuam) — o RH bloqueia um endereço (tela "Bloqueios") ou um candidato inteiro (botão "Bloquear" no cadastro dele). O pipeline ignora
 o remetente bloqueado e também o e-mail que aparecer **dentro** do currículo. Bloquear um candidato cancela as candidaturas abertas, inativa-o,
 bloqueia todos os endereços ligados a ele e o mantém com retenção permanente (a sanitização não sugere apagá-lo: a lista existe para
-reconhecê-lo se voltar). Ele só pode ser reativado depois de sair da lista negra. Excluir os dados continua possível e o bloqueio do e-mail fica.
+reconhecê-lo se voltar). Ele só pode ser reativado depois de o bloqueio ser removido. Excluir os dados continua possível e o bloqueio do e-mail fica.
 
 **Descarte por vaga** — quem foi **reprovado ou descartado** numa vaga não pode ser atribuído de novo a ela (só a vagas novas: cada vaga tem
 o seu id). "Devolver ao banco" (cancelar sem reprovar) não conta como descarte.
@@ -463,10 +555,10 @@ sugerida não é o setor da vaga. A IA não considera idade, gênero, origem etc
 **Seleção de CVs por vaga (sem IA)** — na tela de Vagas, o botão **"Selecionar CVs"** abre a janela de currículos já filtrada por SQL:
 só os currículos **atuais** de candidatos disponíveis com **exatamente** o setor, a função e o nível da vaga (`selecionar_curriculos_vaga()`, 033),
 do **maior para o menor** `curriculos.nota_classificacao` (a nota que a IA deu ao qualificar; sem nota vai por último). Fora da lista: quem não
-está disponível, quem está na lista negra e quem já tem candidatura aberta, reprovada ou descartada **nesta** vaga. A janela também ordena por
+está disponível, quem está bloqueado e quem já tem candidatura aberta, reprovada ou descartada **nesta** vaga. A janela também ordena por
 "mais perto da loja" e limita por km (região, 030), medindo até a loja mais próxima **entre as lojas que o RH marcar** nos chips
 "Distância em relação a" (uma, várias ou TODAS; começam nas lojas da vaga; loja sem região aparece desabilitada) — `p_lojas` em
-`selecionar_curriculos_vaga()`, 038 (nulo ou vazio = as lojas da vaga). Setor, função e nível da vaga são obrigatórios no formulário (a função só pode ser do setor
+`selecionar_curriculos_vaga()`, 038 (nulo ou vazio = as lojas da vaga). Também filtra por **sexo** (`p_sexo`, 045: feminino, masculino ou "não informado" = sem sexo cadastrado; a barra de filtros do banco fica escondida nesse modo, por isso o filtro é do próprio ranking); a lista "Em processo" da vaga filtra do mesmo jeito (`vw_candidatos` ganhou `sexo`, 045). Setor, função e nível da vaga são obrigatórios no formulário (a função só pode ser do setor
 escolhido); vaga antiga sem eles mostra o aviso no card e o botão leva ao formulário. O "No banco" do card conta os mesmos currículos.
 
 **Atribuir grava a qualificação da vaga (sem IA)** — quando o RH direciona um candidato a uma vaga, o banco (`fn_atribuir_candidato_vaga`, 034) grava o
@@ -498,6 +590,104 @@ guardado no Storage** (Google Docs nativo vira PDF; PDF/DOCX enviado ao Drive é
 como qualquer anexo. Sem isso o painel mostra "Arquivo original não disponível". Link privado ou com exportação bloqueada: o currículo entra
 igual, sem o arquivo (o texto já foi lido). Para completar currículos por link que entraram antes desta correção, releia o e-mail pelo `Message-ID`
 (`leitor_email.buscar_por_message_id`), ache o link com `utils.detectar_link_google_docs` e use `extrator.arquivo_do_google_docs`.
+
+**Currículo escrito no CORPO do e-mail** — quem manda pelo celular costuma colar o currículo no próprio e-mail, sem anexo nem link. Sem arquivo legível
+(sem anexo, anexo pequeno/falso/sem texto, link privado), o pipeline lê o **texto do corpo** (`leitor_email._extrair_corpo_texto`: HTML convertido em texto,
+sem estilo e sem repetir a versão pura + HTML) e, se ele tem cara de currículo (`utils.parece_curriculo`: ao menos 300 caracteres e 2 sinais como
+"experiência", "formação", "objetivo", "habilidades"), segue o caminho normal: a IA confirma que é currículo (senão vira `nao_e_curriculo`) e o candidato
+entra com `origem = corpo_email`, sem arquivo (o painel mostra "Arquivo original não disponível"). Anexo ou link legível continua valendo mais que o corpo.
+E-mail curto ("segue meu currículo"), propaganda e newsletter continuam indo para a Fila como `sem_anexo`, sem gastar IA.
+
+**A Fila não guarda o que já foi resolvido por outra mensagem** — três regras que evitam exceção à toa (todas em `pipeline.processar_mensagem`):
+(1) e-mail **sem anexo, sem link e sem currículo no corpo** de quem **já tem currículo no banco** (`database.remetente_tem_curriculo`) não vira exceção
+(caso típico: o e-mail vazio, e 40 s depois o currículo); (2) quando **um currículo entra**, as exceções pendentes de leitura desse remetente
+(`sem_anexo`, `arquivo_corrompido`, `ocr_falhou`, `formato_invalido`, `docs_privado`) recebidas até então ficam "revisado" (`database.encerrar_excecoes_do_remetente`);
+(3) **anexo que não abriu + link do Drive/Docs no mesmo e-mail**: o link ainda é tentado (antes o primeiro erro do anexo encerrava a leitura). Se nem o anexo nem o link
+dão texto, o motivo continua sendo o do anexo (ou `docs_privado`, sem anexo). `erro_processamento` e `nao_e_curriculo` nunca são encerrados sozinhos.
+
+**Avisos de plataformas de vagas (Trabalha Brasil)** — o e-mail é do sistema, não do candidato, e diz que há um currículo lá (nome, idade, cidade e "Ver perfil"), sem currículo
+no e-mail. Os domínios estão em `config.PORTAIS_DE_CURRICULO` (uma linha por plataforma). Esse e-mail vai para a Fila como `sem_anexo`. O pipeline tira do HTML o link do botão "Ver perfil" (`utils.link_do_html`, texto em `PORTAIS_DE_CURRICULO[...]["link"]`;
+não o "clique aqui", que **inativa a vaga**) e o guarda em `excecoes.link_curriculo` (**migração 039**, só http/https). Na Fila de Exceção o painel mostra o botão
+**"Abrir currículo"** (abre o portal em outra aba; o RH baixa o currículo e envia por "Enviar currículo") no lugar de "Ver e-mail" e "Reprocessar", que não resolveriam nada;
+Revisar/Ignorar continuam, é o que tira o aviso da fila. Sem o link no e-mail, a exceção mantém os botões de sempre e a mensagem manda procurar o "Ver perfil" em "Ver e-mail".
+**Sexo estimado pelo nome (migração 041).** O currículo raramente informa o sexo, e a empresa quer comparar quantos currículos de
+mulheres e de homens chegam por mês e quantos são contratados. Isso é **só relatório e comparação, nunca critério de seleção nem de
+eliminação**. Por isso:
+
+- **Quem informa:** o campo `candidatos.sexo_origem` diz de onde veio o sexo: `informado` (o currículo diz), `ia_nome` (estimado
+  pela IA pelo **primeiro nome**) ou `manual` (o RH definiu ou corrigiu, inclusive deixando em branco de propósito). Os relatórios
+  devem separar o estimado do informado.
+- **O que vai à IA:** somente o primeiro nome (`utils.primeiro_nome`), nunca o sobrenome, o nome completo nem o currículo. Modelo de
+  classificação (Haiku, `modelo_ia_classificacao`), lotes de 50 nomes. Nome unissex, raro ou ilegível (Ariel, Darci, Cris, Andrea…)
+  **fica em branco**: é preferível não classificar a errar, e o RH completa à mão. Custa cerca de US$ 0,00005 por nome.
+- **Currículos novos:** se o currículo não informa o sexo, a IA estima pelo primeiro nome na importação (uma chamada pequena a mais
+  por currículo). O que o currículo informa vale mais que a estimativa; o que o RH decidiu **nunca é refeito**, nem o "Não informado".
+- **Quem já está no banco sem sexo:** `python main.py --sexo-pelo-nome` (pode ser repetido; só pega quem falta, e o log traz só
+  contagens, nunca nomes). `--simular` conta sem gravar; `--limite N` faz só N.
+- **No painel:** a ficha mostra "Feminino — estimado pela IA a partir do nome" (e "definido pelo RH" depois de corrigido); corrigir no
+  formulário de edição grava `manual`. O filtro por sexo segue com as opções de sempre (Qualquer sexo / Feminino / Masculino / Não
+  informado), sem opção própria para o estimado; para separar dado de estimativa use `sexo_origem` no relatório. A estimativa **não
+  conta como movimentação** do candidato (não adia a sanitização); a correção do RH conta.
+- **Cuidado com o uso:** o filtro por sexo da lista do Banco de Talentos já existia. Selecionar ou descartar candidato por sexo é
+  prática discriminatória (Lei 9.029/95); com a estimativa, o filtro passa a valer para quase todos. Mantenha o sexo para relatório.
+- Quem já tinha sexo antes da 041 fica como `informado` (o sistema não guardava a diferença entre currículo e edição do RH).
+- Ordem: **aplique a 041 antes de publicar o backend** (o pipeline lê e grava `sexo_origem`).
+
+**Histórico do candidato (migração 042, tela nova no menu).** Substitui a planilha Excel do processo seletivo: **uma linha por entrevista**,
+com quem veio e quem não veio. Filtros por nome, telefone (só os números contam) e status.
+
+- **Colunas:** data, nome, celular, setor da vaga, status e observação; clicando no nome abre o resto (vaga, e-mail, cidade e região, setor/função/nível
+  do currículo, escolaridade, experiência, entrevistador, origem do registro, quem registrou) enquanto o cadastro existir no Banco de Talentos.
+- **Status:** `aprovado`, `reprovado` e `nao_compareceu` entram **sozinhos** quando o resultado é registrado na tela Entrevistas (gatilho
+  `fn_historico_sincroniza_entrevista`; corrigir a observação ou o resultado atualiza a mesma linha; remarcar ou cancelar tira a linha).
+  `sem_interesse` e `desistencia` (depois de aprovado, por exemplo na documentação ou no treinamento) o RH registra no próprio Histórico
+  ("Novo registro"). Alterar uma linha do sistema à mão a faz **deixar de acompanhar a entrevista** (`alterado_manual`).
+- **Tabela própria (`historico_candidatos`) e o que isso significa para a LGPD:** nome, celular, data, setor da vaga e status são **copiados** para ela.
+  Por decisão do RH, o histórico **permanece depois que os dados do candidato são excluídos** do Banco de Talentos (sanitização ou "Excluir
+  dados"): a exclusão do candidato **não** apaga a linha do histórico. Quem quiser apagar uma pessoa por completo também exclui a linha no Histórico
+  (botão só do administrador, `historico_excluir`, na auditoria). As confirmações de exclusão do painel avisam disso. **Por quanto tempo guardar
+  nome e celular nesse histórico é uma questão jurídica em aberto** (a retenção de 24 meses do banco também aguarda confirmação); se houver
+  prazo, basta um passo periódico que apague ou anonimize as linhas antigas.
+- **Permissões e auditoria:** todo usuário ativo lê, registra e altera; só o administrador exclui; o painel só lê a tabela (as gravações passam
+  por `historico_registrar`/`historico_alterar`/`historico_excluir`). A auditoria guarda só o status e o **nome dos campos** alterados, nunca nome,
+  telefone nem observação.
+- **Pendente:** importar o histórico da planilha Excel atual (`origem = 'planilha'`). Depende de ver o formato do arquivo.
+- Ordem: **aplique a 042 antes de publicar o painel** (a tela lê `vw_historico_candidatos`).
+
+**Configurações do painel: o que cada campo faz (auditoria de 25/09/2026).** A tela tem nome claro, explicação, busca e atalhos por
+grupo (catálogo em `frontend/js/configuracoes.js`, `CONFIG_INFO`). Hoje todo campo da tela vale. Se algum deixar de valer, dá para
+mantê-lo visível com a etiqueta "Sem efeito hoje" e o motivo: basta acrescentar a linha `semEfeito: '...'` dele no catálogo.
+
+- **Funcionam:** `leitura_dias_semana`, `leitura_hora_inicio`, `leitura_hora_fim` e `leitura_intervalo_minutos` (lidos por `agenda.py`), `modelo_ia_classificacao`, `modelo_ia_avaliacao` (o modelo que analisa o
+  currículo e escreve rascunho de vaga), `ia_confianca_minima`, e da sanitização: `sanitizacao_intervalo_dias`, `_meses_sem_movimentacao`,
+  `_retencao_maxima_meses`, `_reprovacoes_max`, `_confianca_min`, `_detectar_duplicidade`, `_adiar_meses`, `_emails_aviso` (backend) e
+  `_pesos` (exceto o peso `baixa_aderencia`). Passaram a valer em 25/09/2026 (sem migração: as linhas já existem em produção):
+  - `ddi_padrao` e `ddd_padrao`: completam o telefone que vem sem eles, no robô (`pipeline._prefixo_telefone`, `utils.extrair_telefone`) e no
+    painel (`normalizaTelefone`, link do WhatsApp). Valor inválido cai em 55 e 61. Mudar o DDD não altera cadastros que já estão no banco, e
+    telefones sem DDD lidos daqui em diante entram com o DDD novo (o hash de identidade usa o telefone já completado).
+  - `mensagem_convocacao_padrao`: é o texto sugerido em Entrevistas > Agendar, com os marcadores `{nome}`, `{gestor}`, `{data}` e `{hora}`
+    (o painel recusa marcador desconhecido ou texto vazio; sem valor vale o texto de fábrica). O RH ainda edita a mensagem antes de enviar.
+  - `tamanho_minimo_anexo_bytes`: piso das **imagens** anexadas (logotipo e ícone de assinatura), de 1 KB a 1 MB, padrão 10 KB. O piso dos
+    documentos (PDF, DOC, DOCX) segue fixo em 500 bytes (`config.py`), de propósito: um PDF só de texto tem poucos KB e já foi recusado por
+    engano uma vez.
+- **Fora da tela** (o usuário pediu para tirar em 25/09/2026; as linhas seguem no banco, sem uso):
+  - `imap_servidor` e `imap_porta`: o robô usa as variáveis `IMAP_SERVIDOR` e `IMAP_PORTA` do Railway. Ficam escondidas de propósito: não se
+    mexe, e um endereço editável no painel desviaria a senha da caixa de e-mail.
+  - `faixa_ambigua_min/max` e a **segunda avaliação**: só valiam para a nota de vaga, que a IA não dá mais ao atribuir candidato. A lógica foi
+    removida do robô (`faixa_segunda_avaliacao`, o bloco da segunda opinião em `_avaliar_e_salvar` e a opção `--sem-segunda-avaliacao`).
+  - `sanitizacao_aderencia_min`: a regra "Baixa aderência" da sanitização compara com a melhor nota de vaga; sem nota nenhuma, ela nunca
+    dispara. A regra continua no SQL (023) sem efeito, e o peso `baixa_aderencia` continua nos pontos, também sem efeito.
+- **Existem no banco e não aparecem na tela** (também sem efeito): `reincidencia_dias_carencia` (a regra de 30 dias é `REENVIO_DIAS_MINIMO`
+  em `config.py`), `formatos_aceitos` (`FORMATOS_ACEITOS` em `config.py`) e `imap_pasta_processados`. `imap_ultimo_uid` e
+  `imap_uidvalidity` são controle interno do robô: não editar.
+
+**Aplique a 040 antes de publicar o backend com o horário e a pausa.** Ela cria a linha `ia_pausada` (o painel só faz `UPDATE`, então a linha
+precisa existir) e reescreve a descrição de `horario_execucao_pipeline` (que a 046 apagaria depois). É idempotente e reaplicar **não** desfaz uma pausa em vigor.
+
+**Aplique a 039 antes de publicar o backend e o painel** (o pipeline só grava a coluna nos avisos de portal; o painel lê `select *`). Avisos que já estavam na fila ganham o link
+pela própria 039 (lida do HTML guardado). As regras "por remetente" (acima) e a leitura do corpo como currículo **não** valem para ele (o remetente
+é o portal, não uma pessoa). Em "Ver e-mail" o corpo agora aparece como **texto com o endereço de cada link** ("Ver perfil: https://...", sem os links de cancelar inscrição)
+em vez do HTML cru (`leitor_email` → `corpo_com_links`; vale para toda exceção nova ou reprocessada; as antigas continuam com o HTML até serem reprocessadas).
 
 **Fila de Exceção × revisão manual** — só vai para a Fila de Exceção o e-mail que **não pôde ser lido** (anexo sem texto legível, formato inválido ou
 pequeno demais, sem anexo nem link, link privado, não é currículo). "Pequeno demais" tem piso por tipo (`config.py`): **imagem** abaixo de 10 KB
@@ -637,7 +827,7 @@ toda tela abre vazia, com a mensagem certa, sem erro de script e sem `NaN` na te
 | `--reler-caixa` leu só 10 e-mails | Não deveria: o `LIMITE_EMAILS` do `.env` não vale nesse comando. Confira se passou `--limite` |
 | `--reler-caixa` parou no meio (timeout do IMAP) | Rode o mesmo comando de novo: o que já entrou é ignorado e o resto continua |
 | Depois de zerar, arquivos antigos seguem no Storage | Rode `python main.py --manutencao` (ou espere a execução diária): ele esvazia `arquivos_para_remover` |
-| Sanitização não gera lista | Ainda não venceu o intervalo (o log diz a data); use `python main.py --sanitizacao --forcar` ou o botão do administrador |
+| Sanitização não gera lista | Ainda não venceu o intervalo (o log diz a data) ou ninguém completou 1 mês sem alteração; use `python main.py --sanitizacao --forcar` ou o botão do administrador |
 | E-mail de aviso não sai | Sem destinatário em Configurações, ou o SMTP recusou (o log mostra o motivo; a lista continua no painel) |
 | Sugestão de sanitização sumiu | Sugestões de quem foi excluído ou entrou em processo são encerradas (`expirada`) — comportamento esperado |
 

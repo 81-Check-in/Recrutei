@@ -153,3 +153,56 @@ begin
     raise exception 'O ranking levou % ms (orçamento: % ms) com % candidatos', ms, orcamento_ms, (select count(*) from candidatos);
   end if;
 end $teste$;
+
+-- ── Filtros de texto da 048 (e-mail, telefone, cargos com experiência) em volume ──
+-- Não têm índice: leem o e-mail/telefone/currículo de cada candidato. Cada um dos 50 mil ganha um currículo de ~1,7 KB
+-- (com o título de experiência) e o e-mail de envio, e o tempo de cada filtro entra no limite abaixo.
+do $$
+declare t0 timestamptz := clock_timestamp();
+begin
+  insert into curriculos (candidato_id, origem, texto_extraido, email_envio)
+  select c.id, 'anexo_pdf',
+         'Nome: ' || c.nome || E'\nObjetivo: vaga de ' || coalesce(c.cargo_sugerido, 'auxiliar') || E'\nEXPERIÊNCIA PROFISSIONAL\n' ||
+         repeat('Auxiliar de logística na empresa ' || (c.g % 97) || ' (2019-2023): conferência, separação e expedição. ', 15),
+         'envio' || c.g || '@mail.test'
+    from (select id, nome, cargo_sugerido, row_number() over () as g from candidatos) c
+   where not exists (select 1 from curriculos cu where cu.candidato_id = c.id);
+  raise notice '% ms  carga dos currículos com texto e e-mail de envio (%)', lpad((extract(epoch from clock_timestamp() - t0) * 1000)::int::text, 9),
+    (select count(*) from curriculos);
+end $$;
+analyze public.curriculos;
+
+do $teste$
+declare
+  q text; limite numeric; plano text; ms numeric; n bigint; ms_palavras numeric;
+begin
+  -- Régua: o filtro de palavras-chave que já existia (também lê e normaliza o currículo de cada candidato). Os filtros que só
+  -- olham e-mail/telefone e são seletivos precisam ser rápidos em números absolutos; os que varrem o texto do currículo
+  -- não podem custar mais que 1,5x a régua. (A função devolve as linhas da view do banco, então mesmo o filtro vazio custa
+  -- alguns segundos com 50 mil: é o limite da função desde a 024, não dos filtros novos.)
+  plano := pg_temp.plano($q$select count(*) from filtrar_banco_talentos('{"palavras":["logistica"]}')$q$);
+  ms_palavras := substring(plano from 'Execution Time: ([0-9.]+) ms')::numeric;
+  raise notice 'filtro de texto (régua)  | %ms | palavras-chave, que já existia', lpad(ms_palavras::text, 8);
+  for q, limite in
+    select * from (values
+      ($q$select count(*) from filtrar_banco_talentos('{"email":"envio12345@mail"}')$q$,                              4000::numeric),
+      ($q$select count(*) from filtrar_banco_talentos('{"telefone":"(61) 90000-1234"}')$q$,                            4000),
+      ($q$select count(*) from filtrar_banco_talentos('{"email":"mail.test"}')$q$,                                     ms_palavras * 1.5),
+      ($q$select count(*) from filtrar_banco_talentos('{"cargos_experiencia":["auxiliar de logistica"]}')$q$,          ms_palavras * 1.5),
+      ($q$select count(*) from filtrar_banco_talentos('{"cargos_experiencia":["conferencia","astronauta"]}')$q$,       ms_palavras * 1.5),
+      ($q$select count(*) from filtrar_banco_talentos('{"email":"mail.test","telefone":"5561900","cargos_experiencia":["expedicao"]}')$q$, ms_palavras * 1.5)
+    ) v(q, limite)
+  loop
+    plano := pg_temp.plano(q);
+    ms := substring(plano from 'Execution Time: ([0-9.]+) ms')::numeric;
+    raise notice 'filtro de texto 048      | %ms | %', lpad(ms::text, 8), regexp_replace(q, '^select count\(\*\) from filtrar_banco_talentos', 'filtrar');
+    if ms > limite then
+      raise exception 'O filtro "%" levou % ms (limite: % ms) com % candidatos', q, ms, round(limite), (select count(*) from candidatos);
+    end if;
+  end loop;
+  -- o resultado é o esperado em volume (o telefone e o e-mail de envio de um candidato são únicos)
+  select count(*) into n from filtrar_banco_talentos('{"email":"envio12345@mail"}');
+  if n <> 1 then raise exception 'o e-mail de envio de um candidato deveria achar 1, achou %', n; end if;
+  select count(*) into n from filtrar_banco_talentos('{"telefone":"(61) 90000-1234"}');
+  if n <> 1 then raise exception 'o telefone de um candidato deveria achar 1, achou %', n; end if;
+end $teste$;

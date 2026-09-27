@@ -303,6 +303,14 @@ function maisExcecoes() {
   carregarExcecoes();
 }
 
+// Aviso de plataforma de vagas (ex.: Trabalha Brasil): o currículo está no portal e o e-mail traz o endereço dele (backend/sql/039).
+// O endereço vem de um e-mail de terceiros: só http/https vira botão, e abre em outra aba sem dar acesso a esta.
+const linkWebSeguro = u => /^https?:\/\/\S+$/i.test(u || '') ? u : '';
+function abrirLinkExterno(url) {
+  if (!linkWebSeguro(url)) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 async function carregarExcecoes() {
   const el = $('#excecoes-lista');
 
@@ -340,6 +348,16 @@ async function carregarExcecoes() {
            <i class="ti ti-clock"></i>Reprocessamento pedido</span>`
       : `<button class="btn-sm" onclick="reprocessarExcecao('${e.id}', this)" title="Busca o e-mail original de novo e tenta classificar/avaliar mais uma vez">
            <i class="ti ti-refresh"></i>Reprocessar</button>`;
+    // Com o link do currículo na plataforma, o botão é "Abrir currículo" (no lugar de Ver e-mail e Reprocessar, que não resolveriam nada):
+    // o RH abre o portal, baixa o currículo e o envia por "Enviar currículo". Revisar/Ignorar continuam: são o que tira o aviso da fila.
+    const link = linkWebSeguro(e.link_curriculo);
+    const botoesDeLeitura = link
+      ? `<button class="btn-sm verde" data-url="${escapeHtml(link)}" onclick="abrirLinkExterno(this.dataset.url)"
+           title="Abre o currículo na plataforma (pode pedir login). Baixe-o e envie por Enviar currículo">
+           <i class="ti ti-external-link"></i>Abrir currículo</button>`
+      : `<button class="btn-sm" onclick="verEmailExcecao('${e.id}')" title="Ver o e-mail original">
+           <i class="ti ti-mail"></i>Ver e-mail</button>
+         ${botaoReprocessar}`;
     return `<div class="exc-full">
       <div class="exc-icon-box pill-${cor}"><i class="ti ${ic}"></i></div>
       <div class="exc-info">
@@ -348,9 +366,7 @@ async function carregarExcecoes() {
       </div>
       <span class="pill pill-${cor}">${lbl}</span>
       <div class="exc-btns">
-        <button class="btn-sm" onclick="verEmailExcecao('${e.id}')" title="Ver o e-mail original">
-          <i class="ti ti-mail"></i>Ver e-mail</button>
-        ${botaoReprocessar}
+        ${botoesDeLeitura}
         <button class="btn-sm" onclick="resolverExcecao('${e.id}','revisado')">Revisar</button>
         <button class="btn-sm" onclick="resolverExcecao('${e.id}','ignorado')">Ignorar</button>
       </div>
@@ -545,7 +561,10 @@ async function avaliarUploadAgora(uploadId) {
   }
 
   if (!resp.ok) {
-    toast('Currículo enviado — análise imediata falhou, entra na fila normal', 'erro');
+    const det = (await resp.json().catch(() => ({}))).detail;
+    toast(resp.status === 503 && typeof det === 'string'      // 503 = IA pausada na Zona de perigo: o currículo espera na fila
+      ? `Currículo enviado — ${det}. Ele fica na fila e é analisado quando a pausa acabar`
+      : 'Currículo enviado — análise imediata falhou, entra na fila normal', 'erro');
     return;
   }
 

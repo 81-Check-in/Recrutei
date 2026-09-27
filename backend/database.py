@@ -1,4 +1,5 @@
 """Camada de acesso ao Supabase (service_role — ignora RLS)."""
+import time
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timezone
 from supabase import create_client, Client
@@ -61,6 +62,44 @@ def salvar_cursor_imap(ultimo_uid: int, uidvalidity: int) -> None:
         else:
             db.table("configuracoes").insert(
                 {"chave": chave, "valor": valor, "descricao": descricao}).execute()
+
+
+def gravar_controle(chave: str, valor: Any, descricao: str) -> None:
+    """Grava um valor de controle interno em configuracoes (cria a linha se ainda não existe)."""
+    if MODO_SIMULACAO:
+        return
+    db = conectar()
+    if db.table("configuracoes").select("chave").eq("chave", chave).execute().data:
+        db.table("configuracoes").update({"valor": valor}).eq("chave", chave).execute()
+    else:
+        db.table("configuracoes").insert({"chave": chave, "valor": valor, "descricao": descricao}).execute()
+
+
+# ─────────────────────────────────────────────
+# PAUSA DE EMERGÊNCIA DA IA (Configurações → Zona de perigo)
+# ─────────────────────────────────────────────
+CHAVE_IA_PAUSADA = "ia_pausada"
+_PAUSA_VALE_SEGUNDOS = 5        # cada chamada à IA leva segundos: conferir o banco a cada uma seria gastar à toa
+_pausa_lida: Dict[str, Any] = {"em": None, "valor": False}
+
+
+def ia_pausada() -> bool:
+    """
+    True = o administrador mandou parar todo envio à IA. Vale para o robô (main.py) e para o servidor HTTP (api.py).
+    Sem a linha no banco (migração 040 ainda não rodada) não está pausada. Se não der para ler o interruptor, na dúvida está
+    pausada: sem saber se mandaram parar, não se gasta com a IA (a execução seguinte tenta de novo).
+    """
+    agora = time.monotonic()
+    if _pausa_lida["em"] is not None and agora - _pausa_lida["em"] < _PAUSA_VALE_SEGUNDOS:
+        return _pausa_lida["valor"]
+    try:
+        r = conectar().table("configuracoes").select("valor").eq("chave", CHAVE_IA_PAUSADA).execute()
+    except Exception as e:
+        log.warning(f"Não consegui ler o interruptor da IA ({type(e).__name__}): tratando como pausada")
+        return True
+    valor = bool(r.data) and r.data[0]["valor"] in (True, "true")
+    _pausa_lida.update(em=agora, valor=valor)
+    return valor
 
 
 # ─────────────────────────────────────────────
@@ -197,7 +236,7 @@ def email_ja_processado(message_id: str) -> bool:
 # ─────────────────────────────────────────────
 CAMPOS_CANDIDATO = ("id,nome,sexo,data_nascimento,idade_informada,cidade,uf,telefone,telefone_e164,email,"
                     "escolaridade,anos_experiencia,cnh,status_banco,retencao_permanente,lista_negra,"
-                    "regiao_id,regiao_origem,analise_atual_id,reanalise_solicitada_em")
+                    "regiao_id,regiao_origem,sexo_origem,analise_atual_id,reanalise_solicitada_em")
 
 
 def buscar_candidato_existente(hash_identidade: Optional[str], email: Optional[str],
@@ -264,6 +303,27 @@ def atualizar_candidato(candidato_id: str, dados: Dict) -> None:
     if MODO_SIMULACAO or not dados:
         return
     conectar().table("candidatos").update(dados).eq("id", candidato_id).execute()
+
+
+def listar_candidatos_sem_sexo(limite: int = 0) -> List[Dict]:
+    """Candidatos com nome e sem sexo nem decisão do RH (sexo_origem vazio): os que ainda dá para estimar pelo primeiro nome."""
+    q = conectar().table("candidatos").select("id,nome").is_("sexo", "null").is_("sexo_origem", "null")\
+        .not_.is_("nome", "null").neq("status_banco", "expurgado").order("data_entrada")
+    if limite:
+        q = q.limit(limite)
+    return q.execute().data or []
+
+
+def gravar_sexo_estimado(candidato_id: str, sexo: str) -> bool:
+    """
+    Grava o sexo estimado pela IA, mas só se o candidato AINDA está sem sexo e sem origem: entre listar e gravar o RH pode ter
+    preenchido (ou deixado em branco de propósito), e a decisão dele vale mais. True = gravou.
+    """
+    if MODO_SIMULACAO:
+        return True
+    r = conectar().table("candidatos").update({"sexo": sexo, "sexo_origem": "ia_nome"})\
+        .eq("id", candidato_id).is_("sexo", "null").is_("sexo_origem", "null").execute()
+    return bool(r.data)
 
 
 def obter_candidato(candidato_id: str) -> Optional[Dict]:
@@ -391,6 +451,35 @@ def atualizar_excecao(excecao_id: str, dados: Dict) -> None:
     conectar().table("excecoes").update(dados).eq("id", excecao_id).execute()
 
 
+# Exceções de "não deu para ler": deixam de fazer sentido quando o mesmo remetente manda depois um currículo legível
+TIPOS_DE_FALHA_DE_LEITURA = ("sem_anexo", "arquivo_corrompido", "ocr_falhou", "formato_invalido", "docs_privado")
+
+
+def remetente_tem_curriculo(email: str) -> bool:
+    """Já há currículo (o atual) enviado por este endereço no Banco de Talentos? O e-mail vazio ou sem anexo dele não tem o que resolver."""
+    if not email:
+        return False
+    return bool(conectar().table("curriculos").select("id")
+                  .eq("email_envio", email.lower()).eq("atual", True).limit(1).execute().data)
+
+
+def encerrar_excecoes_do_remetente(email: str, ate: str) -> int:
+    """
+    O remetente mandou um currículo legível: as exceções pendentes de leitura dele, recebidas até `ate` (o horário deste
+    e-mail), ficam "revisado". É o caso de quem manda o e-mail vazio (ou sem anexo) e, logo em seguida, o currículo.
+    Devolve quantas foram encerradas.
+    """
+    if not email or MODO_SIMULACAO:
+        return 0
+    r = conectar().table("excecoes").update({
+        "status": "revisado",
+        "detalhe_erro": "Resolvida sozinha: o mesmo remetente enviou depois um currículo legível, que já está no Banco de Talentos.",
+        "reprocessar_solicitado_em": None,
+    }).eq("email_remetente", email.lower()).eq("status", "pendente").in_("tipo", list(TIPOS_DE_FALHA_DE_LEITURA))\
+      .lte("recebido_em", ate).execute()
+    return len(r.data or [])
+
+
 def listar_excecoes_para_reprocessar() -> List[Dict]:
     """Exceções que o RH marcou para tentar de novo no painel (fila de exceções)."""
     return conectar().table("excecoes").select("id,email_remetente,email_message_id")\
@@ -493,8 +582,10 @@ def finalizar_execucao(exec_id: Optional[str], stats: Dict,
 # ─────────────────────────────────────────────
 def executar_manutencao() -> Dict:
     """
-    Manutenção diária do banco (partições da auditoria) + remoção dos arquivos de currículo cujos dados
-    já foram excluídos. NÃO inativa nem expurga candidatos sozinha: isso é decisão do RH na sanitização.
+    Manutenção diária do banco: partições da auditoria + expurgo dos candidatos inativos há mais de N meses
+    (Configurações → expurgo_meses_apos_inativar; o banco apaga os dados pessoais e deixa só o esqueleto) + remoção
+    dos arquivos de currículo cujos dados já foram excluídos. Não inativa ninguém: inativar é decisão do RH (botão do
+    cadastro ou fila da sanitização). O resultado do expurgo vem em resultado["expurgo"] (ver sanitizacao.registrar_expurgo).
     """
     if MODO_SIMULACAO:
         return {"arquivos_removidos": 0, "sanitizacao_pendentes": 0}
@@ -511,7 +602,7 @@ def executar_manutencao() -> Dict:
 def gerar_sugestoes_sanitizacao(origem: str = "job", forcar: bool = False) -> Dict:
     """
     Pede ao banco a lista de sugestões de sanitização. Sem `forcar`, o banco só gera quando o intervalo
-    configurado (sanitizacao_intervalo_meses) venceu; senão devolve {"gerada": False, "proxima_em": ...}.
+    configurado (sanitizacao_intervalo_dias, padrão 7 = toda semana) venceu; senão devolve {"gerada": False, "proxima_em": ...}.
     """
     r = conectar().rpc("fn_gerar_sugestoes_sanitizacao", {"p_origem": origem, "p_forcar": forcar}).execute()
     return r.data or {}

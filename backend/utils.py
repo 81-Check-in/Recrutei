@@ -4,6 +4,7 @@ import hmac
 import hashlib
 import unicodedata
 from datetime import date
+from html.parser import HTMLParser
 from typing import Dict, List, Optional, Tuple
 
 from config import IDENTIDADE_CHAVE
@@ -33,8 +34,8 @@ def normalizar_telefone(tel: Optional[str], ddi: str = "55", ddd: str = "61") ->
     return n if len(n) >= 12 else None
 
 
-def extrair_telefone(texto: str) -> Optional[str]:
-    """Localiza o primeiro telefone celular plausível no currículo."""
+def extrair_telefone(texto: str, ddi: str = "55", ddd: str = "61") -> Optional[str]:
+    """Localiza o primeiro telefone celular plausível no currículo. ddi/ddd completam o número que vem sem eles (Configurações)."""
     if not texto:
         return None
 
@@ -45,7 +46,7 @@ def extrair_telefone(texto: str) -> Optional[str]:
     ]
     for p in padroes:
         for m in re.finditer(p, texto):
-            tel = normalizar_telefone(m.group())
+            tel = normalizar_telefone(m.group(), ddi, ddd)
             # Celular brasileiro: 55 + DDD + 9 dígitos = 13
             if tel and len(tel) >= 12:
                 return tel
@@ -80,6 +81,15 @@ def gerar_hash_arquivo(conteudo: bytes) -> str:
     (só o texto e o caminho do arquivo são apagados) e não permite descobrir o conteúdo a partir dela.
     """
     return hmac.new(IDENTIDADE_CHAVE.encode(), conteudo, hashlib.sha256).hexdigest()
+
+
+def primeiro_nome(nome: Optional[str]) -> Optional[str]:
+    """
+    O primeiro nome de uma pessoa (só letras, acentos, hífen e apóstrofo; de 2 a 30 caracteres), ou None se não sobrar um nome de
+    verdade (vazio, só inicial, número). É só isto que vai à IA na estimativa do sexo: nunca o sobrenome nem o nome completo.
+    """
+    m = re.match(r"\s*([^\W\d_]+(?:['’-][^\W\d_]+)*)", nome or "")
+    return m.group(1) if m and 2 <= len(m.group(1)) <= 30 else None
 
 
 def normalizar_texto(s: str) -> str:
@@ -294,6 +304,165 @@ def mascarar_dados_pessoais(texto: str, nome: Optional[str] = None) -> str:
     if nome:
         texto = _mascarar_nome(texto, nome)
     return texto
+
+
+# ─────────────────────────────────────────────
+# CURRÍCULO ESCRITO NO CORPO DO E-MAIL (sem anexo nem link)
+# ─────────────────────────────────────────────
+_RE_LINK_DE_DESCADASTRO = re.compile(r"unsubscribe|descadastr|cancelar (?:a )?inscri|remover (?:meu )?(?:e-?mail|cadastro)|opt.?out", re.I)
+
+
+class _HtmlParaTexto(HTMLParser):
+    """Só o texto visível: descarta estilos e scripts e quebra a linha onde o HTML quebra (parágrafo, <br>, item de lista...)."""
+    _IGNORAR = {"style", "script", "head", "title"}
+    _BLOCOS = {"p", "div", "br", "li", "ul", "ol", "tr", "table", "hr", "blockquote", "section", "article",
+               "h1", "h2", "h3", "h4", "h5", "h6"}
+
+    def __init__(self, com_links: bool = False) -> None:
+        super().__init__(convert_charrefs=True)
+        self.partes: List[str] = []
+        self._ignorando = 0
+        self._linha_vazia = True                     # nada de texto na linha atual: outra quebra só criaria linha em branco
+        self._com_links = com_links                  # escreve o endereço depois do texto do link: "Ver perfil: https://..."
+        self._href: Optional[str] = None
+        self._texto_do_link: List[str] = []
+
+    def _fecha_link(self) -> None:
+        href, texto = self._href or "", " ".join("".join(self._texto_do_link).split())
+        self._href, self._texto_do_link = None, []
+        if (not texto or not href.lower().startswith(("http://", "https://")) or texto.lower().startswith("http")
+                or _RE_LINK_DE_DESCADASTRO.search(texto) or _RE_LINK_DE_DESCADASTRO.search(href)):
+            return                                   # sem texto, sem endereço web, o texto já é o endereço ou é "cancelar inscrição"
+        if self.partes:
+            self.partes[-1] = self.partes[-1].rstrip(" \t")        # "Ver perfil " + ": url" não pode virar "Ver perfil : url"
+        self.partes.append(f": {href}\n")
+        self._linha_vazia = True
+
+    def _quebra(self) -> None:
+        if not self._linha_vazia:
+            self.partes.append("\n")
+            self._linha_vazia = True
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._IGNORAR:
+            self._ignorando += 1
+        elif tag in self._BLOCOS:
+            self._quebra()
+        elif tag == "a" and self._com_links and not self._ignorando:
+            self._href, self._texto_do_link = (dict(attrs).get("href") or "").strip(), []
+
+    def handle_startendtag(self, tag, attrs):        # <br/>
+        if tag in self._BLOCOS:
+            self._quebra()
+
+    def handle_endtag(self, tag):
+        if tag in self._IGNORAR:
+            self._ignorando = max(0, self._ignorando - 1)
+        elif tag in self._BLOCOS:
+            self._quebra()
+        elif tag == "a" and self._href is not None:
+            self._fecha_link()
+
+    def handle_data(self, data):
+        if not self._ignorando:
+            self.partes.append(data)
+            if self._href is not None:
+                self._texto_do_link.append(data)
+            if data.strip():
+                self._linha_vazia = False
+
+
+_RE_PARECE_HTML = re.compile(r"<\s*/?\s*(?:html|head|body|div|p|br|span|table|tr|td|ul|ol|li|style|meta|font|h[1-6])\b", re.I)
+
+
+def html_para_texto(html: Optional[str], com_links: bool = False) -> str:
+    """
+    Texto legível de um corpo de e-mail em HTML (o Apple Mail, por exemplo, manda 30 KB de estilo para 1 KB de texto).
+    Texto puro passa quase intacto. Nunca levanta erro: HTML quebrado devolve o que deu para ler.
+    com_links: depois do texto de cada link escreve o endereço ("Ver perfil: https://..."), menos os de cancelar inscrição.
+    É o que o RH lê em "Ver e-mail" na Fila de Exceção; o texto que a IA lê como currículo não leva links.
+    """
+    if not html:
+        return ""
+    if not _RE_PARECE_HTML.search(html):             # texto puro: "Nome <a@b.com>" não pode ser lido como uma marcação
+        return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+", " ", html.replace("\xa0", " "))).strip()
+    conversor = _HtmlParaTexto(com_links)
+    try:
+        conversor.feed(html)
+        conversor.close()
+    except Exception:
+        pass
+    texto = "".join(conversor.partes).replace("\xa0", " ")
+    texto = re.sub(r"[ \t]+", " ", texto)
+    texto = re.sub(r" ?\n ?", "\n", texto)
+    return re.sub(r"\n{3,}", "\n\n", texto).strip()
+
+
+# Palavras que um currículo costuma trazer, sem acento (normalizar_texto). Nenhuma sozinha diz nada ("experiência" está em
+# todo e-mail de propaganda): o que vale é a combinação, e a IA ainda confirma se é currículo antes de qualquer coisa entrar no banco.
+_SINAIS_DE_CURRICULO = (
+    r"experiencias?", r"formacao", r"escolaridade", r"objetivo", r"habilidades", r"competencias", r"qualificacoes",
+    r"ensino (?:medio|fundamental|superior)", r"graduacao", r"idiomas", r"\bcnh\b", r"estado civil", r"nascimento",
+    r"dados pessoais", r"resumo profissional", r"perfil profissional", r"historico profissional", r"cursos?\b",
+    r"disponibilidade", r"curriculo vitae",
+)
+_RE_SINAIS_DE_CURRICULO = [re.compile(r"\b" + p if not p.startswith(r"\b") else p) for p in _SINAIS_DE_CURRICULO]
+CURRICULO_NO_CORPO_MIN_CARACTERES = 300
+CURRICULO_NO_CORPO_MIN_SINAIS = 2
+
+
+def parece_curriculo(texto: Optional[str]) -> bool:
+    """
+    O corpo de um e-mail sem anexo tem cara de currículo? Texto longo o bastante e com pelo menos dois dos sinais de
+    currículo acima. É só o filtro barato que evita gastar a IA com "segue meu currículo em anexo" e propaganda.
+    """
+    if not texto or len(texto.strip()) < CURRICULO_NO_CORPO_MIN_CARACTERES:
+        return False
+    normalizado = normalizar_texto(texto)
+    return sum(1 for r in _RE_SINAIS_DE_CURRICULO if r.search(normalizado)) >= CURRICULO_NO_CORPO_MIN_SINAIS
+
+
+class _ExtratorDeLinks(HTMLParser):
+    """Cada link <a> do HTML com o texto que ele mostra (inclusive o de um <button> dentro dele) e o endereço."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: List[Tuple[str, str]] = []
+        self._href: Optional[str] = None
+        self._texto: List[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._href, self._texto = (dict(attrs).get("href") or "").strip(), []
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._texto.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._href is not None:
+            self.links.append((" ".join("".join(self._texto).split()), self._href))
+            self._href = None
+
+
+def link_do_html(html: Optional[str], texto_do_link: str) -> Optional[str]:
+    """
+    O endereço do primeiro link do HTML cujo texto contém `texto_do_link` ("Ver perfil"), sem diferença de acento ou caixa.
+    Só endereço web (http/https): o e-mail é de terceiros e o painel usa o resultado em um botão. None se não houver.
+    """
+    if not html or not texto_do_link:
+        return None
+    extrator = _ExtratorDeLinks()
+    try:
+        extrator.feed(html)
+        extrator.close()
+    except Exception:
+        pass
+    alvo = normalizar_texto(texto_do_link)
+    for texto, href in extrator.links:
+        if alvo in normalizar_texto(texto) and re.match(r"https?://\S+$", href, re.I):
+            return href
+    return None
 
 
 def detectar_link_google_docs(texto: str) -> Optional[str]:

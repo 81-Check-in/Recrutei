@@ -189,6 +189,16 @@ function abrirAgendamento(candidaturaId, nome, telefone, entrevistaAnteriorId) {
   abrirModal('modal-agendar');
 }
 
+// Texto de fábrica; vale quando Configurações (mensagem_convocacao_padrao) está vazia. Marcadores aceitos: {nome} {gestor} {data} {hora}.
+const MENSAGEM_CONVOCACAO_DE_FABRICA =
+  'Olá {nome}, meu nome é {gestor} e você terá uma entrevista no dia {data} às {hora}.\nConfirme essa mensagem por favor.';
+
+function montarMensagemConvocacao(dados) {
+  const modelo = app.cache?.config?.mensagem_convocacao_padrao;
+  const texto = typeof modelo === 'string' && modelo.trim() ? modelo : MENSAGEM_CONVOCACAO_DE_FABRICA;
+  return texto.replace(/\{(nome|gestor|data|hora)\}/g, (_, chave) => dados[chave]);
+}
+
 function atualizarMensagem() {
   const nome = $('#ag-nome').value || '[candidato]';
   const data = $('#ag-data').value
@@ -197,7 +207,7 @@ function atualizarMensagem() {
   const hora = $('#ag-hora').value || '[hora]';
   const gestor = app.perfil?.nome || 'RH';
 
-  const msg = `Olá ${nome}, meu nome é ${gestor} e você terá uma entrevista no dia ${data} às ${hora}.\nConfirme essa mensagem por favor.`;
+  const msg = montarMensagemConvocacao({ nome, gestor, data, hora });
   $('#ag-msg').value = msg;
   $('#ag-preview').textContent = msg;
 }

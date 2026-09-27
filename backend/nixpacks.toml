@@ -5,4 +5,4 @@ nixPkgs = ["python311", "tesseract", "poppler_utils"]
 cmds = ["pip install -r requirements.txt"]
 
 [start]
-cmd = "python main.py"
+cmd = "python main.py --continuo"

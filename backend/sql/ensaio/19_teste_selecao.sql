@@ -36,6 +36,12 @@ returns text[] language sql as $$
   select coalesce(array_agg(c.nome order by t.ord), '{}')
     from selecionar_curriculos_vaga(p_vaga, 50, 0, p_ordem, p_km, p_lojas) with ordinality t(candidato_id, nota, total, km, loja, ord)
     join candidatos c on c.id = t.candidato_id $$;
+-- a seleção filtrada por sexo (045)
+create or replace function pg_temp.ordem_sexo(p_vaga uuid, p_sexo text, p_limite int default 50, p_desloc int default 0)
+returns text[] language sql as $$
+  select coalesce(array_agg(c.nome order by t.ord), '{}')
+    from selecionar_curriculos_vaga(p_vaga, p_limite, p_desloc, 'nota', null, null, p_sexo) with ordinality t(candidato_id, nota, total, km, loja, ord)
+    join candidatos c on c.id = t.candidato_id $$;
 -- a loja mais próxima que a seleção devolveu para cada candidato (na ordem pedida; nulo = sem distância)
 create or replace function pg_temp.lojas(p_vaga uuid, p_lojas text[] default null, p_ordem text default 'nota')
 returns text[] language sql as $$
@@ -94,6 +100,22 @@ begin
   assert (select total from selecionar_curriculos_vaga(vaga, 2, 0) limit 1) = 4, 'total = todos que combinam, mesmo com a página menor';
   assert (select count(*) from selecionar_curriculos_vaga(vaga, 2, 0)) = 2 and (select count(*) from selecionar_curriculos_vaga(vaga, 2, 3)) = 1, 'paginação';
   assert pg_temp.ordem(vaga_legada) = '{}', 'vaga sem função e nível não seleciona ninguém';
+
+  -- ── filtro por sexo (045): feminino, masculino e "não informado" (sexo em branco); o total acompanha o filtro ──
+  update candidatos set sexo = 'feminino'  where id in (a, g);
+  update candidatos set sexo = 'masculino' where id = f;                                        -- b fica sem sexo
+  assert pg_temp.ordem_sexo(vaga, 'feminino')      = array['Sel A', 'Sel G'], 'feminino: ' || pg_temp.ordem_sexo(vaga, 'feminino')::text;
+  assert pg_temp.ordem_sexo(vaga, 'masculino')     = array['Sel F'], 'masculino';
+  assert pg_temp.ordem_sexo(vaga, 'nao_informado') = array['Sel B'], 'não informado = sem sexo cadastrado';
+  assert pg_temp.ordem_sexo(vaga, null) = array['Sel A', 'Sel F', 'Sel B', 'Sel G'], 'sem filtro traz todos, na ordem da nota';
+  assert pg_temp.ordem_sexo(vaga, '')   = array['Sel A', 'Sel F', 'Sel B', 'Sel G'], 'texto vazio também é "sem filtro"';
+  assert pg_temp.ordem_sexo(vaga, 'outro') = '{}', 'valor desconhecido não devolve ninguém (e não dá erro)';
+  assert (select total from selecionar_curriculos_vaga(vaga, 1, 0, 'nota', null, null, 'feminino') limit 1) = 2, 'o total acompanha o filtro, mesmo com a página menor';
+  assert pg_temp.ordem_sexo(vaga, 'feminino', 1, 1) = array['Sel G'], 'paginação dentro do filtro';
+  assert pg_temp.ordem(vaga) = array['Sel A', 'Sel F', 'Sel B', 'Sel G'], 'a chamada antiga (sem p_sexo) segue igual';
+  assert not has_function_privilege('anon', 'public.selecionar_curriculos_vaga(uuid, integer, integer, text, numeric, text[], text)', 'execute'), 'anônimo não executa';
+  assert (select count(*) from pg_proc where proname = 'selecionar_curriculos_vaga') = 1, 'só uma versão da função (a antiga saiu)';
+  update candidatos set sexo = null where id in (a, f, g);                                      -- volta ao que o resto do teste espera
 
   -- currículo antigo (não atual) não conta; o atual sim
   update curriculos set atual = false where candidato_id = f;
@@ -185,6 +207,11 @@ begin
   assert (select vaga_id = vaga3 and area_sugerida = 'Logística' and cargo_sugerido = 'Supervisor' and nivel_sugerido = 'senior' and nota_curriculo = 50
             from vw_candidatos where id = cid), 'vw_candidatos: vaga, qualificação e nota do currículo';
   assert (select nota_curriculo = 50 from vw_candidaturas where id = cid), 'vw_candidaturas: nota do currículo';
+  update candidatos set sexo = 'feminino' where id = i;
+  assert (select sexo = 'feminino' from vw_candidatos where id = cid), 'vw_candidatos: traz o sexo (045), para filtrar a lista de selecionados';
+  assert (select count(*) from vw_candidatos where vaga_id = vaga3 and sexo is null) = 0
+     and (select count(*) from vw_candidatos where vaga_id = vaga3 and sexo = 'feminino') = 1, 'filtrar a lista por sexo';
+  update candidatos set sexo = null where id = i;
   assert (select count(*) from vw_candidatos where vaga_id = vaga3) = 1, 'filtrar por vaga_id: só a candidatura aberta (a cancelada sai da tela)';
   perform pg_temp.como(beto);
   perform encerrar_candidatura(cid, 'cancelado', 'Seleção cancelada pelo RH');

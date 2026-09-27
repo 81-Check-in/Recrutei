@@ -33,7 +33,7 @@ const app = {
   perfil: null,
   periodo: 7,
   telaAtual: 'dashboard',
-  cache: { setores: [], empresas: [], vagas: [], funcoes: [], niveis: [] },
+  cache: { setores: [], empresas: [], vagas: [], funcoes: [], niveis: [], config: {} },   // config: as Configurações que o painel usa (DDI, DDD, mensagem do WhatsApp)
   candidatoAberto: null,     // candidatura aberta no drawer (candidato ↔ vaga)
   talentoAberto: null,       // candidato aberto no drawer do Banco de Talentos
   entrevistaAberta: null
@@ -105,13 +105,21 @@ function tempoRelativo(iso) {
   return fmtData(iso);
 }
 
+// DDI e DDD que completam telefone sem eles: de Configurações (ddi_padrao, ddd_padrao) quando válidos, senão 55 e 61 (o mesmo do backend)
+function prefixoTelefone() {
+  const c = app.cache?.config || {};
+  const ddi = String(c.ddi_padrao ?? '').trim(), ddd = String(c.ddd_padrao ?? '').trim();
+  return { ddi: /^\d{1,3}$/.test(ddi) ? ddi : '55', ddd: /^\d{2}$/.test(ddd) ? ddd : '61' };
+}
+
 // Normaliza telefone para o formato do link do WhatsApp
 function normalizaTelefone(tel) {
   if (!tel) return null;
+  const { ddi, ddd } = prefixoTelefone();
   let n = String(tel).replace(/\D/g, '');
-  if (n.startsWith('55') && n.length >= 12) return n;
-  if (n.length === 11 || n.length === 10) return '55' + n;
-  if (n.length === 9 || n.length === 8)   return '5561' + n;
+  if (n.startsWith(ddi) && n.length >= 12) return n;
+  if (n.length === 11 || n.length === 10) return ddi + n;
+  if (n.length === 9 || n.length === 8)   return ddi + ddd + n;
   return n.length >= 12 ? n : null;
 }
 

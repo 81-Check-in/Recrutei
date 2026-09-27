@@ -7,7 +7,6 @@ são os da vaga (um humano já decidiu a compatibilidade); o resto da qualifica�
 """
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Tuple
-import os
 import uuid
 
 import database as bd
@@ -15,15 +14,17 @@ import leitor_email as mail
 import extrator
 import ia
 import sanitizacao
+import agenda
+import status_robo
 from config import (
     FORMATOS_ACEITOS, TAMANHO_MINIMO_ANEXO, TAMANHO_MINIMO_DOCUMENTO, LIMITE_EMAILS, REENVIO_DIAS_MINIMO,
     MODO_SIMULACAO, MODELO_CLASSIFICACAO_PADRAO, MODELO_AVALIACAO_PADRAO,
-    CONFIANCA_MINIMA_PADRAO, VERSAO_PROMPT_ANALISE, log,
+    CONFIANCA_MINIMA_PADRAO, VERSAO_PROMPT_ANALISE, PORTAIS_DE_CURRICULO, log,
 )
 from utils import (
     extrair_telefone, extrair_email, gerar_hash_identidade, gerar_hash_arquivo,
     detectar_link_google_docs, limpar_texto, extrair_idade, extrair_nascimento, separar_cidade_uf,
-    detectar_regiao, normalizar_texto,
+    detectar_regiao, normalizar_texto, html_para_texto, parece_curriculo, link_do_html, primeiro_nome,
 )
 
 
@@ -35,6 +36,7 @@ class Estatisticas:
         self.avaliacoes_realizadas = 0      # análises do candidato + avaliações para vaga
         self.duplicados_detectados = 0      # currículo de quem já estava no banco
         self.bloqueados = 0
+        self.interrompida = False           # a pausa de emergência da IA parou a execução no meio
 
     def como_dict(self) -> Dict:
         return {
@@ -47,9 +49,34 @@ class Estatisticas:
         }
 
 
+MOTIVO_PAUSA = "Interrompida: envio à IA pausado no painel (Configurações → Zona de perigo)"
+
+
+def _ia_liberada() -> bool:
+    """False (e avisa no log) se o administrador pausou todo envio à IA: a rotina não lê e-mail nem analisa nada."""
+    if not bd.ia_pausada():
+        return True
+    log.warning("ENVIO À IA PAUSADO no painel (Configurações → Zona de perigo): nada é lido nem analisado. "
+                "Os e-mails e os pedidos pendentes ficam como estão até a pausa ser desfeita.")
+    return False
+
+
+def _parar_por_pausa(stats: "Estatisticas", onde: str) -> None:
+    """Chamado quando a IA é pausada com a execução em andamento: o item em curso fica como estava e o laço termina."""
+    stats.interrompida = True
+    log.warning(f"  Envio à IA pausado no painel: paro {onde}. O que falta continua pendente.")
+
+
+def _finalizar_execucao(exec_id: Optional[str], stats: "Estatisticas", erro_fatal: Optional[str]) -> None:
+    """Fecha o registro da execução; parada pela pausa da IA conta como não concluída, com o motivo."""
+    bd.finalizar_execucao(exec_id, stats.como_dict(),
+                          sucesso=erro_fatal is None and not stats.interrompida,
+                          erro=erro_fatal or (MOTIVO_PAUSA if stats.interrompida else None))
+
+
 def _registrar_excecao(msg: Dict, tipo: str, detalhe: str,
                        stats: Estatisticas, nome_arquivo: str = None,
-                       excecao_id: str = None, texto: str = None) -> None:
+                       excecao_id: str = None, texto: str = None, link_curriculo: str = None) -> None:
     """
     excecao_id: veio de reprocessar_excecoes() (a mensagem já tinha uma exceção
     registrada) — atualiza a linha existente em vez de criar outra. Sem isso,
@@ -62,14 +89,17 @@ def _registrar_excecao(msg: Dict, tipo: str, detalhe: str,
     """
     # O detalhe pode conter nome de arquivo/candidato: fica só no banco, não no log
     log.warning(f"  Exceção [{tipo}]{' (reprocessamento)' if excecao_id else ''}")
+    # o link só vai quando existe: a coluna é da 039 e um e-mail comum não precisa dela
+    extra = {"link_curriculo": link_curriculo} if link_curriculo else {}
     if excecao_id:
         bd.atualizar_excecao(excecao_id, {
             "tipo": tipo,
             "detalhe_erro": detalhe,
             "nome_arquivo": nome_arquivo,
-            "email_corpo": msg.get("corpo"),
+            "email_corpo": _corpo_para_exibir(msg),
             "texto_extraido": texto,
             "reprocessar_solicitado_em": None,   # a tentativa terminou; não reentra sozinha
+            **extra,
         })
         return
     remetente = bd.obter_ou_criar_remetente(msg["remetente"])
@@ -78,35 +108,115 @@ def _registrar_excecao(msg: Dict, tipo: str, detalhe: str,
         "email_remetente": msg["remetente"],
         "email_message_id": msg.get("message_id"),
         "email_assunto": msg.get("assunto"),
-        "email_corpo": msg.get("corpo"),
+        "email_corpo": _corpo_para_exibir(msg),
         "texto_extraido": texto,
         "tipo": tipo,
         "detalhe_erro": detalhe,
         "nome_arquivo": nome_arquivo,
         "recebido_em": msg.get("recebido_em") or bd.agora(),
+        **extra,
     })
     stats.excecoes_geradas += 1
 
 
-def _tamanho_minimo(anexo: Dict) -> int:
-    """Imagem pequena é logotipo/ícone de assinatura de e-mail; documento pequeno pode ser um currículo simples (ver config.py)."""
-    return TAMANHO_MINIMO_ANEXO if anexo["tipo_mime"].startswith("image/") else TAMANHO_MINIMO_DOCUMENTO
+def _corpo_para_exibir(msg: Dict) -> Optional[str]:
+    """O que o RH lê em "Ver e-mail": o corpo em texto, com o endereço dos links (o HTML cru é ilegível). Sem o leitor, o corpo como veio."""
+    legivel = msg.get("corpo_com_links")
+    return legivel if legivel is not None else msg.get("corpo")
 
 
-def _anexos_validos(msg: Dict) -> List[Dict]:
+def _portal_de_curriculos(remetente: str) -> Optional[Dict]:
+    """Dados da plataforma de vagas ({"nome", "link"}, config.PORTAIS_DE_CURRICULO) se o e-mail vem dela; None para candidato comum."""
+    dominio = (remetente or "").rsplit("@", 1)[-1].lower()
+    return next((p for d, p in PORTAIS_DE_CURRICULO.items() if dominio == d or dominio.endswith("." + d)), None)
+
+
+_valores_invalidos_avisados: set = set()
+
+
+def _numero_da_config(cfg: Optional[Dict], chave: str, padrao: int, minimo: int, maximo: int) -> int:
+    """Inteiro de Configurações dentro de [minimo, maximo]; ausente ou fora disso vale o padrão (com um aviso por valor, no log)."""
+    bruto = (cfg or {}).get(chave)
+    if bruto in (None, ""):
+        return padrao
+    try:
+        valor = int(float(bruto))
+        if minimo <= valor <= maximo:
+            return valor
+    except (TypeError, ValueError, OverflowError):
+        pass
+    if (chave, str(bruto)) not in _valores_invalidos_avisados:
+        _valores_invalidos_avisados.add((chave, str(bruto)))
+        log.warning(f"Configuração {chave} inválida ({bruto!r}; use de {minimo} a {maximo}): usando {padrao}")
+    return padrao
+
+
+def _prefixo_telefone(cfg: Optional[Dict]) -> Tuple[str, str]:
+    """(DDI, DDD) que completam telefone sem eles: de Configurações (ddi_padrao, ddd_padrao) quando válidos, senão 55 e 61."""
+    saida = []
+    for chave, padrao, tamanhos in (("ddi_padrao", "55", (1, 2, 3)), ("ddd_padrao", "61", (2,))):
+        bruto = str((cfg or {}).get(chave) if (cfg or {}).get(chave) is not None else "").strip()
+        if bruto.isdigit() and len(bruto) in tamanhos:
+            saida.append(bruto)
+            continue
+        if bruto and (chave, bruto) not in _valores_invalidos_avisados:
+            _valores_invalidos_avisados.add((chave, bruto))
+            log.warning(f"Configuração {chave} inválida ({bruto!r}): usando {padrao}")
+        saida.append(padrao)
+    return saida[0], saida[1]
+
+
+def _tamanho_minimo(anexo: Dict, cfg: Optional[Dict] = None) -> int:
+    """
+    Imagem pequena é logotipo/ícone de assinatura de e-mail: o piso é o de Configurações (tamanho_minimo_anexo_bytes, padrão 10 KB).
+    Documento pequeno pode ser um currículo simples: o piso dele é fixo (config.py), de propósito, para ninguém recusar um PDF só de texto.
+    """
+    if anexo["tipo_mime"].startswith("image/"):
+        return _numero_da_config(cfg, "tamanho_minimo_anexo_bytes", TAMANHO_MINIMO_ANEXO, 1024, 1024 * 1024)
+    return TAMANHO_MINIMO_DOCUMENTO
+
+
+def _anexos_validos(msg: Dict, cfg: Optional[Dict] = None) -> List[Dict]:
     """Os anexos que podem ser um currículo: assinatura do arquivo confere com o tipo e tamanho acima do piso do tipo. PDF antes dos demais."""
-    validos = [a for a in msg["anexos"] if a["tamanho"] >= _tamanho_minimo(a) and a.get("assinatura_ok")]
+    validos = [a for a in msg["anexos"] if a["tamanho"] >= _tamanho_minimo(a, cfg) and a.get("assinatura_ok")]
     validos.sort(key=lambda a: 0 if a["tipo_mime"] == "application/pdf" else 1)
     return validos
 
 
-def _escolher_anexo(msg: Dict) -> Optional[Dict]:
+def _escolher_anexo(msg: Dict, cfg: Optional[Dict] = None) -> Optional[Dict]:
     """O primeiro anexo que será tentado como currículo (o hash prévio, para não reler o mesmo arquivo, sai dele). None se não houver."""
-    validos = _anexos_validos(msg)
+    validos = _anexos_validos(msg, cfg)
     return validos[0] if validos else None
 
 
-def _obter_texto(msg: Dict) -> tuple:
+def _curriculo_no_corpo(msg: Dict) -> Optional[str]:
+    """
+    O currículo escrito no próprio e-mail (sem anexo nem link: comum em quem manda pelo celular). Só vale se o texto do
+    corpo tem cara de currículo (parece_curriculo); a IA ainda confirma depois, em identificar_curriculo. None = não é.
+    """
+    corpo = msg.get("corpo_texto")
+    if corpo is None:                                  # mensagem montada sem o leitor de e-mail
+        corpo = html_para_texto(msg.get("corpo"))
+    texto = limpar_texto(corpo)
+    return texto if parece_curriculo(texto) else None
+
+
+def _obter_texto(msg: Dict, cfg: Optional[Dict] = None) -> tuple:
+    """
+    Busca o currículo no anexo, em link do Google Docs ou, na falta dos dois, no texto do próprio e-mail.
+    Retorna (texto, ocr_aplicado, anexo, origem, erro)
+    """
+    resultado = _obter_texto_de_arquivo(msg, cfg)
+    if resultado[4] is None or _portal_de_curriculos(msg["remetente"]):     # o corpo de um aviso de portal não é currículo
+        return resultado
+    texto = _curriculo_no_corpo(msg)
+    if texto:
+        log.info(f"  Sem arquivo legível ({resultado[4][0]}): o currículo está no corpo do e-mail")
+        return texto, False, None, "corpo_email", None
+    return resultado
+
+
+def _obter_texto_de_arquivo(msg: Dict, cfg: Optional[Dict] = None) -> tuple:
     """
     Busca o currículo no anexo ou em link do Google Docs.
     Retorna (texto, ocr_aplicado, anexo, origem, erro)
@@ -114,7 +224,7 @@ def _obter_texto(msg: Dict) -> tuple:
     # 1. Anexo válido. Com mais de um (ex.: um PDF sem texto e um DOCX), vale o primeiro que tiver texto legível; só se NENHUM
     #    tiver é que vira exceção, com o motivo do primeiro tentado.
     primeira_falha = None
-    for anexo in _anexos_validos(msg):
+    for anexo in _anexos_validos(msg, cfg):
         texto, ocr = extrator.extrair(anexo["conteudo"], anexo["tipo_mime"])
         if texto and len(texto.strip()) >= 100:
             origem = {
@@ -126,18 +236,22 @@ def _obter_texto(msg: Dict) -> tuple:
             return texto, ocr, anexo, origem, None
         if primeira_falha is None:
             primeira_falha = (anexo, ocr)
-    if primeira_falha:
-        anexo, ocr = primeira_falha
-        tipo_erro = "ocr_falhou" if ocr else "arquivo_corrompido"
-        return None, False, anexo, None, (tipo_erro, f"Arquivo '{anexo['nome']}' sem texto legível")
 
     # 2. Link de Google Docs no corpo. O texto vem do link; o ARQUIVO também é baixado e devolvido como o anexo, para ser
     #    guardado no Storage (sem ele o painel não tem o que abrir). Se o arquivo não puder ser baixado, o currículo entra sem ele.
+    #    Vale também quando o anexo não abriu: quem anexa o arquivo errado e cola o link do certo não pode ficar de fora.
     link = detectar_link_google_docs(msg.get("corpo", ""))
     if link:
         texto, ocr = extrator.extrair_google_docs(link)
         if texto and len(texto.strip()) >= 100:
             return texto, ocr, extrator.arquivo_do_google_docs(link), "google_docs", None
+
+    # Nem o anexo nem o link deram texto: o motivo é o do anexo (o primeiro tentado); sem anexo, o do link
+    if primeira_falha:
+        anexo, ocr = primeira_falha
+        tipo_erro = "ocr_falhou" if ocr else "arquivo_corrompido"
+        return None, False, anexo, None, (tipo_erro, f"Arquivo '{anexo['nome']}' sem texto legível")
+    if link:
         return None, False, None, None, (
             "docs_privado", "Link do Google Docs/Drive privado, quebrado ou sem texto legível")
 
@@ -160,25 +274,6 @@ def modelo_configurado(cfg: Dict, chave: str, padrao: str) -> str:
     """Modelo escolhido em Configurações; ausente ou vazio usa o padrão."""
     valor = cfg.get(chave)
     return valor.strip() if isinstance(valor, str) and valor.strip() else padrao
-
-
-def faixa_segunda_avaliacao(cfg: Dict) -> Optional[Tuple[int, int]]:
-    """
-    Faixa de notas que dispara a segunda avaliação (avaliação para vaga); None = desativada.
-    Desativa quando faixa_ambigua_min ou faixa_ambigua_max está vazia, ou quando
-    DESATIVAR_SEGUNDA_AVALIACAO=true (override só para esta execução, sem mexer
-    na configuração salva no banco).
-    """
-    if os.getenv("DESATIVAR_SEGUNDA_AVALIACAO", "").strip().lower() == "true":
-        return None
-    brutos = [cfg.get("faixa_ambigua_min", 60), cfg.get("faixa_ambigua_max", 75)]
-    if any(v is None or str(v).strip() == "" for v in brutos):
-        return None
-    try:
-        return int(float(brutos[0])), int(float(brutos[1]))
-    except (TypeError, ValueError):
-        log.warning("faixa_ambigua_min/max inválidas — usando 60 a 75")
-        return 60, 75
 
 
 def confianca_minima(cfg: Dict) -> int:
@@ -204,6 +299,8 @@ def _perfil_do_curriculo(texto: str, cfg: Dict) -> Dict:
             texto, modelo_configurado(cfg, "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO))
         if extra:
             perfil.update({k: v for k, v in extra.items() if v is not None})
+    except ia.IAPausada:
+        raise
     except Exception as e:
         log.warning(f"  Não consegui extrair o perfil de busca: {e}")
     return perfil
@@ -222,6 +319,39 @@ def _campos_de_perfil(texto: str, perfil: Dict) -> Dict:
         if perfil.get(chave) is not None:
             campos[chave] = perfil[chave]
     return campos
+
+
+def _sexo_pelo_nome(nome: Optional[str], cfg: Dict) -> Optional[str]:
+    """Estimativa da IA pelo PRIMEIRO nome (só ele sai do sistema). None = não decidiu ou não deu. A pausa da IA sobe."""
+    primeiro = primeiro_nome(nome)
+    if not primeiro:
+        return None
+    modelo = modelo_configurado(cfg, "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO)
+    try:
+        return ia.inferir_sexo_pelo_nome([primeiro], modelo)[0].get(primeiro)
+    except ia.IAPausada:
+        raise
+    except Exception as e:                      # nunca derruba a importação do currículo: fica sem sexo e o RH (ou --sexo-pelo-nome) completa
+        log.warning(f"  Não consegui estimar o sexo pelo nome: {type(e).__name__}")
+        return None
+
+
+def _sexo_do_cadastro(nome: Optional[str], sexo_do_curriculo: Optional[str], existente: Optional[Dict], cfg: Dict) -> Dict:
+    """
+    sexo e sexo_origem que vão para o cadastro (só estatística e comparação, nunca critério de seleção):
+      • o RH já decidiu (sexo_origem "manual", inclusive deixar em branco) → não mexe em nada
+      • o currículo informa                                                 → sexo e "informado" (vale mais que uma estimativa)
+      • o cadastro já tem sexo                                              → não estima de novo
+      • senão a IA estima pelo primeiro nome                                → sexo e "ia_nome"; se não decidir, fica em branco
+    """
+    if existente and existente.get("sexo_origem") == "manual":
+        return {}
+    if sexo_do_curriculo:
+        return {"sexo": sexo_do_curriculo, "sexo_origem": "informado"}
+    if existente and existente.get("sexo"):
+        return {}
+    estimado = _sexo_pelo_nome(nome, cfg)
+    return {"sexo": estimado, "sexo_origem": "ia_nome"} if estimado else {}
 
 
 def _marcar_lido() -> bool:
@@ -287,6 +417,8 @@ def _analisar_e_salvar(candidato_id: str, curriculo_id: Optional[str], texto: st
         analise, uso = ia.analisar_curriculo(texto, areas, modelo, nome_candidato=nome,
                                              funcoes=vocabulario["funcoes"], niveis=vocabulario["niveis"],
                                              iniciantes=vocabulario.get("iniciantes"))
+    except ia.IAPausada:
+        raise
     except Exception as e:
         log.error(f"  Falha na análise: {e}")
         return None
@@ -376,13 +508,17 @@ def _motivo_para_nao_reler(candidato: Dict) -> Optional[str]:
     """
     Regra de reincidência: o mesmo currículo não é lido de novo, seja qual for a vaga. None = pode ler; texto = por
     que não. Só volta a ser lido quando as DUAS coisas são verdade: passaram REENVIO_DIAS_MINIMO dias da importação
-    anterior e o candidato foi sanitizado (inativo ou com os dados excluídos). Nunca para quem está na lista negra nem
+    anterior e o candidato foi sanitizado (inativo ou com os dados excluídos). Nunca para quem está bloqueado nem
     para quem tem retenção permanente (contratado).
     """
     if candidato.get("lista_negra"):
-        return "candidato na lista negra"
+        return "candidato bloqueado"
     if candidato.get("retencao_permanente"):
         return "candidato com retenção permanente"
+    # Cadastro ATIVO sem nenhum currículo é sobra de uma gravação interrompida (queda, deploy no meio do e-mail): não há currículo a
+    # "não reler". Sem esta saída o e-mail reenviado seria ignorado como "já está no banco" e a pessoa ficaria sem currículo para sempre.
+    if candidato.get("status_banco") == "ativo" and not bd.obter_curriculo_atual(candidato["id"]):
+        return None
     ultima = bd.ultima_importacao(candidato["id"])
     dias = (datetime.now(timezone.utc) - ultima).days if ultima else None
     if candidato.get("status_banco") not in ("inativo", "expurgado"):
@@ -403,21 +539,21 @@ def _entrar_no_banco(texto: str, ident: Dict, cfg: Dict, areas: List[str], stats
       • pessoa que já está lá  → NÃO é lida de novo (regra de reincidência). Só quando passaram 30 dias da importação
                                  anterior E ela foi sanitizada: o currículo vira a versão ATUAL do mesmo candidato,
                                  a análise é refeita e ele volta a "ativo"
-      • e-mail na lista negra  → ignorado
+      • e-mail bloqueado       → ignorado
     curriculo: colunas da tabela curriculos (sem candidato_id/texto). arquivo: {"conteudo","tipo_mime"} a subir
     ao Storage (e-mail); no upload manual o arquivo já está lá e curriculo traz o storage_path.
     Devolve {"candidato_id", "novo", "analise"[, "ignorado": motivo]} ou None se não conseguiu gravar o candidato.
-    Com "ignorado", nada foi gravado (candidato_id é o do cadastro que já existia, ou None na lista negra).
+    Com "ignorado", nada foi gravado (candidato_id é o do cadastro que já existia, ou None se o e-mail está bloqueado).
     """
     nome = ident.get("nome_candidato")
-    telefone = extrair_telefone(texto)
+    telefone = extrair_telefone(texto, *_prefixo_telefone(cfg))
     email_cand = extrair_email(texto) or email_padrao
     hash_id = gerar_hash_identidade(nome, telefone)
 
-    # Lista negra: vale também o e-mail que consta no próprio currículo (a pessoa pode escrever de outro endereço)
+    # Bloqueios: vale também o e-mail que consta no próprio currículo (a pessoa pode escrever de outro endereço)
     if email_cand and bd.remetente_bloqueado(email_cand):
-        log.info("  E-mail do currículo está na lista negra — ignorando")
-        return {"candidato_id": None, "novo": False, "analise": None, "ignorado": "e-mail na lista negra"}
+        log.info("  E-mail do currículo está bloqueado — ignorando")
+        return {"candidato_id": None, "novo": False, "analise": None, "ignorado": "e-mail bloqueado"}
 
     # Só reconhece a pessoa pelo hash quando há nome E telefone (nome sozinho junta homônimos)
     existente = bd.buscar_candidato_existente(hash_id if (nome and telefone) else None, email_cand, nome)
@@ -435,9 +571,11 @@ def _entrar_no_banco(texto: str, ident: Dict, cfg: Dict, areas: List[str], stats
     regiao = _resolver_regiao(ident, texto, _regioes())
     if existente and existente.get("regiao_origem") == "manual":      # a correção do RH vale mais que a IA
         regiao = {k: v for k, v in regiao.items() if not k.startswith("regiao")}
+    perfil = _campos_de_perfil(texto, _perfil_do_curriculo(texto, cfg))
     dados = {"nome": nome, "telefone": telefone, "telefone_e164": telefone, "email": email_cand,
-             "cidade": cidade, "uf": uf, **regiao,
-             **_campos_de_perfil(texto, _perfil_do_curriculo(texto, cfg))}
+             "cidade": cidade, "uf": uf, **regiao, **perfil}
+    dados.pop("sexo", None)
+    dados.update(_sexo_do_cadastro(nome, perfil.get("sexo"), existente, cfg))     # currículo, estimativa pelo nome ou decisão do RH
     dados = {k: v for k, v in dados.items() if v is not None}
 
     if existente:
@@ -508,7 +646,7 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
         return _marcar_lido()
 
     # Reincidência: o mesmo ARQUIVO não é lido de novo, seja qual for a vaga (antes de gastar extração, OCR e IA)
-    anexo_previsto = _escolher_anexo(msg)
+    anexo_previsto = _escolher_anexo(msg, cfg)
     hash_arquivo = gerar_hash_arquivo(anexo_previsto["conteudo"]) if anexo_previsto else None
     dono = bd.buscar_candidato_por_arquivo(hash_arquivo)
     motivo = _motivo_para_nao_reler(dono) if dono else None
@@ -521,12 +659,28 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
         return _marcar_lido()
 
     # ── Extração ──
-    texto, ocr, anexo, origem, erro = _obter_texto(msg)
+    texto, ocr, anexo, origem, erro = _obter_texto(msg, cfg)
     if anexo and (not hash_arquivo or anexo is not anexo_previsto):   # link do Drive, ou outro anexo que não o previsto: a impressão digital é do arquivo lido
         hash_arquivo = gerar_hash_arquivo(anexo["conteudo"])
+    portal = _portal_de_curriculos(msg["remetente"])          # o remetente é a plataforma, não o candidato: as regras "por remetente" não valem
     if erro:
+        link_do_curriculo = None
+        if erro[0] == "sem_anexo" and portal:
+            # o aviso traz o link do currículo na plataforma: vira o botão "Abrir currículo" (sem o link, o RH procura em "Ver e-mail")
+            link_do_curriculo = link_do_html(msg.get("corpo"), portal["link"])
+            onde = 'Clique em "Abrir currículo"' if link_do_curriculo else f'Em "Ver e-mail", procure o link "{portal["link"]}"'
+            erro = ("sem_anexo", f'Aviso do {portal["nome"]}: o currículo está na plataforma, não no e-mail. '
+                                 f'{onde}, baixe o currículo lá e envie por "Enviar currículo".')
+        # E-mail vazio ou "segue em anexo" sem anexo de quem JÁ tem currículo no banco (o currículo veio em outra mensagem): não há o
+        # que o RH resolver, então não entra na fila. Num reprocessamento, a exceção existente é encerrada.
+        if erro[0] == "sem_anexo" and not portal and bd.remetente_tem_curriculo(msg["remetente"]):
+            log.info("  E-mail sem currículo de quem já tem currículo no banco — não vira exceção")
+            if excecao_id:
+                bd.atualizar_excecao(excecao_id, {"status": "revisado", "reprocessar_solicitado_em": None,
+                                                  "detalhe_erro": "Este remetente já tem currículo no Banco de Talentos."})
+            return _marcar_lido()
         _registrar_excecao(msg, erro[0], erro[1], stats,
-                           anexo["nome"] if anexo else None, excecao_id)
+                           anexo["nome"] if anexo else None, excecao_id, link_curriculo=link_do_curriculo)
         return _marcar_lido()
 
     texto = limpar_texto(texto)
@@ -535,6 +689,8 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
     modelo_cls = modelo_configurado(cfg, "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO)
     try:
         ident, _ = ia.identificar_curriculo(texto, modelo_cls, _nomes_das_regioes())
+    except ia.IAPausada:
+        raise                       # não é defeito deste e-mail: continua não lido, sem exceção registrada
     except Exception as e:
         _registrar_excecao(msg, "erro_processamento", f"Falha na identificação: {e}", stats,
                            excecao_id=excecao_id, texto=texto)
@@ -596,6 +752,13 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
         })
 
     stats.curriculos_processados += 1
+    # Quem mandou o e-mail vazio (ou o anexo que não abriu) e logo depois o currículo certo: as falhas de antes deixam de valer
+    try:
+        encerradas = 0 if portal else bd.encerrar_excecoes_do_remetente(msg["remetente"], msg.get("recebido_em") or bd.agora())
+        if encerradas:
+            log.info(f"  {encerradas} exceção(ões) anterior(es) do mesmo remetente encerrada(s): o currículo dele entrou")
+    except Exception as e:                                # nunca desfaz um currículo que já entrou
+        log.warning(f"  Não consegui encerrar as exceções anteriores do remetente: {type(e).__name__}")
     return _marcar_lido()
 
 
@@ -629,6 +792,10 @@ def reanalisar_candidato(cand: Dict, cfg: Dict, areas: List[str],
         vazios = {k: v for k, v in campos.items()
                   if cand.get(k) is None and not (k == "idade_informada" and cand.get("data_nascimento"))
                   and not (k == "data_nascimento" and cand.get("idade_informada"))}
+        if cand.get("sexo_origem") == "manual":
+            vazios.pop("sexo", None)                # o RH deixou em branco de propósito: o currículo não refaz a decisão dele
+        if "sexo" in vazios:
+            vazios["sexo_origem"] = "informado"
         bd.atualizar_candidato(cand["id"], vazios)
 
     # Região onde mora, pelo texto do currículo (local e sem custo): só onde ainda não há uma decidida pela IA ou pelo RH
@@ -647,6 +814,9 @@ def reanalisar_pendentes(pendentes: List[Dict], cfg: Dict, areas: List[str], sta
             log.info(f"► reanalisando candidato {cand['id'][:8]}")
             if reanalisar_candidato(cand, cfg, areas, stats) is None:
                 log.warning("  Fica pendente; tento de novo na próxima execução")
+        except ia.IAPausada:
+            _parar_por_pausa(stats, "as reanálises")
+            break
         except Exception as e:
             log.error(f"  Erro inesperado na reanálise: {e}", exc_info=True)
 
@@ -659,6 +829,8 @@ def reanalisar() -> Dict:
     """
     ia.resetar_custo()
     stats = Estatisticas()
+    if not _ia_liberada():
+        return stats.como_dict()
     pendentes = bd.listar_reanalises(LIMITE_EMAILS)
     if not pendentes:
         log.info("Nenhuma reanálise pendente")
@@ -674,10 +846,77 @@ def reanalisar() -> Dict:
         erro_fatal = str(e)
         log.error(f"ERRO FATAL: {e}", exc_info=True)
     finally:
-        bd.finalizar_execucao(exec_id, stats.como_dict(),
-                              sucesso=erro_fatal is None, erro=erro_fatal)
+        _finalizar_execucao(exec_id, stats, erro_fatal)
 
     log.info(f"Análises realizadas    : {stats.avaliacoes_realizadas} de {len(pendentes)}")
+    log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
+             f"({ia.custo_total['chamadas']} chamadas)")
+    return stats.como_dict()
+
+
+def preencher_sexo_pelo_nome(limite: int = 0) -> Dict:
+    """
+    Estima, pelo PRIMEIRO nome, o sexo de quem está no banco sem sexo (python main.py --sexo-pelo-nome; --limite N faz só N;
+    --simular conta sem gravar). O limite vem só da linha de comando: o LIMITE_EMAILS do .env serve à leitura de e-mails e não vale aqui. Serve à estatística de cadastro (quantos currículos de mulheres e de homens chegam e são
+    contratados), nunca à seleção. Só a IA vê o primeiro nome, em lotes de 50; nome ambíguo fica em branco. Quem o RH já
+    decidiu (inclusive deixando em branco) não entra, e a decisão dele nunca é refeita. Pode ser repetido: só pega quem falta.
+    Sem nada para estimar não registra execução. Nomes não vão para o log, só contagens.
+    """
+    ia.resetar_custo()
+    stats = Estatisticas()
+    if not _ia_liberada():
+        return stats.como_dict()
+    pendentes = bd.listar_candidatos_sem_sexo(limite)
+    if not pendentes:
+        log.info("Nenhum candidato sem sexo para estimar")
+        return stats.como_dict()
+
+    if MODO_SIMULACAO:
+        log.warning("MODO SIMULAÇÃO — nada será gravado")
+    exec_id = bd.iniciar_execucao()
+    erro_fatal = None
+    feminino = masculino = indecisos = perdidos = 0
+    ids_por_nome: Dict[str, List[str]] = {}         # "maria" (sem acento nem caixa) -> candidatos
+    como_veio: Dict[str, str] = {}                  # "maria" -> "Maria" (o que vai à IA)
+    for cand in pendentes:
+        primeiro = primeiro_nome(cand.get("nome"))
+        if primeiro:
+            chave = normalizar_texto(primeiro)
+            ids_por_nome.setdefault(chave, []).append(cand["id"])
+            como_veio.setdefault(chave, primeiro)
+        else:
+            indecisos += 1                          # só inicial ou nome que não dá para ler: nada a estimar
+    try:
+        modelo = modelo_configurado(bd.carregar_configuracoes(), "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO)
+        chaves = sorted(ids_por_nome)
+        log.info(f"{len(pendentes)} candidato(s) sem sexo; {len(chaves)} primeiro(s) nome(s) distinto(s)")
+        for i in range(0, len(chaves), ia.LOTE_SEXO_PELO_NOME):         # grava a cada lote: uma pausa no meio não joga fora o que já veio
+            lote = chaves[i:i + ia.LOTE_SEXO_PELO_NOME]
+            sexos, _ = ia.inferir_sexo_pelo_nome([como_veio[k] for k in lote], modelo)
+            sexo_por_chave = {normalizar_texto(n): s for n, s in sexos.items()}
+            for chave in lote:
+                sexo = sexo_por_chave.get(chave)
+                for candidato_id in ids_por_nome[chave]:
+                    if not sexo:
+                        indecisos += 1
+                    elif bd.gravar_sexo_estimado(candidato_id, sexo):
+                        stats.avaliacoes_realizadas += 1
+                        feminino += sexo == "feminino"
+                        masculino += sexo == "masculino"
+                    else:
+                        perdidos += 1               # o RH mexeu no meio do caminho: a decisão dele vale
+    except ia.IAPausada:
+        _parar_por_pausa(stats, "a estimativa do sexo")
+    except Exception as e:
+        erro_fatal = str(e)
+        log.error(f"ERRO FATAL: {e}", exc_info=True)
+    finally:
+        _finalizar_execucao(exec_id, stats, erro_fatal)
+
+    log.info(f"Sexo estimado          : {stats.avaliacoes_realizadas} (feminino {feminino}, masculino {masculino})")
+    log.info(f"Sem decisão da IA      : {indecisos} (nome ambíguo ou ilegível: o RH define à mão)")
+    if perdidos:
+        log.info(f"Já preenchidos pelo RH : {perdidos} (não foram alterados)")
     log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
              f"({ia.custo_total['chamadas']} chamadas)")
     return stats.como_dict()
@@ -689,14 +928,15 @@ def reanalisar() -> Dict:
 def _avaliar_e_salvar(cand_id: str, texto: str, vaga: Dict, nome: Optional[str],
                       cfg: Dict, stats: Estatisticas, sequencia: int = 1) -> bool:
     """
-    Avalia o currículo contra a vaga e grava a nota. Na faixa ambígua grava também
-    a segunda opinião (sequencia + 1). False = a IA não devolveu avaliação válida.
+    Avalia o currículo contra a vaga e grava a nota. False = a IA não devolveu avaliação válida.
     cand_id é o id da CANDIDATURA (o vínculo candidato ↔ vaga).
     """
     modelo_aval = modelo_configurado(cfg, "modelo_ia_avaliacao", MODELO_AVALIACAO_PADRAO)
     try:
         aval, uso = ia.avaliar(texto, vaga, modelo_aval, variacao=1,
                                nome_candidato=nome)
+    except ia.IAPausada:
+        raise
     except Exception as e:
         log.error(f"  Falha na avaliação: {e}")
         return False
@@ -726,42 +966,6 @@ def _avaliar_e_salvar(cand_id: str, texto: str, vaga: Dict, nome: Optional[str],
         "sequencia": sequencia,
     })
     stats.avaliacoes_realizadas += 1
-
-    # ── Segunda opinião (faixa ambígua) ──
-    faixa = faixa_segunda_avaliacao(cfg)
-
-    if faixa and faixa[0] <= nota <= faixa[1]:
-        log.info(f"  Nota na faixa ambígua — segunda avaliação")
-        try:
-            aval2, uso2 = ia.avaliar(texto, vaga, modelo_aval, variacao=2,
-                                     nome_candidato=nome)
-            if aval2:
-                nota2 = int(aval2.get("nota", 0))
-                divergiu = abs(nota - nota2) > 10
-                log.info(f"  Segunda nota: {nota2}"
-                         f"{' — DIVERGÊNCIA' if divergiu else ''}")
-
-                bd.salvar_avaliacao({
-                    "candidatura_id": cand_id,
-                    "vaga_id": vaga["id"],
-                    "nota": nota2,
-                    "resumo_nota": aval2.get("resumo_nota"),
-                    "resumo_ia": aval2.get("resumo_ia"),
-                    "pontos_fortes": aval2.get("pontos_fortes") or [],
-                    "lacunas": aval2.get("lacunas") or [],
-                    "requisitos_faltantes": aval2.get("requisitos_faltantes") or [],
-                    "eliminado_por_regra": bool(aval2.get("eliminado_por_regra")),
-                    "versao_criterios": vaga["versao_criterios"],
-                    "modelo_ia": uso2["modelo"],
-                    "tokens_entrada": uso2["tokens_entrada"],
-                    "tokens_saida": uso2["tokens_saida"],
-                    "duracao_ms": uso2["duracao_ms"],
-                    "sequencia": sequencia + 1,
-                    "divergencia_detectada": divergiu,
-                })
-                stats.avaliacoes_realizadas += 1
-        except Exception as e:
-            log.warning(f"  Segunda avaliação falhou: {e}")
 
     return True
 
@@ -800,6 +1004,9 @@ def reavaliar_pendentes(pendentes: List[Dict], vagas: List[Dict], cfg: Dict,
                 bd.atualizar_candidatura(cand_id, {"avaliacao_pendente": False})
             else:
                 log.warning("  Fica pendente; tento de novo na próxima execução")
+        except ia.IAPausada:
+            _parar_por_pausa(stats, "as avaliações")
+            break
         except Exception as e:
             log.error(f"  Erro inesperado na avaliação: {e}", exc_info=True)
 
@@ -811,6 +1018,8 @@ def reavaliar() -> Dict:
     """
     ia.resetar_custo()
     stats = Estatisticas()
+    if not _ia_liberada():
+        return stats.como_dict()
     pendentes = bd.listar_reavaliacoes()
     if not pendentes:
         log.info("Nenhuma avaliação para vaga pendente")
@@ -827,8 +1036,7 @@ def reavaliar() -> Dict:
         erro_fatal = str(e)
         log.error(f"ERRO FATAL: {e}", exc_info=True)
     finally:
-        bd.finalizar_execucao(exec_id, stats.como_dict(),
-                              sucesso=erro_fatal is None, erro=erro_fatal)
+        _finalizar_execucao(exec_id, stats, erro_fatal)
 
     log.info(f"Avaliações realizadas  : {stats.avaliacoes_realizadas}")
     log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
@@ -849,6 +1057,8 @@ def reprocessar_excecoes() -> Dict:
     """
     ia.resetar_custo()
     stats = Estatisticas()
+    if not _ia_liberada():
+        return stats.como_dict()
     pendentes = bd.listar_excecoes_para_reprocessar()
     if not pendentes:
         log.info("Nenhuma exceção marcada para reprocessar")
@@ -893,6 +1103,9 @@ def reprocessar_excecoes() -> Dict:
                     })
                     continue
                 processar_mensagem(msg, cfg, areas, stats, excecao_id=exc["id"])
+            except ia.IAPausada:
+                _parar_por_pausa(stats, "o reprocessamento")     # o pedido de "Reprocessar" continua marcado
+                break
             except Exception as e:
                 # Uma exceção só não pode travar as outras 25 — antes travava o lote inteiro.
                 log.error(f"  Falha ao reprocessar {exc['id'][:8]}: {e}", exc_info=True)
@@ -904,8 +1117,7 @@ def reprocessar_excecoes() -> Dict:
         erro_fatal = str(e)
         log.error(f"ERRO FATAL: {e}", exc_info=True)
     finally:
-        bd.finalizar_execucao(exec_id, stats.como_dict(),
-                              sucesso=erro_fatal is None, erro=erro_fatal)
+        _finalizar_execucao(exec_id, stats, erro_fatal)
 
     log.info(f"Currículos processados : {stats.curriculos_processados} de {len(pendentes)}")
     log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
@@ -957,6 +1169,8 @@ def processar_upload_manual(item: Dict, cfg: Dict, areas: List[str],
         modelo_cls = modelo_configurado(cfg, "modelo_ia_classificacao", MODELO_CLASSIFICACAO_PADRAO)
         try:
             ident, _ = ia.identificar_curriculo(texto, modelo_cls, _nomes_das_regioes())
+        except ia.IAPausada:
+            raise                   # o envio continua "pendente" na fila, sem virar erro
         except Exception as e:
             _falhar(f"Falha na identificação: {e}")
             return
@@ -988,7 +1202,7 @@ def processar_upload_manual(item: Dict, cfg: Dict, areas: List[str],
         _falhar("Falha ao criar candidato")
         return
     if resultado.get("ignorado") and not resultado.get("candidato_id"):
-        _falhar(f"Não importado: {resultado['ignorado']}")          # lista negra
+        _falhar(f"Não importado: {resultado['ignorado']}")          # e-mail bloqueado
         return
     if not resultado.get("ignorado"):
         stats.curriculos_processados += 1
@@ -1019,6 +1233,9 @@ def processar_uploads_manuais_pendentes(cfg: Dict, areas: List[str], stats: Esta
     for item in pendentes:
         try:
             processar_upload_manual(item, cfg, areas, stats)
+        except ia.IAPausada:
+            _parar_por_pausa(stats, "os envios manuais")         # o item continua "pendente"
+            break
         except Exception as e:
             log.error(f"  Erro inesperado: {e}", exc_info=True)
             bd.atualizar_upload_manual(item["id"], {
@@ -1034,6 +1251,8 @@ def processar_uploads_manuais() -> Dict:
     """
     ia.resetar_custo()
     stats = Estatisticas()
+    if not _ia_liberada():
+        return stats.como_dict()
     pendentes = bd.listar_uploads_manuais_pendentes()
     if not pendentes:
         log.info("Nenhum upload manual pendente")
@@ -1051,8 +1270,7 @@ def processar_uploads_manuais() -> Dict:
         erro_fatal = str(e)
         log.error(f"ERRO FATAL: {e}", exc_info=True)
     finally:
-        bd.finalizar_execucao(exec_id, stats.como_dict(),
-                              sucesso=erro_fatal is None, erro=erro_fatal)
+        _finalizar_execucao(exec_id, stats, erro_fatal)
 
     log.info(f"Currículos processados : {stats.curriculos_processados} de {len(pendentes)}")
     log.info(f"Custo da execução      : US$ {ia.custo_total['usd']:.4f} "
@@ -1080,6 +1298,8 @@ def reler_caixa(limite: int = 0, ate_uid: int = 0) -> Dict:
 
     ia.resetar_custo()
     stats = Estatisticas()
+    if not _ia_liberada():
+        return stats.como_dict()
     if MODO_SIMULACAO:
         log.warning("MODO SIMULAÇÃO — nada será gravado")
     exec_id = bd.iniciar_execucao()
@@ -1098,6 +1318,9 @@ def reler_caixa(limite: int = 0, ate_uid: int = 0) -> Dict:
             tratada = True
             try:
                 processar_mensagem(msg, cfg, areas, stats)
+            except ia.IAPausada:
+                _parar_por_pausa(stats, "a releitura da caixa")
+                break
             except Exception as e:
                 log.error(f"  Erro inesperado: {e}", exc_info=True)
                 try:
@@ -1117,8 +1340,7 @@ def reler_caixa(limite: int = 0, ate_uid: int = 0) -> Dict:
         erro_fatal = str(e)
         log.error(f"ERRO FATAL: {e}", exc_info=True)
     finally:
-        bd.finalizar_execucao(exec_id, stats.como_dict(),
-                              sucesso=erro_fatal is None, erro=erro_fatal)
+        _finalizar_execucao(exec_id, stats, erro_fatal)
 
     log.info(f"E-mails lidos          : {stats.emails_lidos}")
     log.info(f"Currículos processados : {stats.curriculos_processados}")
@@ -1129,8 +1351,12 @@ def reler_caixa(limite: int = 0, ate_uid: int = 0) -> Dict:
     return stats.como_dict()
 
 
-def executar() -> Dict:
-    """Execução completa do pipeline diário."""
+def executar(manutencao: bool = True, limite: Optional[int] = None) -> Dict:
+    """
+    Uma leitura completa: as (re)análises e os envios manuais pendentes, os e-mails não lidos e (com manutencao=True) a manutenção
+    do banco e a conferência da sanitização. O modo contínuo (robo.py) lê a cada poucos minutos e faz a manutenção só uma vez por dia.
+    limite: quantos e-mails ler nesta execução (None = LIMITE_EMAILS; 0 = todos). Devolve os números da execução, mais "erro" (texto, ou None) e "interrompida" (a pausa da IA ou um pedido de encerramento parou no meio).
+    """
     log.info("=" * 60)
     log.info("RECRUTEI — Banco de Talentos")
     if MODO_SIMULACAO:
@@ -1143,15 +1369,13 @@ def executar() -> Dict:
     erro_fatal = None
 
     try:
+        stats.interrompida = not _ia_liberada()     # pausada: nada de e-mail nem de IA, mas a manutenção do banco segue
         cfg = bd.carregar_configuracoes()
-        faixa = faixa_segunda_avaliacao(cfg)
-        log.info("Segunda avaliação (para vaga): " +
-                 (f"notas de {faixa[0]} a {faixa[1]}" if faixa else "desativada"))
         areas = bd.listar_areas()
 
         # (Re)análises pedidas: candidatos migrados, currículo reenviado, botão do painel
         try:
-            reanalises = bd.listar_reanalises()
+            reanalises = None if stats.interrompida else bd.listar_reanalises()
             if reanalises:
                 log.info("-" * 60)
                 reanalisar_pendentes(reanalises, cfg, areas, stats)
@@ -1159,31 +1383,44 @@ def executar() -> Dict:
             log.error(f"Falha nas reanálises: {e}", exc_info=True)
 
         # Currículos enviados manualmente no painel, antes dos e-mails novos
-        try:
-            log.info("-" * 60)
-            processar_uploads_manuais_pendentes(cfg, areas, stats)
-        except Exception as e:
-            log.error(f"Falha nos uploads manuais: {e}", exc_info=True)
+        if not stats.interrompida:
+            try:
+                log.info("-" * 60)
+                processar_uploads_manuais_pendentes(cfg, areas, stats)
+            except Exception as e:
+                log.error(f"Falha nos uploads manuais: {e}", exc_info=True)
 
         # E-mails de outras áreas ficam não lidos; o marcador de progresso
         # (último UID analisado) evita relê-los a cada execução.
-        cursor_uid, cursor_validade = bd.obter_cursor_imap()
-        mensagens, validade = mail.buscar_novos(LIMITE_EMAILS, cursor_uid, cursor_validade)
+        mensagens, validade = [], None
+        if not stats.interrompida:
+            cursor_uid, cursor_validade = bd.obter_cursor_imap()
+            mensagens, validade = mail.buscar_novos(LIMITE_EMAILS if limite is None else limite, cursor_uid, cursor_validade)
         stats.emails_lidos = len(mensagens)
 
         if not mensagens:
-            log.info("Nenhuma mensagem nova")
+            if not stats.interrompida:
+                log.info("Nenhuma mensagem nova")
         else:
             log.info("-" * 60)
+            status_robo.processando(len(mensagens), "Lendo os e-mails da caixa")      # a tela Status mostra "x de y"
             tratadas = []
             ultimo_uid = None      # até onde tudo foi tratado, sem falha no meio
             avancar = True
             for i, msg in enumerate(mensagens, 1):
+                if agenda.encerrar.is_set():        # o deploy pediu para parar: o que falta continua não lido e a próxima leitura pega
+                    stats.interrompida = True
+                    log.warning("Encerramento pedido: paro a leitura. O que falta continua não lido.")
+                    break
                 log.info(f"[{i}/{len(mensagens)}]")
                 tratada = True
                 try:
                     if processar_mensagem(msg, cfg, areas, stats):
                         tratadas.append(msg["uid"])
+                except ia.IAPausada:
+                    # este e-mail e os seguintes continuam não lidos; o marcador só avança até o último tratado
+                    _parar_por_pausa(stats, "a leitura dos e-mails")
+                    break
                 except Exception as e:
                     log.error(f"  Erro inesperado: {e}", exc_info=True)
                     try:
@@ -1196,6 +1433,7 @@ def executar() -> Dict:
                     avancar = False
                 elif avancar:
                     ultimo_uid = int(msg["uid"])
+                status_robo.avancar(i)
 
             mail.marcar_como_lidas(tratadas)
             log.info(f"{len(tratadas)} marcada(s) como lida(s); "
@@ -1207,27 +1445,28 @@ def executar() -> Dict:
                 except Exception as e:
                     log.warning(f"Não consegui salvar o marcador de progresso: {e}")
 
-        # Manutenção: partições da auditoria e arquivos de dados já excluídos.
-        # Nada é inativado nem apagado sozinho: isso é decisão do RH na sanitização.
-        log.info("-" * 60)
-        log.info("Executando manutenção")
-        manut = bd.executar_manutencao()
-        if manut:
-            log.info(f"  Arquivos removidos do Storage: {manut.get('arquivos_removidos', 0)}")
+        # Manutenção: partições da auditoria, expurgo dos inativos há mais de N meses (o banco apaga os dados pessoais) e
+        # remoção dos arquivos de quem foi apagado. Ninguém é inativado aqui: isso é decisão do RH (cadastro ou sanitização).
+        if manutencao:
+            log.info("-" * 60)
+            log.info("Executando manutenção")
+            manut = bd.executar_manutencao()
+            if manut:
+                sanitizacao.registrar_expurgo(manut.get("expurgo"))
+                log.info(f"  Arquivos removidos do Storage: {manut.get('arquivos_removidos', 0)}")
 
-        # Sanitização: gera a lista de sugestões quando o intervalo (2 meses) venceu e avisa o RH
-        try:
-            sanitizacao.verificar_e_gerar()
-        except Exception as e:
-            log.error(f"Falha na sanitização: {e}", exc_info=True)
+            # Sanitização: a cada 7 dias (o banco decide; chamar todo dia é seguro) sugere quem completou 1 mês sem alteração e avisa o RH
+            try:
+                sanitizacao.verificar_e_gerar()
+            except Exception as e:
+                log.error(f"Falha na sanitização: {e}", exc_info=True)
 
     except Exception as e:
         erro_fatal = str(e)
         log.error(f"ERRO FATAL: {e}", exc_info=True)
 
     finally:
-        bd.finalizar_execucao(exec_id, stats.como_dict(),
-                              sucesso=erro_fatal is None, erro=erro_fatal)
+        _finalizar_execucao(exec_id, stats, erro_fatal)
 
     log.info("=" * 60)
     log.info(f"E-mails lidos          : {stats.emails_lidos}")
@@ -1240,4 +1479,4 @@ def executar() -> Dict:
              f"({ia.custo_total['chamadas']} chamadas)")
     log.info("=" * 60)
 
-    return stats.como_dict()
+    return {**stats.como_dict(), "erro": erro_fatal, "interrompida": stats.interrompida}

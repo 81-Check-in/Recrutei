@@ -1,22 +1,26 @@
 // ═══════════════════════════════════════════════════════════
 //  SANITIZAÇÃO DO BANCO DE TALENTOS
-//  O sistema NÃO apaga nada sozinho: a cada ciclo (2 meses, configurável) a rotina gera esta lista de
-//  SUGESTÕES, cada uma com motivo e prioridade, e o RH decide — Manter, Inativar ou Excluir definitivamente.
-//  Nada acontece sem a confirmação explícita abaixo; toda decisão fica registrada (quem, quando, o quê).
-//  Regras e pesos são parâmetros de Configurações; a lógica está em backend/sql/023.
-//  Permissões: manter e inativar = qualquer usuário ativo; excluir definitivamente = só administrador.
+//  A rotina confere toda semana e sugere quem ficou 1 mês sem nenhuma alteração (contado da entrada no sistema). Cada
+//  sugestão traz motivo e prioridade e o RH decide — Manter ou Inativar. O RH também pode mandar um candidato direto para
+//  cá pelo botão "Sanitizar" do cadastro. Nada acontece sem a confirmação explícita abaixo; toda decisão fica registrada
+//  (quem, quando, o quê).
+//  A fila NÃO exclui: quem fica inativo (aqui ou pelo botão Inativar do cadastro) tem os dados pessoais apagados sozinho
+//  pela rotina diária, depois de N meses (Configurações → expurgo_meses_apos_inativar; backend/sql/047).
+//  Regras e pesos são parâmetros de Configurações; a lógica está em backend/sql/043 e 047 (antes: 023).
+//  Permissões: manter e inativar = qualquer usuário ativo.
 // ═══════════════════════════════════════════════════════════
 
 const estadoSanitizacao = novoEstadoLista(50);
 const selecaoSanitizacao = new Set();          // ids marcados (a seleção sobrevive a "carregar mais")
 let decisaoSanitizacao = null;                 // { ids, decisao } do modal aberto
 let mesesPadraoAdiar = 6;
+let mesesExpurgo = 6;                          // meses inativo até o expurgo automático (Configurações)
 
 const PRIORIDADE_PILL = { alta: ['pill-red', 'Alta'], media: ['pill-yellow', 'Média'], baixa: ['pill-gray', 'Baixa'] };
 const DECISAO_PILL = {
   mantido:   ['pill-green', 'Mantido'],
   inativado: ['pill-gray',  'Inativado'],
-  excluido:  ['pill-red',   'Excluído'],
+  excluido:  ['pill-red',   'Excluído'],           // só nas decisões antigas (antes da 047 a fila excluía)
   expirada:  ['pill-gray',  'Expirada']
 };
 
@@ -44,15 +48,16 @@ function atualizarBadgeSanitizacao(total) {
 async function carregarResumoSanitizacao() {
   const [ciclos, config, pendentes] = await Promise.all([
     db.from('sanitizacao_ciclos').select('gerada_em,origem,total_sugeridas').order('gerada_em', { ascending: false }).limit(1),
-    db.from('configuracoes').select('chave,valor').in('chave', ['sanitizacao_intervalo_meses', 'sanitizacao_adiar_meses']),
+    db.from('configuracoes').select('chave,valor').in('chave', ['sanitizacao_intervalo_dias', 'sanitizacao_adiar_meses', 'expurgo_meses_apos_inativar']),
     db.from('sanitizacao_sugestoes').select('prioridade').eq('status', 'pendente').limit(10000)
   ]);
   const el = $('#san-ciclo');
   if (ciclos.error || pendentes.error) { el.textContent = mensagemErro(ciclos.error || pendentes.error); return; }
 
   const valor = chave => Number((config.data || []).find(c => c.chave === chave)?.valor);
-  const intervalo = valor('sanitizacao_intervalo_meses') || 2;
+  const intervalo = valor('sanitizacao_intervalo_dias') || 7;
   mesesPadraoAdiar = valor('sanitizacao_adiar_meses') || 6;
+  mesesExpurgo = valor('expurgo_meses_apos_inativar') >= 1 ? Math.floor(valor('expurgo_meses_apos_inativar')) : 6;
 
   const por = { alta: 0, media: 0, baixa: 0 };
   (pendentes.data || []).forEach(p => { por[p.prioridade]++; });
@@ -60,12 +65,12 @@ async function carregarResumoSanitizacao() {
   atualizarBadgeSanitizacao(total);
 
   const ultimo = ciclos.data?.[0];
-  let quando = 'Nenhuma lista gerada ainda — a rotina gera a primeira no próximo ciclo.';
+  let quando = 'Nenhuma conferência feita ainda — a rotina faz a primeira na próxima execução.';
   if (ultimo) {
     const proxima = new Date(ultimo.gerada_em);
-    proxima.setMonth(proxima.getMonth() + intervalo);
-    quando = `Última lista: ${fmtData(ultimo.gerada_em)} (${ultimo.origem === 'job' ? 'automática' : 'gerada por um administrador'}, ` +
-             `${ultimo.total_sugeridas} sugestões). Próxima: ${fmtData(proxima.toISOString())} · ciclo de ${intervalo} ${intervalo === 1 ? 'mês' : 'meses'}.`;
+    proxima.setDate(proxima.getDate() + intervalo);
+    quando = `Última conferência: ${fmtData(ultimo.gerada_em)} (${ultimo.origem === 'job' ? 'automática' : 'gerada por um administrador'}, ` +
+             `${ultimo.total_sugeridas} sugestões). Próxima: ${fmtData(proxima.toISOString())} · ${intervalo === 1 ? 'conferida todo dia' : intervalo === 7 ? 'conferida toda semana' : `conferida a cada ${intervalo} dias`}.`;
   }
   el.textContent = `${total} pendente${total === 1 ? '' : 's'}` +
     (total ? ` (alta ${por.alta} · média ${por.media} · baixa ${por.baixa})` : '') + ' — ' + quando;
@@ -96,7 +101,6 @@ async function desenharListaSanitizacao() {
   const el = $('#san-body');
   const decididas = $('#san-visao').value === 'decididas';
   $('#san-head').innerHTML = decididas ? CABECALHO_DECIDIDAS : CABECALHO_PENDENTES;
-  $$('.san-so-admin').forEach(b => { b.style.display = ehAdministrador() ? '' : 'none'; });
   $('#san-btn-gerar').style.display = ehAdministrador() ? 'inline-flex' : 'none';
   $('#san-sel-alta').style.display = decididas ? 'none' : 'inline-flex';
 
@@ -120,7 +124,7 @@ async function desenharListaSanitizacao() {
   if (!data.length) {
     el.innerHTML = `<tr><td colspan="7"><div class="estado-vazio"><i class="ti ti-circle-check"></i>
       <p>${decididas ? 'Nenhuma decisão registrada ainda' : 'Nenhuma sugestão pendente'}</p>
-      <span>${decididas ? '' : 'Quando a rotina gerar a próxima lista, os candidatos sugeridos aparecem aqui'}</span></div></td></tr>`;
+      <span>${decididas ? '' : 'Quem completar 1 mês sem alteração, ou for enviado pelo botão Sanitizar, aparece aqui'}</span></div></td></tr>`;
     atualizarBarraLote();
     return;
   }
@@ -145,13 +149,12 @@ function linhaPendente(s) {
       <div><div class="cand-nome">${abrirCandidatoLink(s)}</div>
         <div class="cand-tel">${escapeHtml(rotuloLocal(s) === '—' ? '' : rotuloLocal(s))}${s.status_banco === 'inativo' ? ' · inativo' : ''}</div></div></div></td>
     <td>${escapeHtml(sug || '—')}</td>
-    <td class="san-motivo">${escapeHtml(s.motivo_texto)}</td>
+    <td class="san-motivo">${escapeHtml(s.motivo_texto)}${s.sugestao_origem === 'manual' && s.enviada_por_nome ? ` — ${escapeHtml(s.enviada_por_nome)}` : ''}</td>
     <td><span class="pill ${cls}" title="${s.pontos} ponto(s)">${lbl}</span></td>
     <td>${fmtData(s.ultima_movimentacao)}<div class="cand-tel">${tempoRelativo(s.ultima_movimentacao)}</div></td>
     <td class="td-acoes">
       <button class="btn-sm" onclick="decidirSugestao('${s.id}','manter')" title="Manter no banco e não sugerir de novo por um tempo"><i class="ti ti-shield-check"></i>Manter</button>
-      <button class="btn-sm" onclick="decidirSugestao('${s.id}','inativar')" title="Tira dos disponíveis; os dados continuam guardados"><i class="ti ti-user-off"></i>Inativar</button>
-      ${ehAdministrador() ? `<button class="btn-sm vermelho" onclick="decidirSugestao('${s.id}','excluir')" title="Apaga os dados pessoais definitivamente"><i class="ti ti-trash"></i></button>` : ''}
+      <button class="btn-sm" onclick="decidirSugestao('${s.id}','inativar')" title="Tira dos disponíveis; os dados ficam guardados e são apagados sozinhos depois do prazo definido em Configurações"><i class="ti ti-user-off"></i>Inativar</button>
     </td></tr>`;
 }
 
@@ -208,13 +211,21 @@ async function selecionarPorPrioridade(prioridade) {
 }
 
 // ── Decisão: nada é executado sem esta confirmação ──
+const rotuloMesesExpurgo = () => `${mesesExpurgo} ${mesesExpurgo === 1 ? 'mês' : 'meses'}`;
+
+// Prazo do expurgo automático, para quem inativa fora desta tela (botão Inativar do cadastro)
+async function carregarMesesExpurgo() {
+  const { data } = await db.from('configuracoes').select('valor').eq('chave', 'expurgo_meses_apos_inativar').maybeSingle();
+  const n = Number(data?.valor);
+  if (n >= 1) mesesExpurgo = Math.floor(n);
+  return mesesExpurgo;
+}
+
 const TEXTOS_DECISAO = {
   manter:   { titulo: 'Manter no banco', icone: 'ti-shield-check', rotulo: 'Manter',
     msg: n => `Manter ${n} candidato${n > 1 ? 's' : ''} no Banco de Talentos?\n\nEle${n > 1 ? 's' : ''} não volta${n > 1 ? 'm' : ''} a ser sugerido${n > 1 ? 's' : ''} pelo período escolhido abaixo.` },
   inativar: { titulo: 'Inativar', icone: 'ti-user-off', rotulo: 'Inativar',
-    msg: n => `Inativar ${n} candidato${n > 1 ? 's' : ''}?\n\nSaem da lista de disponíveis para atribuição, mas os dados continuam guardados e podem ser reativados no Banco de Talentos.` },
-  excluir:  { titulo: 'Excluir definitivamente', icone: 'ti-trash', rotulo: 'Excluir definitivamente',
-    msg: n => `EXCLUIR DEFINITIVAMENTE ${n} candidato${n > 1 ? 's' : ''}?\n\nNome, contatos, currículo e análises são apagados e NÃO podem ser recuperados. Sobram só números para as métricas e a identificação de um reenvio futuro.` }
+    msg: n => `Inativar ${n} candidato${n > 1 ? 's' : ''}?\n\nSaem da lista de disponíveis para atribuição. Os dados ficam guardados por ${rotuloMesesExpurgo()}; depois disso são APAGADOS automaticamente e não podem ser recuperados (sobra só o necessário para reconhecer um reenvio do currículo). Reativar antes desse prazo cancela a contagem.\n\nSe a pessoa estiver no Histórico do candidato (quem veio e quem não veio), o nome, o celular e o status dela continuam lá até você excluir a linha por lá.` }
 };
 
 function decidirSugestao(id, decisao) { abrirModalDecisao([id], decisao); }
@@ -225,7 +236,6 @@ function decidirLote(decisao) {
 }
 
 function abrirModalDecisao(ids, decisao) {
-  if (decisao === 'excluir' && !ehAdministrador()) { toast('Somente o administrador pode excluir definitivamente', 'erro'); return; }
   decisaoSanitizacao = { ids, decisao };
   const t = TEXTOS_DECISAO[decisao];
   $('#san-m-titulo').textContent = t.titulo;
@@ -236,18 +246,14 @@ function abrirModalDecisao(ids, decisao) {
   const sel = $('#san-m-meses');
   if (![...sel.options].some(o => Number(o.value) === mesesPadraoAdiar)) sel.add(new Option(`${mesesPadraoAdiar} meses`, mesesPadraoAdiar));
   sel.value = String(mesesPadraoAdiar);
-  $('#san-m-confirma').checked = false;
-  $('#san-m-confirma-wrap').style.display = decisao === 'excluir' ? 'flex' : 'none';
   const ok = $('#san-m-ok');
   ok.textContent = ids.length > 1 ? `${t.rotulo} (${ids.length})` : t.rotulo;
-  ok.classList.toggle('btn-perigo', decisao === 'excluir');
   abrirModal('modal-sanitizar');
 }
 
 async function confirmarDecisaoSanitizacao() {
   const { ids, decisao } = decisaoSanitizacao || {};
   if (!ids?.length) return;
-  if (decisao === 'excluir' && !$('#san-m-confirma').checked) { toast('Marque a confirmação para excluir', 'erro'); return; }
 
   const obs = $('#san-m-obs').value.trim() || null;
   const meses = decisao === 'manter' ? Number($('#san-m-meses').value) : null;
@@ -270,11 +276,11 @@ async function confirmarDecisaoSanitizacao() {
 
   fecharModal('modal-sanitizar');
   ids.forEach(id => selecaoSanitizacao.delete(id));
-  const verbo = { manter: 'mantido', inativar: 'inativado', excluir: 'excluído' }[decisao];
+  const verbo = { manter: 'mantido', inativar: 'inativado' }[decisao];
   if (falhas.length) {
     toast(`${feitas} ${verbo}${feitas === 1 ? '' : 's'}; ${falhas.length} não pôde ser aplicada: ${[...new Set(falhas)][0]}`, 'erro');
   } else {
-    toast(`${feitas} candidato${feitas === 1 ? '' : 's'} ${verbo}${feitas === 1 ? '' : 's'}${decisao === 'excluir' ? '. Os arquivos saem do armazenamento na próxima execução da rotina' : ''}`);
+    toast(`${feitas} candidato${feitas === 1 ? '' : 's'} ${verbo}${feitas === 1 ? '' : 's'}`);
   }
   await carregarSanitizacao();
 }

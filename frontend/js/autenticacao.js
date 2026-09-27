@@ -88,10 +88,12 @@ async function iniciarSessao(user) {
     mostrarEstadoCheio(navigator.onLine ? 'api-offline' : 'offline', () => iniciarSessao(user));
     return;
   }
+  iniciarMonitorDoRobo();
   irPara('dashboard');
 }
 
 async function sair() {
+  pararMonitorDoRobo();
   await db.auth.signOut();
   app.usuario = null; app.perfil = null;
   document.body.classList.remove('logado');

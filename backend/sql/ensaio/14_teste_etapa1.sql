@@ -55,7 +55,7 @@ begin
   perform pg_temp.deve_falhar($f$select bloquear_email('x@mail.test', '  ')$f$, 'Informe o motivo');
   perform pg_temp.deve_falhar($f$select bloquear_email('isto-nao-e-email', 'motivo')$f$, 'e-mail válido');
   perform pg_temp.deve_falhar($f$select bloquear_email(null, 'motivo')$f$, 'e-mail válido');
-  perform pg_temp.deve_falhar($f$select desbloquear_email('nunca.bloqueado@mail.test')$f$, 'não está na lista negra');
+  perform pg_temp.deve_falhar($f$select desbloquear_email('nunca.bloqueado@mail.test')$f$, 'não está bloqueado');
 
   -- ── bloqueio de um endereço ──
   r := bloquear_email('  Spam@Mail.TEST ', 'Envia propaganda');
@@ -79,9 +79,9 @@ begin
     'o e-mail do currículo e o de quem enviou ficam bloqueados';
   select lista_negra::text || '/' || status_banco::text || '/' || retencao_permanente || '/' || motivo_inativacao || '/' || lista_negra_motivo
     into s from candidatos where id = a;
-  assert s = 'true/inativo/true/Lista negra/Ex-funcionário com ocorrências', 'candidato na lista negra, got ' || s;
+  assert s = 'true/inativo/true/Bloqueado/Ex-funcionário com ocorrências', 'candidato bloqueado, got ' || s;
   select status::text || '/' || resultado_final into s from candidaturas where id = c1;
-  assert s = 'cancelado/Candidato na lista negra', 'a candidatura aberta foi cancelada, got ' || s;
+  assert s = 'cancelado/Candidato bloqueado', 'a candidatura aberta foi cancelada, got ' || s;
   assert (select resultado from entrevistas where id = e1) = 'cancelada', 'a entrevista marcada deixou de valer';
   assert (select count(*) from logs_auditoria where acao = 'lista_negra_bloqueio') = 3, 'três bloqueios auditados';
   assert not exists (select 1 from logs_auditoria where acao = 'lista_negra_bloqueio' and dados_depois::text ilike '%@%'),
@@ -89,9 +89,10 @@ begin
 
   -- não volta por nenhum caminho
   perform pg_temp.como(beto);
-  perform pg_temp.deve_falhar(format($f$select atribuir_candidato_vaga(%L, %L)$f$, a, vaga2), 'lista negra');
-  perform pg_temp.deve_falhar(format($f$select alterar_status_banco(%L, 'ativo')$f$, a), 'lista negra');
+  perform pg_temp.deve_falhar(format($f$select atribuir_candidato_vaga(%L, %L)$f$, a, vaga2), 'está bloqueado');
+  perform pg_temp.deve_falhar(format($f$select alterar_status_banco(%L, 'ativo')$f$, a), 'Remova o bloqueio');
   perform pg_temp.como(null);
+  update candidatos set ultima_movimentacao = now() - interval '40 days' where id = a;      -- passou do 1º mês (043): sem isso a checagem seria vazia
   assert not exists (select 1 from fn_sanitizacao_avaliar(fn_sanitizacao_parametros()) x where x.candidato_id = a),
     'a sanitização não sugere apagar quem está na lista negra';
 
@@ -158,6 +159,15 @@ begin
   assert s = 'true/inativo', 'o dono do endereço está na lista negra e inativo, got ' || s;
   select lista_negra::text || '/' || status_banco::text into s from candidatos where id = d;
   assert s = 'false/ativo', 'quem não usa o endereço não é afetado, got ' || s;
+
+  -- ── o nome mudou para "Bloqueios" (044): o banco não devolve mais o texto antigo ──
+  assert not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.prokind = 'f' and pg_get_functiondef(p.oid) ilike '%lista negra%'),
+    'nenhuma função do banco cita "lista negra"';
+  assert exists (select 1 from logs_auditoria where acao = 'lista_negra_bloqueio' and detalhe like 'Bloqueio. Motivo: %'),
+    'auditoria do bloqueio com o texto novo';
+  assert exists (select 1 from logs_auditoria where acao = 'lista_negra_desbloqueio' and detalhe = 'Bloqueio removido'),
+    'auditoria do desbloqueio com o texto novo';
 
   raise notice 'TESTE DA ETAPA 1: tudo certo';
 end $$;

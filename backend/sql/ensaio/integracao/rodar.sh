@@ -8,14 +8,15 @@ AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENSAIO="$AQUI/.."
 PORTA_PG="${PORTA_PG:-55432}"
 SEGREDO="super-secret-jwt-token-with-at-least-32-characters-long"
-limpar() { docker rm -f postgrest-ensaio pg-ensaio-recrutei >/dev/null 2>&1 || true; }
+# -fv: apaga também o volume anônimo que a imagem do Postgres cria a cada execução (sem o -v, cada ensaio deixava ~230 MB no disco do Docker)
+limpar() { docker rm -fv postgrest-ensaio pg-ensaio-recrutei >/dev/null 2>&1 || true; }
 trap limpar EXIT
 
 [[ -d "$AQUI/node_modules" ]] || (cd "$AQUI" && npm install --no-audit --no-fund --loglevel=error)
 
 "$ENSAIO/ensaio.sh" --manter | grep -E "TUDO CERTO|ERROR" || { echo "o ensaio SQL falhou"; exit 1; }
 
-docker rm -f postgrest-ensaio >/dev/null 2>&1 || true
+docker rm -fv postgrest-ensaio >/dev/null 2>&1 || true
 docker run -d --name postgrest-ensaio --network host \
   -e PGRST_DB_URI="postgres://authenticator:x@localhost:$PORTA_PG/rec" -e PGRST_DB_SCHEMAS=public -e PGRST_DB_ANON_ROLE=anon \
   -e PGRST_JWT_SECRET="$SEGREDO" -e PGRST_SERVER_PORT=3000 postgrest/postgrest:latest >/dev/null

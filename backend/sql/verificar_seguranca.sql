@@ -51,6 +51,12 @@ union all select 'usuário logado executa o expurgo direto (fn_expurgar_candidat
        has_function_privilege('authenticated','public.fn_expurgar_candidato(uuid,text)','EXECUTE')
 union all select 'usuário logado executa fn_sanitizacao_aplicar (contorna a checagem de administrador)',
        has_function_privilege('authenticated','public.fn_sanitizacao_aplicar(uuid,text,text,integer,uuid,boolean)','EXECUTE')
+union all select 'usuário logado executa o expurgo automático dos inativos (fn_expurgar_inativos_vencidos)',
+       has_function_privilege('authenticated','public.fn_expurgar_inativos_vencidos(integer)','EXECUTE')
+union all select 'anônimo executa o expurgo automático dos inativos (fn_expurgar_inativos_vencidos)',
+       has_function_privilege('anon','public.fn_expurgar_inativos_vencidos(integer)','EXECUTE')
+union all select 'usuário logado executa a manutenção diária (fn_manutencao_diaria, que expurga inativos)',
+       has_function_privilege('authenticated','public.fn_manutencao_diaria()','EXECUTE')
 union all select 'anônimo executa gerar sugestões de sanitização',
        has_function_privilege('anon','public.fn_gerar_sugestoes_sanitizacao(text,boolean)','EXECUTE')
 union all select 'alguma view do Banco de Talentos SEM security_invoker (ignoraria a RLS)',

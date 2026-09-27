@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-//  LISTA NEGRA DE E-MAILS
+//  BLOQUEIOS DE E-MAILS (a tela era "Lista negra"; os nomes internos — lista_negra, vw_lista_negra, este arquivo — continuam)
 //  Endereços dos quais o RH não quer mais receber nada (ex.: quem oferece risco à empresa). O pipeline ignora o
 //  remetente bloqueado e também o e-mail que aparecer DENTRO do currículo. Bloquear um candidato do banco cancela as
 //  candidaturas abertas, inativa-o, bloqueia todos os endereços ligados a ele e o impede de ser atribuído a vagas.
@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const estadoListaNegra = { versao: 0 };
-let candidatoParaBloquear = null;          // candidato do modal "Colocar na lista negra"
+let candidatoParaBloquear = null;          // candidato do modal "Bloquear candidato"
 
 async function carregarListaNegra() {
   const el = $('#ln-body');
@@ -34,8 +34,8 @@ async function carregarListaNegra() {
 
   if (!data.length) {
     el.innerHTML = `<tr><td colspan="5"><div class="estado-vazio"><i class="ti ti-shield-check"></i>
-      <p>${busca ? 'Nada encontrado' : 'A lista negra está vazia'}</p>
-      <span>${busca ? 'Tente outro trecho do e-mail ou do motivo' : 'Bloqueie um endereço acima, ou use o botão “Lista negra” no cadastro de um candidato'}</span></div></td></tr>`;
+      <p>${busca ? 'Nada encontrado' : 'Nenhum bloqueio registrado'}</p>
+      <span>${busca ? 'Tente outro trecho do e-mail ou do motivo' : 'Bloqueie um endereço acima, ou use o botão “Bloquear” no cadastro de um candidato'}</span></div></td></tr>`;
     return;
   }
 
@@ -48,11 +48,11 @@ async function carregarListaNegra() {
       ? `<a href="#" class="ln-link" onclick="event.preventDefault();abrirTalento('${l.candidato_id}')">${escapeHtml(l.candidato_nome || 'Nome não extraído')}</a>`
       : '<span class="sem-dados">—</span>'}</td>
     <td class="ln-acoes"><button type="button" class="btn-sm" onclick="liberarEmail('${escapeHtml(l.email)}', ${l.candidato_id ? `'${l.candidato_id}'` : 'null'})"
-      title="Tira este endereço da lista negra"><i class="ti ti-shield-check"></i>Liberar</button></td>
+      title="Remove o bloqueio deste endereço"><i class="ti ti-shield-check"></i>Liberar</button></td>
   </tr>`).join('');
 }
 
-// ── Bloquear um endereço (tela "Lista negra") ──
+// ── Bloquear um endereço (tela "Bloqueios") ──
 async function bloquearEmailManual() {
   const email = $('#ln-email').value.trim();
   const motivo = $('#ln-motivo').value.trim();
@@ -75,9 +75,9 @@ async function bloquearEmailManual() {
 // ── Liberar (com o candidato, se o endereço estiver ligado a um) ──
 async function liberarEmail(email, candidatoId) {
   if (!await confirmar({
-    titulo: 'Tirar da lista negra', rotulo: 'Liberar', perigo: false,
+    titulo: 'Remover bloqueio', rotulo: 'Liberar', perigo: false,
     mensagem: `Voltar a receber e-mails de ${email}?` +
-      (candidatoId ? '\n\nO candidato ligado a ele também sai da lista negra, mas continua INATIVO: você decide se o reativa.' : '')
+      (candidatoId ? '\n\nO candidato ligado a ele também é desbloqueado, mas continua INATIVO: você decide se o reativa.' : '')
   })) return;
   const { error } = await db.rpc('desbloquear_email', { p_email: email, p_candidato_id: candidatoId || null });
   if (error) { toast(mensagemErro(error), 'erro'); return; }
@@ -93,11 +93,11 @@ function abrirBloqueioCandidato() {
   candidatoParaBloquear = c;
   $('#ln-m-motivo').value = '';
   $('#ln-m-msg').textContent =
-    `${c.nome || 'Este candidato'}${c.email ? ` (${c.email})` : ''} vai para a lista negra:\n` +
+    `${c.nome || 'Este candidato'}${c.email ? ` (${c.email})` : ''} vai ser bloqueado:\n` +
     '• o e-mail dele e o de quem enviou o currículo passam a ser ignorados;\n' +
     '• as candidaturas abertas são canceladas (entrevistas marcadas deixam de valer);\n' +
     '• ele é inativado e nunca mais pode ser atribuído a uma vaga.\n\n' +
-    'Nada é apagado. Você pode tirá-lo da lista depois.';
+    'Nada é apagado. Você pode remover o bloqueio depois.';
   abrirModal('modal-lista-negra');
 }
 
@@ -116,7 +116,7 @@ async function confirmarBloqueioCandidato() {
 
   fecharModal('modal-lista-negra');
   candidatoParaBloquear = null;
-  toast('Candidato colocado na lista negra');
+  toast('Candidato bloqueado');
   opcoesBancoCarregadas = false;
   await recarregarTalento();
   if (app.telaAtual === 'listanegra') carregarListaNegra();

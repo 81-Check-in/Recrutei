@@ -8,8 +8,9 @@
 
 const estadoBanco = novoEstadoLista(50);
 
-// Filtros avançados: null = nenhum. Os de TEXTO (palavras no currículo, endereço, rotatividade) vão para a
-// função filtrar_banco_talentos(); os demais são colunas com índice e entram como filtro normal.
+// Filtros avançados: null = nenhum. Os de TEXTO (palavras no currículo, endereço, rotatividade, e-mail, telefone e
+// cargos com experiência) vão para a função filtrar_banco_talentos(); os demais são colunas com índice e entram
+// como filtro normal.
 let filtrosAvancados = null;
 let opcoesBancoCarregadas = false;
 
@@ -19,6 +20,9 @@ function alternarFiltrosAvancados() {
   painel.style.display = abrir ? 'block' : 'none';
   $('#btn-filtros-av').setAttribute('aria-expanded', String(abrir));
 }
+
+const TELEFONE_MIN_DIGITOS = 3;          // menos que isso casaria com quase todo mundo
+const apenasNumeros = v => String(v || '').replace(/\D/g, '');
 
 // Só entra no objeto o que a pessoa preencheu. `texto` alimenta a função do banco; `colunas`, os filtros normais.
 function lerFiltrosAvancados() {
@@ -32,6 +36,12 @@ function lerFiltrosAvancados() {
     texto.palavras_onde = $('#av-palavras-onde').value;
     ativos++;
   }
+  const cargos = $('#av-cargos-exp').value.split(',').map(p => p.trim()).filter(Boolean);
+  if (cargos.length) { texto.cargos_experiencia = cargos; ativos++; }
+  const email = $('#av-email').value.trim();
+  if (email) { texto.email = email; ativos++; }
+  const telefone = apenasNumeros($('#av-telefone').value);
+  if (telefone.length >= TELEFONE_MIN_DIGITOS) { texto.telefone = telefone; ativos++; }
   const local = $('#av-local').value.trim();
   if (local) { texto.local = local; ativos++; }
   const excluirLocais = $('#av-excluir-locais').value.split(',').map(p => p.trim()).filter(Boolean);
@@ -55,29 +65,48 @@ function lerFiltrosAvancados() {
   return { texto, colunas, ativos };
 }
 
-function atualizarBadgeFiltrosAv(ativos) {
+// Filtros que moram no painel "Mais filtros": os avançados APLICADOS (o selo não conta o que foi digitado e ainda não
+// aplicado), a cidade e a situação quando não é "Disponíveis"
+function contarFiltrosDoPainel() {
+  return (filtrosAvancados?.ativos || 0) + ($('#filtro-b-cidade').value.trim() ? 1 : 0) + ($('#filtro-b-status').value !== 'ativo' ? 1 : 0);
+}
+
+// Há busca ou filtro em uso, na barra ou no painel? É o que decide se o botão "Limpar filtros" aparece.
+function algumFiltroEmUso() {
+  return contarFiltrosDoPainel() > 0
+    || ['#busca-banco', '#filtro-b-area', '#filtro-b-cargo', '#filtro-b-nivel', '#filtro-b-sexo'].some(s => $(s).value.trim());
+}
+
+function atualizarIndicadoresFiltros() {
+  const n = contarFiltrosDoPainel();
   const badge = $('#badge-filtros-av');
-  badge.style.display = ativos ? 'inline-flex' : 'none';
-  badge.textContent = ativos;
-  $('#btn-filtros-av').classList.toggle('ativo', ativos > 0);
+  badge.style.display = n ? 'inline-flex' : 'none';
+  badge.textContent = n;
+  $('#btn-filtros-av').classList.toggle('ativo', n > 0);
+  $('#btn-limpar-filtros').style.display = algumFiltroEmUso() ? '' : 'none';
 }
 
 // Guarda o que está nos campos avançados como filtro ativo (sem recarregar a lista)
 function guardarFiltrosAvancados() {
   const { texto, colunas, ativos } = lerFiltrosAvancados();
-  filtrosAvancados = ativos ? { texto: Object.keys(texto).length ? texto : null, colunas } : null;
-  atualizarBadgeFiltrosAv(ativos);
+  filtrosAvancados = ativos ? { texto: Object.keys(texto).length ? texto : null, colunas, ativos } : null;
+  atualizarIndicadoresFiltros();
   return ativos;
 }
 
 function aplicarFiltrosAvancados() {
+  const fone = $('#av-telefone').value.trim();
+  if (fone && apenasNumeros(fone).length < TELEFONE_MIN_DIGITOS) {
+    toast(`Digite pelo menos ${TELEFONE_MIN_DIGITOS} números do telefone`, 'erro');
+    return Promise.resolve();
+  }
   const ativos = guardarFiltrosAvancados();
   toast(ativos ? `${ativos} filtro${ativos > 1 ? 's' : ''} aplicado${ativos > 1 ? 's' : ''}` : 'Nenhum filtro preenchido');
   return carregarBanco();
 }
 
 function limparCamposAvancados() {
-  ['av-palavras', 'av-local', 'av-excluir-locais', 'av-idade-min', 'av-idade-max', 'av-experiencia']
+  ['av-palavras', 'av-cargos-exp', 'av-email', 'av-telefone', 'av-local', 'av-excluir-locais', 'av-idade-min', 'av-idade-max', 'av-experiencia']
     .forEach(id => { $('#' + id).value = ''; });
   $('#av-palavras-modo').value = 'todas';
   $('#av-palavras-onde').value = 'curriculo';
@@ -87,21 +116,32 @@ function limparCamposAvancados() {
   $('#av-revisao').checked = false;
   $('#av-sem-info').checked = true;
   filtrosAvancados = null;
-  atualizarBadgeFiltrosAv(0);
+  atualizarIndicadoresFiltros();
 }
 
+// Botão "Limpar" do painel "Mais filtros": limpa o que mora nele (cidade, situação e os avançados). Nome, área, cargo,
+// nível e sexo, que ficam na barra, continuam.
 function limparFiltrosAvancados() {
+  $('#filtro-b-cidade').value = '';
+  $('#filtro-b-status').value = 'ativo';
   limparCamposAvancados();
   return carregarBanco();
 }
 
-// Volta a lista ao ponto de partida (disponíveis, sem busca nem filtro) sem recarregar
-function limparTodosFiltrosBanco() {
+// Volta a lista ao ponto de partida (disponíveis, sem busca nem filtro) sem recarregar.
+// manterOrdem: o botão da barra não mexe na ordem escolhida (ordenar não é filtrar); os atalhos de outras telas, sim.
+function limparTodosFiltrosBanco(manterOrdem = false) {
   ['#busca-banco', '#filtro-b-cidade', '#filtro-b-area', '#filtro-b-cargo', '#filtro-b-nivel', '#filtro-b-sexo']
     .forEach(s => { $(s).value = ''; });
   $('#filtro-b-status').value = 'ativo';
-  $('#ordem-banco').value = 'entrada';
-  limparCamposAvancados();
+  if (!manterOrdem) $('#ordem-banco').value = 'entrada';
+  limparCamposAvancados();                                  // termina atualizando o selo e o botão "Limpar filtros"
+}
+
+// Botão "Limpar filtros" da barra: tira a busca e todos os filtros (o painel "Mais filtros" incluído) e recarrega
+function limparFiltrosDaBarra() {
+  limparTodosFiltrosBanco(true);
+  return carregarBanco();
 }
 
 // ── Consulta ──
@@ -203,7 +243,7 @@ function maisBanco() {
 function htmlTagsCandidato(c) {
   const t = [];
   if (c.lista_negra)
-    t.push('<span class="tag-mini preto" title="Bloqueado pelo RH: não recebe vagas nem e-mails">Lista negra</span>');
+    t.push('<span class="tag-mini preto" title="Bloqueado pelo RH: não recebe vagas nem e-mails">Bloqueado</span>');
   if (c.revisao_manual && !c.reanalise_solicitada_em)
     t.push('<span class="tag-mini amarelo" title="A IA não classificou com segurança: confira o currículo">Revisão manual</span>');
   if (c.reanalise_solicitada_em)
@@ -251,6 +291,7 @@ function htmlCartaoBanco(c, extra = {}) {
 async function carregarBanco() {
   if (rankingVaga) return carregarRankingVaga();
   atualizarModoRanking();
+  atualizarIndicadoresFiltros();
   const el = $('#banco-lista');
   carregarOpcoesBanco();
 
@@ -278,7 +319,7 @@ async function carregarBanco() {
 //  SELEÇÃO DE CVs POR VAGA  (Vagas → "Selecionar CVs")
 //  Os currículos disponíveis do Banco de Talentos com EXATAMENTE o setor, a função e o nível da vaga (a qualificação que a
 //  IA gravou em cada currículo), da maior nota para a menor. Sem IA: é um filtro SQL. Quem foi reprovado/descartado nesta
-//  vaga, está na lista negra ou já está em processo não aparece. A conta está em selecionar_curriculos_vaga()
+//  vaga, está bloqueado ou já está em processo não aparece. A conta está em selecionar_curriculos_vaga()
 //  (backend/sql/033, lojas de referência na 038); o painel só a chama e desenha.
 //  A distância (limite de km, ordem "mais perto" e o "X km da CFC" do card) é medida até a loja mais próxima ENTRE AS
 //  ESCOLHIDAS nos chips "Distância em relação a": começam com as lojas da vaga e o RH marca outras, várias ou TODAS.
@@ -301,6 +342,7 @@ async function verCandidatosDaVaga(vagaId, titulo, pronta = true) {
   rankingVaga = { id: vagaId, titulo };
   $('#rk-ordem').value = 'nota';
   $('#rk-km').value = '';
+  $('#rk-sexo').value = '';
   montarLojasRanking(lojasDaVaga);
   estadoBanco.limite = estadoBanco.tamanhoPagina;
   irPara('banco');
@@ -386,16 +428,19 @@ async function carregarRankingVaga() {
   const versao = ++estadoBanco.versao;
 
   const km = $('#rk-km').value;
+  const sexo = $('#rk-sexo').value;
   const { data: ranking, error } = await db.rpc('selecionar_curriculos_vaga', {
     p_vaga_id: rankingVaga.id, p_limite: estadoBanco.limite, p_deslocamento: 0,
-    p_ordem: $('#rk-ordem').value, p_km_max: km ? Number(km) : null, p_lojas: lojasDoRanking() });
+    p_ordem: $('#rk-ordem').value, p_km_max: km ? Number(km) : null, p_lojas: lojasDoRanking(),
+    ...(sexo ? { p_sexo: sexo } : {}) });          // só envia quando há filtro: sem ele a função da 038 (sem p_sexo) segue funcionando
   if (versao !== estadoBanco.versao) return;               // trocou de tela ou de vaga enquanto esperava
   if (error) { erro(el, mensagemErro(error)); destravarBotaoMais($('#banco-mais')); return; }
 
   estadoBanco.total = ranking[0]?.total ?? 0;
   if (!ranking.length) {
-    vazio(el, 'ti-target-arrow', 'Nenhum currículo com o setor, a função e o nível desta vaga',
-      km ? 'Nenhum candidato mora até essa distância da loja mais próxima entre as escolhidas. Quem não tem região identificada fica de fora quando há limite de distância'
+    vazio(el, 'ti-target-arrow', sexo ? 'Nenhum currículo selecionado com esse sexo' : 'Nenhum currículo com o setor, a função e o nível desta vaga',
+      sexo ? 'Escolha "Qualquer sexo" (ou tire o limite de distância) para ver os outros currículos selecionados para esta vaga'
+      : km ? 'Nenhum candidato mora até essa distância da loja mais próxima entre as escolhidas. Quem não tem região identificada fica de fora quando há limite de distância'
          : 'Só aparecem currículos já qualificados pela IA com exatamente esse setor, função e nível. Quem foi reprovado nesta vaga não volta a ela');
     atualizarPaginacao($('#banco-mais'), estadoBanco, $('#banco-total'), ' currículos');
     return;
@@ -454,6 +499,8 @@ function htmlSugestaoIA(c) {
 }
 
 // ── Região e distância até as lojas (backend/sql/030) ──
+// De onde veio o sexo (backend/sql/041): 'informado' é o comum e não precisa de aviso. A estimativa pelo nome é só para estatística.
+const ORIGEM_SEXO = { ia_nome: 'estimado pela IA a partir do nome', manual: 'definido pelo RH' };
 const ORIGEM_REGIAO = { manual: 'definida pelo RH', ia: 'identificada pela IA', texto: 'pelo endereço do currículo', cidade: 'pela cidade' };
 const formatarKm = km => `${Number(km).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
 // Só para dar uma ideia rápida; o número exato está ao lado. É linha reta entre os centros das regiões (estimativa).
@@ -504,7 +551,8 @@ function desenharTalento(c, hist) {
       <button type="button" class="btn-sm" id="t-btn-reanalisar" onclick="reanalisarCandidato()"
         title="Refaz a análise da IA a partir do currículo atual"><i class="ti ti-refresh"></i>Reanalisar</button></div>`;
 
-  const sexo = c.sexo === 'masculino' ? 'Masculino' : c.sexo === 'feminino' ? 'Feminino' : '—';
+  const sexo = c.sexo === 'masculino' ? 'Masculino' : c.sexo === 'feminino' ? 'Feminino' : '';
+  const sexoTxt = sexo ? sexo + (ORIGEM_SEXO[c.sexo_origem] ? ` — ${ORIGEM_SEXO[c.sexo_origem]}` : '') : '';
   const escolaridade = { nenhuma: 'Sem escolaridade', fundamental: 'Fundamental', medio: 'Médio', tecnico: 'Técnico',
                          superior: 'Superior', pos: 'Pós-graduação' }[c.escolaridade] || '—';
   const dado = (rotulo, valor) =>
@@ -516,7 +564,7 @@ function desenharTalento(c, hist) {
     dado('E-mail enviado em', c.curriculo_recebido_em ? fmtDataHoraCompleta(c.curriculo_recebido_em) : '') +
     dado('Mora em', rotuloLocal(c) === '—' ? '' : rotuloLocal(c)) +
     dado('Região (distância até as lojas)', c.regiao_nome ? `${c.regiao_nome} — ${ORIGEM_REGIAO[c.regiao_origem] || 'identificada'}` : 'Não identificada') +
-    dado('Idade', c.idade != null ? `${c.idade_estimada ? '~' : ''}${c.idade} anos` : '') + dado('Sexo', sexo) +
+    dado('Idade', c.idade != null ? `${c.idade_estimada ? '~' : ''}${c.idade} anos` : '') + dado('Sexo', sexoTxt) +
     dado('Escolaridade', escolaridade) +
     dado('Experiência', c.anos_experiencia != null ? `${c.anos_experiencia} ano${Number(c.anos_experiencia) === 1 ? '' : 's'}` : '') +
     dado('CNH', c.cnh) +
@@ -544,19 +592,21 @@ function desenharTalento(c, hist) {
   const ativo = c.status_banco === 'ativo';
   $('#t-btn-atribuir').style.display = ativo ? 'flex' : 'none';
   const st = $('#t-btn-status');
-  st.style.display = ['ativo', 'inativo'].includes(c.status_banco) && !c.lista_negra ? 'flex' : 'none';   // reativar não vale na lista negra
+  st.style.display = ['ativo', 'inativo'].includes(c.status_banco) && !c.lista_negra ? 'flex' : 'none';   // reativar não vale para quem está bloqueado
 
   const negra = $('#t-negra');
   negra.style.display = c.lista_negra ? 'flex' : 'none';
   negra.innerHTML = c.lista_negra
-    ? `<i class="ti ti-ban"></i><div><strong>Na lista negra</strong>${c.lista_negra_motivo ? ` — ${escapeHtml(c.lista_negra_motivo)}` : ''}
+    ? `<i class="ti ti-ban"></i><div><strong>Bloqueado</strong>${c.lista_negra_motivo ? ` — ${escapeHtml(c.lista_negra_motivo)}` : ''}
        <div class="aviso-negra-meta">${c.lista_negra_por_nome ? `por ${escapeHtml(c.lista_negra_por_nome)} · ` : ''}${c.lista_negra_em ? fmtData(c.lista_negra_em) : ''}
        · não recebe vagas nem e-mails</div></div>` : '';
   $('#t-btn-negra').style.display = c.lista_negra || c.status_banco === 'expurgado' ? 'none' : 'flex';
   $('#t-btn-liberar').style.display = c.lista_negra ? 'flex' : 'none';
   st.innerHTML = c.status_banco === 'inativo'
     ? '<i class="ti ti-user-check"></i>Reativar' : '<i class="ti ti-user-off"></i>Inativar';
-  $('#t-btn-excluir').style.display = ehAdministrador() ? 'flex' : 'none';
+  // Sanitizar: qualquer usuário; só para quem está ATIVO (quem já está inativo tem os dados apagados sozinho depois do prazo);
+  // não vale para quem está em processo, é contratado (retenção permanente) ou já foi excluído
+  $('#t-btn-sanitizar').style.display = c.status_banco === 'ativo' && !c.retencao_permanente ? 'flex' : 'none';
   $('#t-btn-curriculo').style.display = c.storage_path ? 'flex' : 'none';
   $('#t-btn-baixar').style.display = c.storage_path ? 'flex' : 'none';
   $('#t-sem-arquivo').style.display = c.storage_path ? 'none' : 'flex';
@@ -819,11 +869,12 @@ async function alternarInativo() {
   const c = app.talentoAberto;
   if (!c) return;
   const inativar = c.status_banco === 'ativo';
+  const meses = inativar ? await carregarMesesExpurgo() : 0;          // prazo do expurgo automático (Configurações)
   if (!await confirmar({
     titulo: inativar ? 'Inativar candidato' : 'Reativar candidato', rotulo: inativar ? 'Inativar' : 'Reativar',
     perigo: false,
     mensagem: inativar
-      ? `Tirar ${c.nome || 'este candidato'} da lista de disponíveis?\n\nOs dados continuam guardados (ele só deixa de aparecer para atribuição). Você pode reativá-lo depois.`
+      ? `Tirar ${c.nome || 'este candidato'} da lista de disponíveis?\n\nEle deixa de aparecer para atribuição. Os dados ficam guardados por ${meses} ${meses === 1 ? 'mês' : 'meses'}; depois disso são APAGADOS automaticamente (sobra só o necessário para reconhecer um reenvio do currículo). Reativar antes desse prazo cancela a contagem.`
       : `Voltar ${c.nome || 'este candidato'} para a lista de disponíveis?`
   })) return;
   const { error } = await db.rpc('alterar_status_banco', { p_candidato_id: c.id, p_novo: inativar ? 'inativo' : 'ativo' });
@@ -832,20 +883,21 @@ async function alternarInativo() {
   await recarregarTalento();
 }
 
-async function excluirDadosCandidato() {
+// O RH não inativa em massa nem apaga direto: manda o candidato para a fila da Sanitização, onde a decisão fica registrada
+// (manter ou inativar; quem fica inativo tem os dados apagados sozinho depois do prazo — backend/sql/047)
+async function sanitizarCandidato() {
   const c = app.talentoAberto;
-  if (!c || !ehAdministrador()) return;
+  if (!c) return;
   if (!await confirmar({
-    titulo: 'Excluir dados do candidato', rotulo: 'Excluir definitivamente',
-    mensagem: `Apagar TODOS os dados pessoais de ${c.nome || 'este candidato'} (pedido do titular — LGPD art. 18)?\n\n` +
-              'Nome, contatos, currículo e análises são apagados e não podem ser recuperados. ' +
-              'Se ele estiver em um processo seletivo, a candidatura é cancelada. Sobram só números para as métricas.'
+    titulo: 'Enviar para a sanitização', rotulo: 'Enviar para a sanitização', perigo: false,
+    mensagem: `Mandar ${c.nome || 'este candidato'} para a fila de Sanitização?\n\n` +
+              'Nada é apagado agora: ele entra na lista com prioridade alta e lá se decide se mantém no banco ou inativa.'
   })) return;
-  const { error } = await db.rpc('excluir_dados_candidato', { p_candidato_id: c.id, p_motivo: 'Exclusão pelo painel' });
+  const { data, error } = await db.rpc('sanitizacao_enviar_candidato', { p_candidato_id: c.id });
   if (error) { toast(mensagemErro(error), 'erro'); return; }
   fecharDrawer();
-  toast('Dados excluídos. O arquivo do currículo sai do armazenamento na próxima execução da rotina');
-  if (app.telaAtual === 'banco') carregarBanco();
+  toast(data.ja_na_lista ? 'Este candidato já está na fila de Sanitização' : 'Enviado para a fila de Sanitização');
+  carregarResumoSanitizacao();                       // atualiza o selo do menu
 }
 
 // ── Editar dados ──

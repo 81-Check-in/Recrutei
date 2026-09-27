@@ -121,6 +121,10 @@ select.sel{height:38px;padding:0 10px;border:1px solid var(--gray-border);border
 .btn-filtros-av.ativo{border-color:var(--blue);color:var(--blue-mid);background:var(--blue-light)}
 .badge-cnt{font-size:11px;font-weight:600;padding:1px 7px;border-radius:20px;
   background:var(--navy);color:#fff}
+.btn-limpar-filtros{display:flex;align-items:center;gap:6px;height:38px;padding:0 12px;border:0;border-radius:8px;
+  background:none;color:var(--gray-text);font-size:13px;font-weight:500;cursor:pointer;transition:.15s}
+.btn-limpar-filtros:hover{color:var(--red);background:var(--red-light)}
+.av-dica{font-size:12px;color:var(--gray-text);line-height:1.5;margin:16px 0 0}
 .painel-av{background:var(--surface);border:1px solid var(--gray-border);border-radius:12px;
   padding:18px 20px;margin-bottom:18px}
 .av-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px 16px}
@@ -460,7 +464,7 @@ tbody tr:hover td{background:var(--hover-bg)}
 .config-grupo{background:var(--surface);border-radius:12px;border:1px solid var(--gray-border);
   padding:18px 20px;margin-bottom:14px}
 .config-grupo h3{font-size:14px;font-weight:600;color:var(--navy);margin-bottom:14px}
-.config-item{display:flex;align-items:center;gap:12px;padding:11px 0;
+.config-item{display:flex;align-items:flex-start;gap:12px;padding:13px 0;
   border-bottom:1px solid var(--gray-border)}
 .config-item:last-child{border-bottom:none}
 .config-info{flex:1;min-width:0}
@@ -473,6 +477,48 @@ tbody tr:hover td{background:var(--hover-bg)}
   color:var(--navy);cursor:pointer;width:220px}
 .config-toggle input{width:16px;height:16px;cursor:pointer}
 .config-est{font-size:11.5px;color:var(--blue-mid);margin-top:3px}
+.hist-obs{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gray-text);font-size:12.5px}
+.hist-acoes{white-space:nowrap;text-align:right}
+.hist-nome{cursor:pointer;font-weight:600}
+.hist-detalhe td{background:var(--gray-bg);padding:14px 18px}
+.hist-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 22px}
+.hist-grade .dado{margin:0}
+.hist-obs-completa{grid-column:1/-1;font-size:12.5px;color:var(--text-2);white-space:pre-wrap}
+.config-ferramentas{margin-bottom:14px}
+.config-atalhos{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.config-atalho{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--gray-border);
+  background:var(--surface);color:var(--gray-text);cursor:pointer}
+.config-atalho:hover{border-color:var(--blue);color:var(--blue)}
+.config-grupo-desc{font-size:12px;color:var(--gray-text);margin:-8px 0 6px}
+.config-titulo{font-size:13.5px;font-weight:600;color:var(--navy);line-height:1.35}
+.config-item .config-desc{font-size:12px;margin-top:3px;line-height:1.45}
+.config-chave.tec{font-size:10.5px;font-weight:400;color:var(--gray-text);opacity:.75;margin-top:5px}
+.config-tag-sem-efeito{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:600;
+  background:var(--yellow-light);color:var(--yellow);vertical-align:middle;white-space:nowrap}
+.config-aviso{font-size:11.5px;color:var(--yellow);margin-top:5px;line-height:1.4}
+.config-controle{display:flex;flex-direction:column;align-items:flex-start;gap:3px;flex-shrink:0}
+.config-unidade{font-size:11px;color:var(--gray-text);padding-left:2px}
+.config-input.larga{width:300px;resize:vertical;font-family:inherit}
+.config-input.mono{font-family:ui-monospace,monospace;font-size:11.5px}
+.zona-perigo{border-color:#fca5a5}
+.zona-perigo h3{color:var(--red)}
+.zona-perigo.pausada{background:var(--red-light)}
+.zona-perigo .config-item{align-items:flex-start}
+.zona-perigo .config-btn-perigo{flex-shrink:0;white-space:nowrap}
+.perigo-estado{display:inline-block;margin-top:8px;padding:5px 10px;border-radius:7px;font-size:12.5px;font-weight:600}
+.perigo-estado.ok{background:var(--gray-bg);color:var(--gray-text)}
+.perigo-estado.parada{background:var(--red);color:#fff}
+.pausa-intro{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:12px}
+.pausa-bloco{border:1px solid var(--gray-border);border-radius:10px;padding:11px 14px;margin-bottom:11px;background:var(--gray-bg)}
+.pausa-bloco.prejuizo{border-color:#fca5a5;background:var(--red-light)}
+.pausa-tit{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:6px}
+.pausa-bloco.prejuizo .pausa-tit{color:var(--red)}
+.pausa-bloco ul{margin:0;padding-left:18px;font-size:12.5px;color:var(--text-2);line-height:1.55}
+.pausa-bloco li+li{margin-top:4px}
+.pausa-alivio{display:flex;align-items:flex-start;gap:6px;margin-top:9px;padding-top:9px;border-top:1px solid #fca5a5;font-size:12.5px;color:var(--text-2)}
+.pausa-alivio i{color:var(--green);font-size:15px;margin-top:1px}
+.pausa-erro{margin-top:6px;font-size:12px;font-weight:500;color:var(--red)}
+#pausa-ia-ok:disabled{opacity:.5;cursor:not-allowed}
 .config-total{margin-top:12px;padding:10px 12px;background:var(--blue-light);
   border-radius:8px;font-size:12.5px;color:var(--blue-mid)}
 
@@ -799,6 +845,8 @@ body{background:var(--bg);color:var(--fg)}
 /* Campos herdam a cor do tema; :where() zera a especificidade para não vencer regras próprias */
 :where(:root[data-theme="dark"]) :where(input,textarea,select){color:var(--text)}
 :where(:root[data-theme="dark"]) ::placeholder{color:#8794a3}
+/* Estes campos usam --white (branco fixo, bom no tema claro): no escuro ficavam brancos com letra clara, ilegíveis */
+:root[data-theme="dark"] :is(.consid-campo,.ln-form input){background:var(--gray-bg)}
 
 /* Variáveis de cor de destaque viram tons claros (para texto); os fundos preenchidos são fixados aqui */
 :root[data-theme="dark"] :is(.btn-primary,.tab.active .cnt){background:#3574ae;color:#fff}
@@ -959,7 +1007,7 @@ tbody tr.linha-sel td{background:var(--blue-light)}
 #san-tabela{min-width:900px}
 #san-tabela input[type=checkbox]{width:16px;height:16px;cursor:pointer}
 
-/* lista negra */
+/* bloqueios (tela e selo) */
 .tag-mini.preto{background:var(--red);color:#fff}
 .ln-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
 .ln-form input{flex:1 1 220px;min-width:0;height:38px;padding:0 12px;border:1px solid var(--gray-border);border-radius:9px;
@@ -1040,3 +1088,53 @@ tbody tr.linha-sel td{background:var(--blue-light)}
 .res-aba{border:0;background:transparent;padding:8px 14px;font:inherit;font-size:13px;font-weight:500;color:var(--gray-text);cursor:pointer;
   border-bottom:2px solid transparent;margin-bottom:-1px}
 .res-aba.ativa{color:var(--blue-mid);border-bottom-color:var(--blue-mid)}
+
+/* ══ STATUS DO ROBÔ ══
+   O ponto do menu e a faixa da tela usam a mesma classe de estado: ocioso, processando, fora, pausado, erro, sem-sinal, sem-dados. */
+.nav-luz{margin-left:auto;width:9px;height:9px;border-radius:50%;flex-shrink:0;background:var(--gray-text)}
+.nav-luz.ocioso{background:var(--green)}
+.nav-luz.processando{background:var(--blue);animation:pulsar-luz 1.4s ease-in-out infinite}
+.nav-luz.pausado{background:var(--yellow)}
+.nav-luz.erro,.nav-luz.sem-sinal{background:var(--red)}
+.nav-luz.sem-dados{opacity:.45}
+@keyframes pulsar-luz{0%,100%{box-shadow:0 0 0 0 rgba(96,165,250,.6)}50%{box-shadow:0 0 0 5px rgba(96,165,250,0)}}
+@media(prefers-reduced-motion:reduce){.nav-luz.processando,.status-topo.processando .status-luz{animation:none}}
+@media (min-width:901px){.sidebar-collapsed .nav-luz{position:absolute;top:8px;right:9px}}
+.status-topo{display:flex;align-items:center;gap:16px;padding:18px 22px;margin-bottom:18px;background:var(--surface);
+  border:1px solid var(--gray-border);border-left:5px solid var(--gray-text);border-radius:14px}
+.status-topo.ocioso{border-left-color:var(--green)}
+.status-topo.processando{border-left-color:var(--blue)}
+.status-topo.pausado{border-left-color:var(--yellow)}
+.status-topo.erro,.status-topo.sem-sinal{border-left-color:var(--red)}
+.status-luz{width:14px;height:14px;border-radius:50%;flex-shrink:0;background:var(--gray-text)}
+.status-topo.ocioso .status-luz{background:var(--green)}
+.status-topo.processando .status-luz{background:var(--blue);animation:pulsar-luz 1.4s ease-in-out infinite}
+.status-topo.pausado .status-luz{background:var(--yellow)}
+.status-topo.erro .status-luz,.status-topo.sem-sinal .status-luz{background:var(--red)}
+.status-topo-txt{flex:1;min-width:0}
+.status-estado{font-size:17px;font-weight:600;color:var(--navy);letter-spacing:-.015em}
+.status-detalhe{font-size:13px;color:var(--text-2);margin-top:3px;line-height:1.45}
+.status-atualizado{font-size:11.5px;color:var(--gray-text);text-align:right;flex-shrink:0}
+.status-sub{font-size:11.5px;color:var(--gray-text);margin-top:6px;min-height:16px}
+.status-sub .link{padding:0}
+.status-barra{height:6px;border-radius:4px;background:var(--gray-bg);overflow:hidden;margin-top:10px}
+.status-barra i{display:block;height:100%;border-radius:4px;background:var(--blue);transition:width .4s ease}
+.status-lista{display:flex;flex-direction:column}
+.status-linha{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 0;font-size:13px;
+  color:var(--text-2);border-bottom:1px solid var(--gray-border)}
+.status-linha:last-of-type{border-bottom:0}
+.status-linha b{font-weight:600;color:var(--navy);text-align:right}
+.status-nota{font-size:12px;color:var(--gray-text);line-height:1.55;margin-top:10px}
+.status-erro{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--red);background:var(--red-light);
+  border-radius:8px;padding:10px 12px;margin-top:10px;line-height:1.5;word-break:break-word}
+@media(max-width:900px){.status-topo{flex-wrap:wrap}.status-atualizado{text-align:left;width:100%}}
+
+
+/* dias da semana do robô (Configurações): botões de marcar, na ordem seg → dom */
+.config-dias{display:flex;gap:6px;flex-wrap:wrap;max-width:360px}
+.config-dia{position:relative;cursor:pointer}
+.config-dia input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.config-dia span{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:34px;padding:0 10px;
+  border:1px solid var(--gray-border);border-radius:8px;background:var(--surface);color:var(--text-2);font-size:12.5px;font-weight:500;transition:.15s}
+.config-dia input:checked + span{background:var(--blue-light);border-color:var(--blue);color:var(--blue-mid)}
+.config-dia input:focus-visible + span{outline:2px solid var(--blue);outline-offset:2px}

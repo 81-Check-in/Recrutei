@@ -11,18 +11,24 @@ const posicaoEmpresa = sigla => {
 
 // Devolve true/false: iniciarSessao() usa o resultado para decidir se mostra a
 // tela cheia de "API fora do ar" (sem os setores/empresas, o app não funciona).
+// Configurações (tabela configuracoes) que o próprio painel usa, além do robô: telefone e mensagem do WhatsApp
+const CHAVES_CONFIG_DO_PAINEL = ['ddi_padrao', 'ddd_padrao', 'mensagem_convocacao_padrao'];
+
 async function carregarBase() {
   try {
-    const [setores, empresas, funcoes, niveis] = await Promise.all([
+    const [setores, empresas, funcoes, niveis, config] = await Promise.all([
       db.from('setores').select('*').eq('ativo', true).order('ordem'),
       db.from('empresas').select('*').eq('ativo', true).order('sigla'),
       db.from('funcoes_setor').select('setor_id,nome,aceita_iniciante').eq('ativo', true).order('nome'),
-      db.from('niveis_funcao').select('codigo,nome').eq('ativo', true).order('ordem')
+      db.from('niveis_funcao').select('codigo,nome').eq('ativo', true).order('ordem'),
+      db.from('configuracoes').select('chave,valor').in('chave', CHAVES_CONFIG_DO_PAINEL)
     ]);
     if (setores.error || empresas.error) throw setores.error || empresas.error;
     // funções e níveis só alimentam o formulário da vaga: se faltarem, o formulário avisa em vez de derrubar o app
     app.cache.funcoes  = funcoes.data || [];
     app.cache.niveis   = niveis.data  || [];
+    // sem estas configurações o painel segue com os padrões de sempre (55, 61 e a mensagem de convocação de fábrica)
+    app.cache.config   = Object.fromEntries((config?.data || []).map(c => [c.chave, c.valor]));
     app.cache.setores  = setores.data  || [];
     app.cache.empresas = (empresas.data || []).slice().sort((a, b) =>
       posicaoEmpresa(a.sigla) - posicaoEmpresa(b.sigla) ||
@@ -41,7 +47,7 @@ async function carregarBase() {
 const TITULOS = {
   dashboard: 'Dashboard', vagas: 'Vagas',
   banco: 'Banco de Talentos', candidatos: 'Candidatos em processo',
-  entrevistas: 'Entrevistas', sanitizacao: 'Sanitização', listanegra: 'Lista negra', config: 'Configurações'
+  entrevistas: 'Entrevistas', historico: 'Histórico do candidato', sanitizacao: 'Sanitização', listanegra: 'Bloqueios', status: 'Status do robô', config: 'Configurações'
 };
 
 let navAnterior = -1;   // posição do item de menu anterior, para a direção da animação
@@ -70,7 +76,7 @@ function irPara(tela, el) {
 
   ({ dashboard: carregarDashboard, vagas: carregarVagas,
      banco: carregarBanco, candidatos: carregarCandidatos,
-     entrevistas: carregarEntrevistas, sanitizacao: carregarSanitizacao, listanegra: carregarListaNegra,
-     config: carregarConfig }[tela])?.();
+     entrevistas: carregarEntrevistas, historico: carregarHistorico, sanitizacao: carregarSanitizacao, listanegra: carregarListaNegra,
+     status: carregarStatus, config: carregarConfig }[tela])?.();
 }
 

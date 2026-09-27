@@ -12,7 +12,7 @@ const textoCartoes = p => cartoes(p).map(c => c.textContent.replace(/\s+/g, ' ')
 const limparFiltros = p => {
   ['#busca-banco', '#filtro-b-cidade', '#filtro-b-area', '#filtro-b-cargo', '#filtro-b-nivel', '#filtro-b-sexo'].forEach(s => p.define(s, ''));
   p.define('#filtro-b-status', 'ativo'); p.define('#ordem-banco', 'entrada');
-  ['#av-palavras', '#av-local', '#av-excluir-locais', '#av-idade-min', '#av-idade-max', '#av-experiencia'].forEach(s => p.define(s, ''));
+  ['#av-palavras', '#av-cargos-exp', '#av-email', '#av-telefone', '#av-local', '#av-excluir-locais', '#av-idade-min', '#av-idade-max', '#av-experiencia'].forEach(s => p.define(s, ''));
   p.define('#av-palavras-modo', 'todas'); p.define('#av-palavras-onde', 'curriculo'); p.define('#av-escolaridade', '');
   p.define('#av-rotatividade', ''); p.define('#av-cnh', false); p.define('#av-revisao', false); p.define('#av-sem-info', true);
   p.w.eval('filtrosAvancados = null');
@@ -145,6 +145,63 @@ test('filtros avançados: escolaridade, experiência, CNH e revisão manual', as
   assert.match(beto.$('#badge-filtros-av').textContent, /3|2/);       // selo com a quantidade de filtros ativos
 });
 
+test('barra de filtros enxuta: nome, área, cargo, nível e sexo na barra; cidade e situação em "Mais filtros"; botão Limpar filtros', async () => {
+  limparFiltros(beto);
+  await beto.w.carregarBanco();
+  const ativos = sqlNum(`select count(*) from vw_banco_talentos where status_banco = 'ativo'`);
+
+  // o que aparece na barra e o que mora no painel
+  assert.deepEqual([...beto.$$('#banco-filtros input, #banco-filtros select')].map(e => e.id),
+    ['busca-banco', 'filtro-b-area', 'filtro-b-cargo', 'filtro-b-nivel', 'filtro-b-sexo']);
+  assert.deepEqual([...beto.$$('#painel-filtros-av #filtro-b-cidade, #painel-filtros-av #filtro-b-status')].map(e => e.id),
+    ['filtro-b-cidade', 'filtro-b-status']);
+
+  // sem nada em uso: nem selo, nem botão de limpar
+  assert.equal(beto.$('#btn-limpar-filtros').style.display, 'none');
+  assert.equal(beto.$('#badge-filtros-av').style.display, 'none');
+
+  // uma busca na barra faz o botão aparecer; o selo de "Mais filtros" só conta o que mora no painel
+  beto.define('#busca-banco', 'Candidato 010');
+  await beto.w.carregarBanco();
+  assert.notEqual(beto.$('#btn-limpar-filtros').style.display, 'none');
+  assert.equal(beto.$('#badge-filtros-av').style.display, 'none');
+
+  // cidade e situação (que passaram para o painel) continuam filtrando e entram no selo
+  beto.define('#busca-banco', ''); beto.define('#filtro-b-cidade', 'ceilandia'); beto.define('#filtro-b-status', '');
+  await beto.w.carregarBanco();
+  assert.equal(beto.$('#badge-filtros-av').textContent, '2');
+  assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where cidade_norm like 'ceilandia%'`));
+
+  // "Limpar" do painel: só o que mora nele (cidade, situação, avançados); a busca da barra continua
+  beto.define('#busca-banco', 'Candidato'); beto.define('#av-cnh', true); beto.w.aplicarFiltrosAvancados();
+  await beto.w.carregarBanco();
+  assert.equal(beto.$('#badge-filtros-av').textContent, '3');            // cidade + situação + CNH
+  await beto.w.limparFiltrosAvancados();
+  assert.equal(beto.$('#filtro-b-cidade').value, '');
+  assert.equal(beto.$('#filtro-b-status').value, 'ativo');
+  assert.equal(beto.$('#av-cnh').checked, false);
+  assert.equal(beto.$('#busca-banco').value, 'Candidato');
+  assert.equal(beto.$('#badge-filtros-av').style.display, 'none');
+  assert.notEqual(beto.$('#btn-limpar-filtros').style.display, 'none');   // a busca da barra ainda está em uso
+
+  // "Limpar filtros" da barra: tira tudo (painel incluído), recarrega a lista inteira e NÃO mexe na ordem escolhida
+  beto.define('#filtro-b-area', 'Vendas'); beto.define('#filtro-b-sexo', 'feminino'); beto.define('#filtro-b-cidade', 'ceilandia');
+  beto.define('#av-revisao', true); beto.w.aplicarFiltrosAvancados(); beto.define('#ordem-banco', 'nome');
+  await beto.w.carregarBanco();
+  assert.notEqual(beto.$('#btn-limpar-filtros').style.display, 'none');
+  await beto.w.limparFiltrosDaBarra();
+  for (const id of ['busca-banco', 'filtro-b-area', 'filtro-b-cargo', 'filtro-b-nivel', 'filtro-b-sexo', 'filtro-b-cidade'])
+    assert.equal(beto.$('#' + id).value, '', id);
+  assert.equal(beto.$('#filtro-b-status').value, 'ativo');
+  assert.equal(beto.$('#av-revisao').checked, false);
+  assert.equal(beto.w.eval('filtrosAvancados'), null);
+  assert.equal(beto.$('#ordem-banco').value, 'nome');                    // ordenar não é filtrar
+  assert.equal(totalUi(beto), ativos);
+  assert.equal(beto.$('#btn-limpar-filtros').style.display, 'none');
+  assert.equal(beto.$('#badge-filtros-av').style.display, 'none');
+  assert.deepEqual(beto.erros, []);
+});
+
 test('filtros avançados de texto (currículo, análise, local, rotatividade) passam pela função do banco e combinam com os demais', async () => {
   limparFiltros(beto);
   beto.define('#av-palavras', 'logistica'); beto.w.aplicarFiltrosAvancados();
@@ -168,6 +225,79 @@ test('filtros avançados de texto (currículo, análise, local, rotatividade) pa
   assert.equal(totalUi(beto), sqlNum(`select count(*) from filtrar_banco_talentos('{"rotatividade":"alta"}') where status_banco='ativo'`));
 });
 
+test('filtros de e-mail, telefone e cargos com experiência ("Mais filtros"): e-mail do currículo e de quem enviou, telefone só por números, cargo sem maiúsculas nem acentos', async () => {
+  limparFiltros(beto);
+  const noBanco = filtros => sqlNum(`select count(*) from filtrar_banco_talentos('${JSON.stringify(filtros)}') where status_banco='ativo'`);
+  const nomes = () => textoCartoes(beto).join(' | ');
+  const aplicar = async () => { beto.w.aplicarFiltrosAvancados(); await beto.w.carregarBanco(); };
+
+  // e-mail que está no currículo (o do cadastro): pedaço, em maiúsculas
+  beto.define('#av-email', 'CANDIDATO.010.SILVA');
+  await aplicar();
+  assert.equal(totalUi(beto), 1);
+  assert.match(nomes(), /Candidato 010 Silva/);
+  assert.equal(beto.$('#badge-filtros-av').textContent, '1', 'o selo de "Mais filtros" conta o e-mail');
+  assert.equal(beto.$('#btn-limpar-filtros').style.display, '', 'e o botão Limpar filtros aparece');
+
+  // e-mail de quem ENVIOU o currículo (outro endereço, que não está no cadastro)
+  beto.define('#av-email', 'remetente10@mail');
+  await aplicar();
+  assert.equal(totalUi(beto), noBanco({ email: 'remetente10@mail' }));
+  assert.ok(totalUi(beto) >= 1);
+  assert.match(nomes(), /Candidato 010 Silva/, 'achado pelo endereço de envio');
+  beto.define('#av-email', 'ninguem@nada.invalido');
+  await aplicar();
+  assert.equal(totalUi(beto), 0);
+
+  // telefone: só os números contam; com máscara, o resultado é o mesmo
+  limparFiltros(beto);
+  beto.define('#av-telefone', '(61) 90000-1370');
+  await aplicar();
+  assert.equal(totalUi(beto), noBanco({ telefone: '61900001370' }));
+  assert.match(nomes(), /Candidato 010 Silva/);
+  beto.define('#av-telefone', '900001370');                    // sem DDD
+  await aplicar();
+  assert.equal(totalUi(beto), 1);
+  assert.equal(beto.w.eval('filtrosAvancados.texto.telefone'), '900001370', 'o painel manda só os números');
+
+  // telefone com menos de 3 números não filtra: avisa e não aplica (senão traria quase todo mundo)
+  limparFiltros(beto);
+  beto.define('#av-telefone', '13');
+  await aplicar();
+  assert.match(beto.ultimoToast(), /pelo menos 3 números/);
+  assert.equal(beto.w.eval('filtrosAvancados'), null);
+
+  // cargos com experiência: sem diferenciar maiúsculas nem acentos; vários = qualquer um
+  limparFiltros(beto);
+  beto.define('#av-cargos-exp', 'AUXILIAR DE LOGÍSTICA');
+  await aplicar();
+  const comAcento = totalUi(beto);
+  assert.equal(comAcento, noBanco({ cargos_experiencia: ['auxiliar de logistica'] }));
+  assert.ok(comAcento > 10, `esperava vários com experiência em auxiliar de logística, vieram ${comAcento}`);
+  beto.define('#av-cargos-exp', 'auxiliar de logistica');
+  await aplicar();
+  assert.equal(totalUi(beto), comAcento, 'com ou sem acento e maiúsculas dá o mesmo');
+  beto.define('#av-cargos-exp', 'auxiliar de logistica, astronauta');
+  await aplicar();
+  assert.equal(totalUi(beto), comAcento, 'vários cargos: aparece quem tem qualquer um');
+  beto.define('#av-cargos-exp', 'astronauta');
+  await aplicar();
+  assert.equal(totalUi(beto), 0);
+
+  // os três juntos com o filtro comum de cidade e o selo contando cada um
+  limparFiltros(beto);
+  beto.define('#av-cargos-exp', 'logistica'); beto.define('#av-email', 'mail.test'); beto.define('#av-telefone', '5561900');
+  await aplicar();
+  assert.equal(beto.$('#badge-filtros-av').textContent, '3');
+  assert.equal(totalUi(beto), noBanco({ cargos_experiencia: ['logistica'], email: 'mail.test', telefone: '5561900' }));
+
+  // Limpar (do painel) esvazia os três campos
+  await beto.w.limparFiltrosAvancados();
+  assert.equal(['#av-cargos-exp', '#av-email', '#av-telefone'].map(x => beto.$(x).value).join(''), '');
+  assert.equal(beto.w.eval('filtrosAvancados'), null);
+  assert.deepEqual(beto.erros, []);
+});
+
 // ── 2. Drawer do candidato ───────────────────────────────────────────────
 test('drawer do candidato: sugestão da IA, dados, pontos e histórico de vagas (com duplicatas fundidas)', async () => {
   limparFiltros(beto);
@@ -188,9 +318,10 @@ test('drawer do candidato: sugestão da IA, dados, pontos e histórico de vagas 
   assert.ok(beto.$$('#t-historico .hist-item.legado').length === 2, 'vínculos automáticos da triagem antiga aparecem como legado');
   assert.match(beto.$('#t-positivos').textContent, /Experiência em logística/);
   assert.equal(beto.$('#t-btn-atribuir').style.display, 'flex');
-  assert.equal(beto.$('#t-btn-excluir').style.display, 'none', 'excluir dados é só do administrador');
+  assert.equal(beto.$('#t-btn-sanitizar').style.display, 'flex', 'qualquer usuário do RH pode mandar para a sanitização');
+  assert.equal(beto.$('#t-btn-excluir'), null, 'o "Excluir dados" direto saiu do cadastro');
   await ana.w.abrirTalento(id);
-  assert.equal(ana.$('#t-btn-excluir').style.display, 'flex');
+  assert.equal(ana.$('#t-btn-sanitizar').style.display, 'flex');
   beto.w.fecharDrawer(); ana.w.fecharDrawer();
 });
 
@@ -246,6 +377,36 @@ test('tela "Em processo": a nova candidatura aparece com status e ações', asyn
   assert.equal(beto.$('#d-btn-devolver').style.display, 'flex');
   assert.equal(beto.$('#d-btn-agendar').style.display, 'flex');
   beto.w.fecharDrawer();
+});
+
+test('tela "Em processo": filtro por sexo (feminino, masculino, não informado) sozinho e combinado com o status', async () => {
+  const ids = sql(`select candidato_id from (select distinct candidato_id from vw_candidatos) x limit 3`).split('\n');
+  const originais = ids.map(id => sql(`select coalesce(sexo, '') from candidatos where id='${id}'`));
+  sql(`update candidatos set sexo = 'feminino' where id='${ids[0]}'`);
+  sql(`update candidatos set sexo = 'masculino' where id='${ids[1]}'`);
+  sql(`update candidatos set sexo = null where id='${ids[2]}'`);
+  try {
+    beto.define('#filtro-cand-status', ''); beto.define('#busca-candidatos', ''); beto.define('#filtro-cand-sexo', '');
+    await beto.w.carregarCandidatos();
+    const todos = sqlNum(`select count(*) from vw_candidatos`);
+    assert.equal(beto.w.eval('estadoCandidatos.total'), todos, 'sem filtro: todos');
+    assert.deepEqual([...beto.$$('#filtro-cand-sexo option')].map(o => o.value), ['', 'feminino', 'masculino', 'nao_informado'], 'as mesmas 4 opções do Banco de Talentos');
+    for (const [valor, condicao] of [['feminino', `sexo = 'feminino'`], ['masculino', `sexo = 'masculino'`], ['nao_informado', 'sexo is null']]) {
+      beto.define('#filtro-cand-sexo', valor);
+      await beto.w.carregarCandidatos();
+      const esperado = sqlNum(`select count(*) from vw_candidatos where ${condicao}`);
+      assert.ok(esperado >= 1 && esperado < todos, `há candidatos "${valor}" e não são todos (${esperado} de ${todos})`);
+      assert.equal(beto.w.eval('estadoCandidatos.total'), esperado, `total com sexo ${valor}`);
+      assert.equal(beto.$$('#candidatos-body tr').length, esperado, `linhas com sexo ${valor}`);
+    }
+    beto.define('#filtro-cand-sexo', 'feminino'); beto.define('#filtro-cand-status', 'aprovado');
+    await beto.w.carregarCandidatos();
+    assert.equal(beto.w.eval('estadoCandidatos.total'), sqlNum(`select count(*) from vw_candidatos where sexo = 'feminino' and status = 'aprovado'`), 'combina com o status');
+  } finally {
+    ids.forEach((id, i) => sql(`update candidatos set sexo = ${originais[i] ? `'${originais[i]}'` : 'null'} where id='${id}'`));
+    beto.define('#filtro-cand-sexo', ''); beto.define('#filtro-cand-status', '');
+    await beto.w.carregarCandidatos();
+  }
 });
 
 test('reprovar: a candidatura fecha com o motivo e o candidato VOLTA ao Banco de Talentos, com o histórico', async () => {
@@ -338,14 +499,24 @@ test('sanitização: administrador gera a lista; regras e prioridades aparecem; 
   assert.ok(ana.$('#san-bulk').style.display === 'none' || ana.$('#san-bulk').style.display === '');
 });
 
-test('sanitização: RH comum vê a fila mas não gera lista nem exclui; a decisão em lote (manter) registra quem decidiu', async () => {
+test('sanitização: a fila só mantém ou inativa (ninguém exclui); RH comum não gera lista; a decisão em lote (manter) registra quem decidiu', async () => {
   await beto.w.carregarSanitizacao();
   assert.equal(beto.$('#san-btn-gerar').style.display, 'none');
-  assert.equal(beto.$$('.san-so-admin').every(b => b.style.display === 'none'), true);
   assert.equal(beto.$$('#san-body .btn-sm.vermelho').length, 0, 'nenhum botão de excluir para o RH');
-  beto.w.abrirModalDecisao([beto.$$('#san-body tr[data-id]')[0].dataset.id], 'excluir');
-  assert.match(beto.ultimoToast(), /Somente o administrador/);
-  assert.ok(!beto.$('#modal-sanitizar').classList.contains('show'));
+  assert.equal(beto.$$('#san-bulk .vermelho').length, 0, 'nem na barra de ação em lote');
+  await ana.w.carregarSanitizacao();
+  assert.equal(ana.$$('#san-body .btn-sm.vermelho').length, 0, 'nem para o administrador: a fila não exclui');
+  assert.equal(ana.$$('#san-bulk .vermelho').length, 0);
+  assert.match(ana.$('.san-explica').textContent, /não apaga nada/);
+  // o banco recusa "excluir" mesmo por fora do painel, para administrador e para RH
+  const sugAlvo = beto.$$('#san-body tr[data-id]')[0].dataset.id;
+  const recusaRH = await beto.w.eval(`db.rpc('sanitizacao_decidir', { p_sugestao_id: '${sugAlvo}', p_decisao: 'excluir' })`);
+  assert.match(recusaRH.error?.message || '', /só mantém ou inativa/);
+  const recusaAdm = await ana.w.eval(`db.rpc('sanitizacao_decidir', { p_sugestao_id: '${sugAlvo}', p_decisao: 'excluir' })`);
+  assert.match(recusaAdm.error?.message || '', /só mantém ou inativa/);
+  const recusaLote = await ana.w.eval(`db.rpc('sanitizacao_decidir_lote', { p_sugestao_ids: ['${sugAlvo}'], p_decisao: 'excluir' })`);
+  assert.match(recusaLote.error?.message || '', /só mantém ou inativa/);
+  assert.equal(sql(`select status from sanitizacao_sugestoes where id='${sugAlvo}'`), 'pendente', 'a sugestão segue pendente');
 
   await beto.w.selecionarPorPrioridade('alta');
   assert.equal(beto.w.eval('selecaoSanitizacao.size'), sqlNum(`select count(*) from sanitizacao_sugestoes where status='pendente' and prioridade='alta'`));
@@ -370,30 +541,93 @@ test('sanitização: RH comum vê a fila mas não gera lista nem exclui; a decis
   beto.define('#san-visao', 'pendente');
 });
 
-test('sanitização: inativar e excluir definitivamente (administrador) — exige a confirmação e apaga só os dados pessoais', async () => {
+test('sanitização: inativar (confirmação explícita); o expurgo é automático, N meses depois, e apaga só os dados pessoais', async () => {
   await ana.w.carregarSanitizacao();
   const pendentes = ana.$$('#san-body tr[data-id]').map(l => l.dataset.id);
   assert.ok(pendentes.length >= 2);
-  const [paraInativar, paraExcluir] = pendentes;
+  const [paraInativar, paraOutro] = pendentes;
   const candInativar = sql(`select candidato_id from sanitizacao_sugestoes where id='${paraInativar}'`);
-  const candExcluir = sql(`select candidato_id from sanitizacao_sugestoes where id='${paraExcluir}'`);
-  const hashAntes = sql(`select coalesce(hash_identidade,'(sem hash)') from candidatos where id='${candExcluir}'`);
+  const candOutro = sql(`select candidato_id from sanitizacao_sugestoes where id='${paraOutro}'`);
+  const hashAntes = sql(`select coalesce(hash_identidade,'(sem hash)') from candidatos where id='${candInativar}'`);
 
   ana.w.decidirSugestao(paraInativar, 'inativar');
+  assert.ok(ana.$('#modal-sanitizar').classList.contains('show'), 'nada acontece sem a confirmação explícita');
+  assert.match(ana.$('#san-m-msg').textContent, /APAGADOS automaticamente/, 'o aviso diz que os dados serão apagados sozinhos');
+  assert.match(ana.$('#san-m-msg').textContent, /6 meses/, 'com o prazo configurado');
+  assert.equal(sql(`select status_banco from candidatos where id='${candInativar}'`), 'ativo', 'ainda não inativou');
   await ana.w.confirmarDecisaoSanitizacao();
   assert.equal(sql(`select status_banco from candidatos where id='${candInativar}'`), 'inativo');
+  assert.equal(sql(`select (inativado_em > now() - interval '1 minute')::text from candidatos where id='${candInativar}'`), 'true', 'a contagem do expurgo parte daqui');
+  assert.equal(sql(`select nome is not null from candidatos where id='${candInativar}'`), 't', 'inativar não apaga nada');
 
-  ana.w.decidirSugestao(paraExcluir, 'excluir');
-  ana.define('#san-m-confirma', false);
-  await ana.w.confirmarDecisaoSanitizacao();
-  assert.match(ana.ultimoToast(), /Marque a confirmação/);
-  assert.notEqual(sql(`select status_banco from candidatos where id='${candExcluir}'`), 'expurgado', 'sem marcar a confirmação nada é excluído');
-  ana.define('#san-m-confirma', true);
-  await ana.w.confirmarDecisaoSanitizacao();
-  assert.equal(sql(`select status_banco || '|' || (nome is null) || '|' || (email is null) || '|' || (telefone is null) from candidatos where id='${candExcluir}'`), 'expurgado|true|true|true');
-  assert.equal(sql(`select coalesce(hash_identidade,'(sem hash)') from candidatos where id='${candExcluir}'`), hashAntes, 'o hash de identidade sobrevive');
-  assert.ok(sqlNum(`select count(*) from arquivos_para_remover where removido_em is null`) >= 0);
-  assert.equal(sqlNum(`select count(*) from logs_auditoria where acao='sanitizacao_decisao' and usuario_id='${ANA}'`) >= 2, true);
+  // 5 meses depois: nada. 7 meses depois: a rotina diária (service_role) apaga os dados pessoais
+  sql(`update candidatos set inativado_em = now() - interval '5 months' where id='${candInativar}'`);
+  sql(`select fn_expurgar_inativos_vencidos()`);
+  assert.notEqual(sql(`select status_banco from candidatos where id='${candInativar}'`), 'expurgado', 'com 5 meses ainda não apaga');
+  sql(`update candidatos set inativado_em = now() - interval '7 months' where id='${candInativar}'`);
+  sql(`select fn_expurgar_inativos_vencidos()`);
+  assert.equal(sql(`select status_banco || '|' || (nome is null) || '|' || (email is null) || '|' || (telefone is null) from candidatos where id='${candInativar}'`), 'expurgado|true|true|true');
+  assert.equal(sql(`select coalesce(hash_identidade,'(sem hash)') from candidatos where id='${candInativar}'`), hashAntes, 'o hash de identidade sobrevive');
+  assert.equal(sql(`select status from sanitizacao_sugestoes where id='${paraInativar}'`), 'inativado');
+  assert.equal(sqlNum(`select count(*) from logs_auditoria where acao='sanitizacao_decisao' and usuario_id='${ANA}'`) >= 1, true);
+  assert.equal(sqlNum(`select count(*) from logs_auditoria where acao='exclusao_manual_lgpd' and entidade_id='${candInativar}' and detalhe like 'Expurgo automático%'`), 1, 'o expurgo automático fica auditado');
+  assert.equal(sql(`select status_banco from candidatos where id='${candOutro}'`), 'ativo', 'quem não foi inativado não é tocado');
+  sql(`update candidatos set inativado_em = now() where status_banco = 'inativo'`);       // deixa o resto do teste sem vencidos
+});
+
+test('sanitizar: o botão do cadastro manda o candidato direto para a fila (RH comum), sem apagar nada; a fila só mantém ou inativa', async () => {
+  const id = idDe('Candidato 075 Silva');
+  const dadosAntes = sql(`select nome || '|' || status_banco from candidatos where id='${id}'`);
+  assert.equal(sqlNum(`select count(*) from sanitizacao_sugestoes where candidato_id='${id}' and status='pendente'`), 0);
+
+  await beto.w.abrirTalento(id);
+  assert.equal(beto.$('#t-btn-sanitizar').style.display, 'flex');
+  await beto.w.sanitizarCandidato();
+  assert.match(beto.ultimoToast(), /Enviado para a fila de Sanitização/);
+  assert.ok(!beto.$('#drawer-talento').classList.contains('show'), 'o cadastro fecha');
+  assert.equal(sql(`select origem || '|' || prioridade || '|' || (ciclo_id is null) || '|' || (enviada_por='${BETO}') from sanitizacao_sugestoes where candidato_id='${id}' and status='pendente'`),
+    'manual|alta|true|true');
+  assert.equal(sql(`select nome || '|' || status_banco from candidatos where id='${id}'`), dadosAntes, 'nada é apagado nem inativado ao enviar');
+
+  // apertar de novo não duplica
+  await beto.w.abrirTalento(id);
+  await beto.w.sanitizarCandidato();
+  assert.match(beto.ultimoToast(), /já está na fila/);
+  assert.equal(sqlNum(`select count(*) from sanitizacao_sugestoes where candidato_id='${id}' and status='pendente'`), 1);
+  beto.w.fecharDrawer();
+
+  // aparece na fila da Sanitização com o motivo e quem mandou
+  await beto.w.carregarSanitizacao();
+  const linha = beto.$$('#san-body tr[data-id]').find(l => l.textContent.includes('Candidato 075 Silva'));
+  assert.ok(linha, 'a sugestão manual aparece na fila');
+  assert.match(linha.textContent, /Enviado para a sanitização pelo RH/);
+  assert.match(linha.textContent, /Alta/);
+  assert.match(linha.textContent, new RegExp(sql(`select nome from usuarios where id='${BETO}'`)));
+
+  // ninguém exclui pela fila; o RH inativa o que enviou e o cadastro de quem está inativo não oferece mais "Sanitizar"
+  const sug = sql(`select id from sanitizacao_sugestoes where candidato_id='${id}' and status='pendente'`);
+  const recusa = await ana.w.eval(`db.rpc('sanitizacao_decidir', { p_sugestao_id: '${sug}', p_decisao: 'excluir' })`);
+  assert.match(recusa.error?.message || '', /só mantém ou inativa/);
+  await beto.w.carregarSanitizacao();
+  beto.w.decidirSugestao(sug, 'inativar');
+  await beto.w.confirmarDecisaoSanitizacao();
+  assert.equal(sql(`select status_banco from candidatos where id='${id}'`), 'inativo');
+  assert.equal(sql(`select status from sanitizacao_sugestoes where id='${sug}'`), 'inativado');
+  assert.equal(sql(`select nome is not null from candidatos where id='${id}'`), 't', 'inativar não apaga nada');
+  await beto.w.abrirTalento(id);
+  assert.equal(beto.$('#t-btn-sanitizar').style.display, 'none', 'quem já está inativo não vai para a sanitização (os dados saem sozinhos no prazo)');
+  const jaInativo = await beto.w.eval(`db.rpc('sanitizacao_enviar_candidato', { p_candidato_id: '${id}' })`);
+  assert.match(jaInativo.error?.message || '', /já está inativo/);
+  beto.w.fecharDrawer();
+
+  // quem não pode ser sanitizado (contratado = retenção permanente) não tem o botão
+  const contratado = idDe('Candidato 076 Silva');
+  sql(`update candidatos set retencao_permanente = true where id='${contratado}'`);
+  await beto.w.abrirTalento(contratado);
+  assert.equal(beto.$('#t-btn-sanitizar').style.display, 'none');
+  beto.w.fecharDrawer();
+  sql(`update candidatos set retencao_permanente = false where id='${contratado}'`);
+  assert.deepEqual(beto.erros, []);
 });
 
 // ── 6. Outras telas ──────────────────────────────────────────────────────
@@ -451,19 +685,29 @@ test('entrevistas: a agenda continua funcionando com o candidato vindo do banco'
 test('configurações (administrador): parâmetros da sanitização aparecem e salvam; o que era retenção automática sumiu', async () => {
   await ana.w.carregarConfig();
   const texto = ana.$('#config-lista').textContent;
-  for (const chave of ['sanitizacao_intervalo_meses', 'sanitizacao_pesos', 'sanitizacao_retencao_maxima_meses', 'ia_confianca_minima', 'sanitizacao_emails_aviso'])
+  for (const chave of ['expurgo_meses_apos_inativar', 'sanitizacao_intervalo_dias', 'sanitizacao_pesos', 'sanitizacao_retencao_maxima_meses', 'ia_confianca_minima', 'sanitizacao_emails_aviso'])
     assert.ok(texto.includes(chave), `falta ${chave}`);
   assert.ok(!texto.includes('retencao_meses_ate_expurgar'));
   ana.define('#cfg-sanitizacao_adiar_meses', '9');
   await ana.w.salvarConfig('sanitizacao_adiar_meses');
   assert.match(ana.ultimoToast(), /Configuração salva/);
   assert.equal(sql(`select valor from configuracoes where chave='sanitizacao_adiar_meses'`), '9');
+  ana.define('#cfg-expurgo_meses_apos_inativar', '8');
+  await ana.w.salvarConfig('expurgo_meses_apos_inativar');
+  assert.match(ana.ultimoToast(), /Configuração salva/);
+  assert.equal(sql(`select valor from configuracoes where chave='expurgo_meses_apos_inativar'`), '8');
+  sql(`update configuracoes set valor = to_jsonb(6) where chave='expurgo_meses_apos_inativar'`);
 });
 
-// ── 7. Etapa 1: lista negra e descarte por vaga ──────────────────────────
-test('lista negra: bloquear um endereço, ver na lista, buscar e liberar', async () => {
+// ── 7. Etapa 1: bloqueios (antes "lista negra") e descarte por vaga ──────────────────────────
+test('bloqueios: bloquear um endereço, ver na lista, buscar e liberar', async () => {
   await beto.w.carregarListaNegra();
-  assert.match(beto.$('#ln-body').textContent, /A lista negra está vazia/);
+  assert.match(beto.$('#ln-body').textContent, /Nenhum bloqueio registrado/);
+  // o nome novo aparece no menu, na tela e no modal — e o antigo não aparece em nenhum deles
+  assert.equal(beto.$('.nav-item[data-tela="listanegra"] .nav-label').textContent, 'Bloqueios');
+  assert.match(beto.$('#screen-listanegra').textContent, /Bloqueios de e-mails/);
+  for (const seletor of ['.nav-item[data-tela="listanegra"]', '#screen-listanegra', '#modal-lista-negra', '#drawer-talento'])
+    assert.doesNotMatch(beto.$(seletor).textContent + (beto.$(seletor).getAttribute('title') || ''), /lista negra/i, `${seletor} ainda diz "lista negra"`);
 
   beto.define('#ln-email', 'Spam.Total@Mail.Test'); beto.define('#ln-motivo', 'Propaganda em massa');
   await beto.w.bloquearEmailManual();
@@ -494,12 +738,14 @@ test('lista negra: bloquear um endereço, ver na lista, buscar e liberar', async
   assert.deepEqual(beto.erros, []);
 });
 
-test('lista negra: bloquear o candidato pelo cadastro — sai da lista de disponíveis, não recebe vaga e só volta se sair da lista', async () => {
+test('bloqueios: bloquear o candidato pelo cadastro — sai da lista de disponíveis, não recebe vaga e só volta se o bloqueio for removido', async () => {
   const id = idDe('Candidato 070 Silva');
   sql(`update candidatos set email = 'c070@mail.test' where id = '${id}'`);
   limparFiltros(beto);
   await beto.w.abrirTalento(id);
   assert.equal(beto.$('#t-btn-negra').style.display, 'flex');
+  assert.match(beto.$('#t-btn-negra').textContent, /Bloquear/);
+  assert.match(beto.$('#t-btn-liberar').textContent, /Remover bloqueio/);
   assert.equal(beto.$('#t-negra').style.display, 'none');
 
   beto.w.abrirBloqueioCandidato();
@@ -512,32 +758,32 @@ test('lista negra: bloquear o candidato pelo cadastro — sai da lista de dispon
 
   beto.define('#ln-m-motivo', 'Ocorrência anterior na empresa');
   await beto.w.confirmarBloqueioCandidato();
-  assert.match(beto.ultimoToast(), /lista negra/);
+  assert.match(beto.ultimoToast(), /Candidato bloqueado/);
   assert.equal(sql(`select lista_negra || '/' || status_banco || '/' || retencao_permanente from candidatos where id='${id}'`), 'true/inativo/true');
   assert.equal(sql(`select bloqueado from remetentes where email = 'c070@mail.test'`), 't');
 
   // o cadastro mostra a faixa e esconde o que não vale mais
-  assert.match(beto.$('#t-negra').textContent, /Na lista negra/);
+  assert.match(beto.$('#t-negra').textContent, /Bloqueado/);
   assert.match(beto.$('#t-negra').textContent, /Ocorrência anterior na empresa/);
   assert.match(beto.$('#t-negra').textContent, /Beto RH/);
   assert.equal(beto.$('#t-btn-negra').style.display, 'none');
   assert.equal(beto.$('#t-btn-liberar').style.display, 'flex');
-  assert.equal(beto.$('#t-btn-status').style.display, 'none', 'não dá para reativar quem está na lista negra');
+  assert.equal(beto.$('#t-btn-status').style.display, 'none', 'não dá para reativar quem está bloqueado');
   assert.equal(beto.$('#t-btn-atribuir').style.display, 'none');
 
-  // no banco o card ganha o selo; na tela da lista negra aparece com o nome
+  // no banco o card ganha o selo; na tela de Bloqueios aparece com o nome
   beto.define('#busca-banco', 'Candidato 070'); beto.define('#filtro-b-status', '');
   await beto.w.carregarBanco();
-  assert.match(textoCartoes(beto).find(t => t.includes('Candidato 070 Silva')) || '', /Lista negra/);
+  assert.match(textoCartoes(beto).find(t => t.includes('Candidato 070 Silva')) || '', /Bloqueado/);
   await beto.w.carregarListaNegra();
   assert.match(beto.$('#ln-body').textContent, /c070@mail\.test/);
   assert.match(beto.$('#ln-body').textContent, /Candidato 070 Silva/);
 
   // o banco recusa a atribuição e a reativação, mesmo que alguém chame direto
   const atribuir = await beto.w.eval(`db.rpc('atribuir_candidato_vaga', { p_candidato_id: '${id}', p_vaga_id: '${sql(`select id from vagas where status='ativo' limit 1`)}' })`);
-  assert.match(atribuir.error.message, /lista negra/);
+  assert.match(atribuir.error.message, /está bloqueado/);
   const reativar = await beto.w.eval(`db.rpc('alterar_status_banco', { p_candidato_id: '${id}', p_novo: 'ativo' })`);
-  assert.match(reativar.error.message, /lista negra/);
+  assert.match(reativar.error.message, /Remova o bloqueio/);
 
   // tirar da lista: libera o endereço, o candidato segue inativo até o RH reativar
   await beto.w.abrirTalento(id);
@@ -678,11 +924,31 @@ test('seleção de CVs: filtra por setor + função + nível da vaga, ordena pel
   assert.ok(lista[0].includes('Candidato 080 Silva'), 'a maior nota (90) vem primeiro');
   assert.ok(lista[1].includes('Candidato 081 Silva'), 'depois a nota 70');
   assert.equal(lista.length, 2, 'só quem tem setor, função e nível iguais aos da vaga');
-  assert.ok(!lista.some(t => t.includes('Candidato 082 Silva')), 'lista negra fora da seleção, mesmo com a maior nota');
+  assert.ok(!lista.some(t => t.includes('Candidato 082 Silva')), 'bloqueado fora da seleção, mesmo com a maior nota');
   assert.ok(!lista.some(t => t.includes('Candidato 086 Silva')), 'nível diferente fora da seleção');
   assert.deepEqual(beto.$$('#banco-lista .aderencia b').map(b => b.textContent), ['90', '70'], 'a nota de cada currículo aparece');
   assert.doesNotMatch(lista[0], /Combina em/, 'sem palavras-chave: não há IA escolhendo');
   assert.match(beto.$('#banco-total').textContent, /2 de 2 currículos|2 currículos/);
+
+  // filtro por sexo do modo "Selecionar CVs" (045): a barra de filtros do banco some aqui, então o filtro é do próprio ranking
+  assert.equal(beto.$('#banco-filtros').style.display, 'none', 'a barra normal de filtros não aparece no ranking');
+  assert.deepEqual([...beto.$$('#rk-sexo option')].map(o => o.value), ['', 'feminino', 'masculino', 'nao_informado']);
+  const sexoAntes = [c1, c2].map(id => sql(`select coalesce(sexo, '') from candidatos where id='${id}'`));
+  sql(`update candidatos set sexo = 'feminino' where id='${c1}'`);
+  sql(`update candidatos set sexo = null where id='${c2}'`);
+  const filtrarPorSexo = async valor => { beto.define('#rk-sexo', valor); await beto.w.mudarFiltroRanking(); await esperar(400); };
+  await filtrarPorSexo('feminino');
+  assert.equal(textoCartoes(beto).length, 1);
+  assert.ok(textoCartoes(beto)[0].includes('Candidato 080 Silva'), 'só a candidata feminina');
+  await filtrarPorSexo('nao_informado');
+  assert.equal(textoCartoes(beto).length, 1);
+  assert.ok(textoCartoes(beto)[0].includes('Candidato 081 Silva'), '"não informado" = sem sexo cadastrado');
+  await filtrarPorSexo('masculino');
+  assert.equal(textoCartoes(beto).length, 0);
+  assert.match(beto.$('#banco-lista').textContent, /Nenhum currículo selecionado com esse sexo/);
+  await filtrarPorSexo('');
+  assert.equal(textoCartoes(beto).length, 2, 'sem filtro voltam os dois');
+  [c1, c2].forEach((id, i) => sql(`update candidatos set sexo = ${sexoAntes[i] ? `'${sexoAntes[i]}'` : 'null'} where id='${id}'`));
 
   // atribuir a partir do ranking: a vaga já vem escolhida e mostra os Diferenciais
   await beto.w.abrirAtribuicaoPorId(c1);
@@ -841,6 +1107,625 @@ test('níveis: o administrador habilita/desabilita Jovem Aprendiz e Trainee e re
   await ana.w.salvarNivel('trainee');
   assert.deepEqual(await niveisDoFormulario(), ['jovem_aprendiz', 'trainee', 'junior', 'pleno', 'senior']);
   assert.deepEqual(ana.erros, []);
+});
+
+test('zona de perigo: o administrador pausa e retoma o envio à IA; o gerente de RH não consegue, nem chamando o banco direto', async () => {
+  const pausada = () => sql(`select valor from configuracoes where chave = 'ia_pausada'`);
+  await ana.w.carregarConfig();
+  const zona = () => ana.$('#config-perigo');
+  assert.ok(zona(), 'a zona de perigo aparece em Configurações');
+  assert.match(zona().textContent, /Funcionando normalmente/);
+  assert.match(zona().textContent, /Pausar todo envio à IA/);
+  assert.equal(pausada(), 'false', 'a migração 040 deixa o interruptor desligado');
+
+  // pausar exige ler o que vai acontecer e digitar a senha; a conferência da senha (Supabase Auth) não existe neste banco de ensaio, então é trocada aqui
+  const senhaCerta = 'senha-da-ana';
+  ana.w.verificarSenhaAtual = async senha => senha === senhaCerta ? { ok: true } : { ok: false, msg: 'Senha incorreta.' };
+  const digitarSenha = valor => { ana.define('#pausa-ia-senha', valor); ana.$('#pausa-ia-senha').dispatchEvent(new ana.w.Event('input')); };
+  const modalPausa = () => ana.$('#modal-pausar-ia');
+
+  await ana.w.alternarPausaIA(true);
+  assert.ok(modalPausa().classList.contains('show'), 'pausar abre a explicação, não pausa direto');
+  assert.equal(pausada(), 'false', 'só abrir o modal não pausa nada');
+  for (const trecho of [/interrompe o gasto com a API da Anthropic/, /O que vai acontecer/, /Prejuízos enquanto estiver pausado/, /Nada se perde/, /digite a sua senha/])
+    assert.match(modalPausa().textContent, trecho);
+  assert.equal(ana.$('#pausa-ia-ok').disabled, true, 'sem senha digitada o botão de pausar não liga');
+  await ana.w.confirmarPausaIA();
+  assert.equal(pausada(), 'false', 'enviar o formulário sem senha não pausa');
+
+  digitarSenha('senha-errada');
+  assert.equal(ana.$('#pausa-ia-ok').disabled, false);
+  await ana.w.confirmarPausaIA();
+  assert.equal(pausada(), 'false', 'senha errada não pausa');
+  assert.equal(ana.$('#pausa-ia-erro').style.display, 'block');
+  assert.match(ana.$('#pausa-ia-erro').textContent, /Senha incorreta/);
+  assert.ok(modalPausa().classList.contains('show'), 'o modal continua aberto para tentar de novo');
+
+  ana.w.fecharPausaIA();                                            // desistir: nada muda e a senha não fica no campo
+  assert.ok(!modalPausa().classList.contains('show'));
+  assert.equal(ana.$('#pausa-ia-senha').value, '');
+  assert.equal(pausada(), 'false');
+
+  await ana.w.alternarPausaIA(true);                                // reabre limpo: sem erro antigo e com o botão desligado
+  assert.equal(ana.$('#pausa-ia-erro').style.display, 'none');
+  assert.equal(ana.$('#pausa-ia-ok').disabled, true);
+  digitarSenha(senhaCerta);
+  await ana.w.confirmarPausaIA();
+  assert.ok(!modalPausa().classList.contains('show'), 'com a senha certa o modal fecha');
+  assert.equal(ana.$('#pausa-ia-senha').value, '', 'a senha não fica no campo');
+  assert.equal(pausada(), 'true');
+  assert.equal(sql(`select updated_by from configuracoes where chave = 'ia_pausada'`), ANA, 'fica registrado quem pausou');
+  assert.match(ana.ultimoToast(), /PAUSADO/);
+  assert.match(zona().textContent, /PAUSADO desde .* por Ana Admin/);
+  assert.match(zona().textContent, /Retomar envio à IA/);
+  assert.ok(zona().classList.contains('pausada'));
+  assert.equal(ana.$$('#config-perigo').length, 1, 'a zona não se duplica ao ser redesenhada');
+
+  // o gerente de RH não desfaz a pausa: a política do banco filtra e a linha não muda (sem erro, só 0 linhas)
+  const tentativa = await beto.w.eval(`db.from('configuracoes').update({ valor: false }).eq('chave', 'ia_pausada').select('valor')`);
+  assert.equal(tentativa.data.length, 0);                                  // (array de outro contexto do jsdom: compara o tamanho)
+  assert.equal(pausada(), 'true', 'nada mudou');
+  // ... e se ele chamar a função do painel, a tela avisa em vez de fingir que deu certo
+  await beto.w.alternarPausaIA(false);
+  assert.match(beto.ultimoToast(), /só o administrador/);
+  assert.equal(pausada(), 'true');
+
+  await ana.w.alternarPausaIA(false);
+  assert.equal(pausada(), 'false');
+  assert.match(ana.ultimoToast(), /retomado/);
+  assert.match(zona().textContent, /Funcionando normalmente/);
+  assert.ok(!zona().classList.contains('pausada'));
+  assert.deepEqual(ana.erros, []);
+});
+
+test('janela de leitura do robô: hora HH:MM (texto), intervalo em minutos e dias da semana como lista (é o que o robô lê)', async () => {
+  const valor = chave => sql(`select valor from configuracoes where chave = '${chave}'`);
+  const padrao = { leitura_hora_inicio: '"07:30"', leitura_hora_fim: '"18:00"', leitura_intervalo_minutos: '10', leitura_dias_semana: '[1, 2, 3, 4, 5, 6]' };
+  try {
+    await ana.w.carregarConfig();
+    for (const [k, v] of Object.entries(padrao)) assert.equal(valor(k), v, `a migração 046 semeia ${k}`);
+
+    // os campos: hora com seletor, número com limites e os dias como botões de marcar (seg a sáb marcados, domingo não)
+    assert.equal(ana.$('#cfg-leitura_hora_inicio').type, 'time');
+    assert.equal(ana.$('#cfg-leitura_hora_inicio').value, '07:30');
+    assert.equal(ana.$('#cfg-leitura_hora_fim').value, '18:00');
+    const intervalo = ana.$('#cfg-leitura_intervalo_minutos');
+    assert.deepEqual([intervalo.value, intervalo.min, intervalo.max], ['10', '1', '240']);
+    assert.deepEqual([...ana.$$('#cfg-leitura_dias_semana input')].map(i => [i.value, i.checked]),
+      [['1', true], ['2', true], ['3', true], ['4', true], ['5', true], ['6', true], ['7', false]]);
+    assert.equal(ana.$('#cfg-horario_execucao_pipeline'), null, 'o horário diário único acabou');
+
+    // hora: só HH:MM; apagada não grava (o robô cairia no padrão em silêncio)
+    ana.define('#cfg-leitura_hora_inicio', '');
+    await ana.w.salvarConfig('leitura_hora_inicio');
+    assert.match(ana.ultimoToast(), /HH:MM/);
+    assert.equal(valor('leitura_hora_inicio'), padrao.leitura_hora_inicio, 'não gravou');
+
+    // início depois do fim: recusa (nos dois campos)
+    ana.define('#cfg-leitura_hora_inicio', '19:00');
+    await ana.w.salvarConfig('leitura_hora_inicio');
+    assert.match(ana.ultimoToast(), /antes do horário de fim/);
+    assert.equal(valor('leitura_hora_inicio'), padrao.leitura_hora_inicio);
+    ana.define('#cfg-leitura_hora_inicio', '08:00');
+    ana.define('#cfg-leitura_hora_fim', '07:00');
+    await ana.w.salvarConfig('leitura_hora_fim');
+    assert.match(ana.ultimoToast(), /antes do horário de fim/);
+    assert.equal(valor('leitura_hora_fim'), padrao.leitura_hora_fim);
+
+    // válido: grava texto "HH:MM", não número
+    ana.define('#cfg-leitura_hora_fim', '17:30');
+    await ana.w.salvarConfig('leitura_hora_fim');
+    assert.match(ana.ultimoToast(), /Configuração salva/);
+    assert.equal(valor('leitura_hora_fim'), '"17:30"');
+    await ana.w.salvarConfig('leitura_hora_inicio');
+    assert.equal(valor('leitura_hora_inicio'), '"08:00"');
+
+    // intervalo: número inteiro de 1 a 240
+    for (const ruim of ['0', '241', '', '7.5']) {
+      ana.define('#cfg-leitura_intervalo_minutos', ruim);
+      await ana.w.salvarConfig('leitura_intervalo_minutos');
+      assert.equal(valor('leitura_intervalo_minutos'), '10', `"${ruim}" não pode gravar`);
+    }
+    ana.define('#cfg-leitura_intervalo_minutos', '15');
+    await ana.w.salvarConfig('leitura_intervalo_minutos');
+    assert.equal(valor('leitura_intervalo_minutos'), '15', 'número, não texto');
+
+    // dias: pelo menos um; grava a lista de números (1 = segunda ... 7 = domingo)
+    for (const i of ana.$$('#cfg-leitura_dias_semana input')) i.checked = false;
+    await ana.w.salvarConfig('leitura_dias_semana');
+    assert.match(ana.ultimoToast(), /pelo menos um dia/);
+    assert.equal(valor('leitura_dias_semana'), padrao.leitura_dias_semana, 'não gravou');
+    for (const i of ana.$$('#cfg-leitura_dias_semana input')) i.checked = ['1', '3', '5', '7'].includes(i.value);
+    await ana.w.salvarConfig('leitura_dias_semana');
+    assert.match(ana.ultimoToast(), /Configuração salva/);
+    assert.equal(valor('leitura_dias_semana'), '[1, 3, 5, 7]');
+    assert.deepEqual(ana.erros, []);
+  } finally {
+    for (const [k, v] of Object.entries(padrao)) sql(`update configuracoes set valor = '${v}'::jsonb where chave = '${k}'`);
+  }
+});
+
+test('status do robô: os estados que a tela mostra (função pura) e o aviso de "sem sinal"', async () => {
+  const agora = Date.parse('2026-09-28T10:00:00-03:00');                     // segunda-feira
+  const min = m => new Date(agora - m * 60000).toISOString();
+  const em = m => new Date(agora + m * 60000).toISOString();
+  const i = (linha, t = agora) => beto.w.interpretarStatus(linha, t);
+  const base = { verificado_em: min(0.5), processando_total: 0, processando_feitos: 0 };
+
+  assert.equal(i(null).chave, 'sem-dados');
+  assert.match(i(null).detalhe, /Railway/);
+
+  const ocioso = i({ ...base, estado: 'ocioso', proxima_leitura_em: em(5) });
+  assert.deepEqual([ocioso.chave, ocioso.titulo], ['ocioso', 'Robô ativo']);
+  assert.match(ocioso.detalhe, /Esperando a próxima leitura, às \d\d:\d\d\./);
+
+  const lendo = i({ ...base, estado: 'processando', atividade: 'Lendo os e-mails da caixa', processando_total: 12, processando_feitos: 5 });
+  assert.deepEqual([lendo.chave, lendo.titulo], ['processando', 'Processando agora']);
+  assert.equal(lendo.detalhe, 'Lendo os e-mails da caixa (5 de 12)');
+
+  const fora = i({ ...base, estado: 'fora_do_horario', proxima_leitura_em: new Date(agora + 3 * 86400000).toISOString() });
+  assert.equal(fora.chave, 'fora');
+  assert.match(fora.detalhe, /volta a ler os e-mails \w+ às \d\d:\d\d/);               // outro dia: leva o dia da semana
+
+  assert.equal(i({ ...base, estado: 'pausado' }).chave, 'pausado');
+  assert.match(i({ ...base, estado: 'pausado' }).detalhe, /Zona de perigo/);
+  const erro = i({ ...base, estado: 'erro', ultimo_erro: 'IMAP caiu' });
+  assert.deepEqual([erro.chave, erro.detalhe], ['erro', 'IMAP caiu']);
+
+  // sem sinal: passou do limite (6 min) o robô parou, seja qual for o estado que ele gravou por último
+  assert.equal(i({ ...base, estado: 'ocioso', verificado_em: min(6) }).chave, 'ocioso', '6 min ainda é sinal recente');
+  for (const estado of ['ocioso', 'processando', 'fora_do_horario', 'pausado']) {
+    const parado = i({ ...base, estado, verificado_em: min(20) });
+    assert.equal(parado.chave, 'sem-sinal', estado);
+    assert.match(parado.detalhe, /Último sinal há 20 min/);
+  }
+  assert.match(i({ ...base, verificado_em: min(180) }).detalhe, /há 3 h/);
+});
+
+test('status do robô: o RH lê a linha, a tela mostra os números e o ponto do menu, e ninguém escreve pelo painel', async () => {
+  const marcar = campos => sql(`update pipeline_status set ${campos}`);
+  const limpo = `estado = 'ocioso', atividade = null, verificado_em = now(), nao_lidos = null, nao_lidos_em = null, processando_total = 0,
+    processando_feitos = 0, processando_desde = null, ultima_leitura_em = null, ultima_leitura_fim = null, ultima_leitura_sucesso = null,
+    ultima_leitura_resumo = null, proxima_leitura_em = null, ultimo_erro = null, ultimo_erro_em = null, lease_dono = null, lease_ate = null`;
+  const texto = seletor => beto.$(seletor).textContent.replace(/\s+/g, ' ').trim();
+  try {
+    marcar(limpo);
+    // o item do menu é de todo o RH (Configurações é só do administrador)
+    assert.notEqual(beto.$('#nav-status').style.display, 'none');
+    assert.equal(beto.$('#nav-config').style.display, 'none');
+
+    // ocioso, com contagem e próxima leitura
+    marcar(`nao_lidos = 7, nao_lidos_em = now(), proxima_leitura_em = now() + interval '5 minutes'`);
+    beto.w.irPara('status', beto.$('#nav-status'));
+    await beto.w.carregarStatus();
+    assert.equal(texto('#status-estado'), 'Robô ativo');
+    assert.ok(beto.$('#status-topo').classList.contains('ocioso'));
+    assert.ok(beto.$('#nav-status-luz').classList.contains('ocioso'), 'o ponto do menu acompanha o estado');
+    assert.equal(texto('#st-nao-lidos'), '7');
+    assert.match(texto('#st-nao-lidos-sub'), /contados às \d\d:\d\d/);
+    assert.equal(texto('#st-processando'), 'Nada');
+    assert.match(texto('#st-proxima-sub'), /em [45] min/);
+    assert.equal(texto('#st-excecoes'), sql(`select count(*) from excecoes where status = 'pendente'`));
+
+    // lendo: "x de y", barra e "aguardando" descendo a cada e-mail tratado
+    marcar(`estado = 'processando', atividade = 'Lendo os e-mails da caixa', processando_total = 10, processando_feitos = 4, nao_lidos = 10,
+            nao_lidos_em = now() - interval '1 minute', processando_desde = now()`);
+    await beto.w.carregarStatus();
+    assert.equal(texto('#status-estado'), 'Processando agora');
+    assert.match(texto('#status-detalhe'), /Lendo os e-mails da caixa \(4 de 10\)/);
+    assert.equal(texto('#st-processando'), '4 de 10');
+    assert.equal(beto.$('#st-barra').style.width, '40%');
+    assert.notEqual(beto.$('#st-barra-wrap').style.display, 'none');
+    assert.equal(texto('#st-nao-lidos'), '6', '10 contados, 4 já tratados');
+    assert.ok(beto.$('#nav-status-luz').classList.contains('processando'));
+
+    // pedido do RH em andamento não mexe na contagem de e-mails
+    marcar(`atividade = 'Pedidos do RH: tentar de novo', processando_total = 2, processando_feitos = 0, nao_lidos = 10`);
+    await beto.w.carregarStatus();
+    assert.equal(texto('#st-nao-lidos'), '10');
+
+    // última leitura concluída, com o resumo
+    marcar(`estado = 'ocioso', atividade = null, processando_total = 0, processando_feitos = 0, processando_desde = null,
+            ultima_leitura_em = now() - interval '3 minutes', ultima_leitura_fim = now() - interval '2 minutes', ultima_leitura_sucesso = true,
+            ultima_leitura_resumo = '{"emails_lidos": 6, "curriculos_processados": 4, "excecoes_geradas": 1, "duplicados_detectados": 1, "custo_estimado_usd": 0.0812}'::jsonb`);
+    await beto.w.carregarStatus();
+    const ultima = texto('#st-ultima');
+    assert.match(ultima, /Concluída/);
+    assert.match(ultima, /E-mails lidos\s*6/);
+    assert.match(ultima, /Currículos novos no banco\s*4/);
+    assert.match(ultima, /Exceções geradas\s*1/);
+    assert.match(ultima, /US\$ 0\.08/);
+    assert.match(texto('#st-ultima-sub'), /há 3 min/);
+
+    // com erro: o texto do erro aparece
+    marcar(`estado = 'erro', ultima_leitura_sucesso = false, ultimo_erro = 'IMAP caiu', ultimo_erro_em = now()`);
+    await beto.w.carregarStatus();
+    assert.equal(texto('#status-estado'), 'Erro na última leitura');
+    assert.match(texto('#st-ultima'), /Com erro/);
+    assert.match(texto('#st-ultima'), /IMAP caiu/);
+    assert.ok(beto.$('#nav-status-luz').classList.contains('erro'));
+
+    // as regras vêm de Configurações (padrão da 046: seg a sáb, 07:30 às 18:00, a cada 10 min)
+    const regras = texto('#st-regras');
+    assert.match(regras, /Segunda a sábado/);
+    assert.match(regras, /07:30 às 18:00/);
+    assert.match(regras, /a cada\s*10 min/);
+    assert.ok(!/Alterar em Configurações/.test(regras), 'o link para Configurações é só do administrador');
+
+    // sem sinal: o robô parou; nada de "próxima leitura" inventada
+    marcar(`estado = 'ocioso', verificado_em = now() - interval '20 minutes', proxima_leitura_em = now() + interval '5 minutes'`);
+    await beto.w.carregarStatus();
+    assert.equal(texto('#status-estado'), 'Sem sinal do robô');
+    assert.ok(beto.$('#status-topo').classList.contains('sem-sinal'));
+    assert.ok(beto.$('#nav-status-luz').classList.contains('sem-sinal'));
+    assert.equal(texto('#st-proxima'), '—');
+    assert.match(texto('#status-atualizado'), /há 20 min/);
+
+    // o atalho da fila de exceções abre a aba certa de Vagas
+    beto.w.irParaFilaDeExcecoes();
+    await new Promise(r => setTimeout(r, 300));
+    assert.equal(beto.w.eval('app.telaAtual'), 'vagas');
+    assert.ok(beto.$('#sub-excecoes').classList.contains('active'));
+
+    // o administrador vê o atalho para as configurações
+    ana.w.irPara('status', ana.$('#nav-status'));
+    await ana.w.carregarStatus();
+    assert.match(ana.$('#st-regras').textContent, /Alterar em Configurações/);
+
+    // permissões: o RH lê a linha, mas nenhum perfil do painel escreve (só o robô, com a chave de serviço)
+    for (const painel of [beto, ana]) {
+      const r = await painel.w.eval("db.from('pipeline_status').update({ estado: 'ocioso' }).eq('id', true).select()");
+      assert.ok(r.error, 'o painel não pode escrever no status');
+      const d = await painel.w.eval("db.from('pipeline_status').delete().eq('id', true).select()");
+      assert.ok(d.error, 'nem apagar');
+    }
+    const lida = await beto.w.eval("db.from('pipeline_status').select('estado,nao_lidos').eq('id', true)");
+    assert.equal(lida.data.length, 1);
+    assert.deepEqual(beto.erros, []);
+  } finally {
+    marcar(limpo);
+    beto.w.irPara('dashboard');
+  }
+});
+
+test('configurações: nomes claros, aviso "Sem efeito hoje" nos campos de enfeite, busca, atalhos e validação ao salvar', async () => {
+  // no banco de produção estas linhas existem; o ensaio só tem as da sanitização e da IA
+  const extras = ['imap_servidor', 'imap_porta', 'tamanho_minimo_anexo_bytes', 'mensagem_convocacao_padrao', 'ddi_padrao', 'ddd_padrao'];
+  sql(`insert into configuracoes (chave, valor, descricao) values ('imap_servidor', '"email-ssl.com.br"', 'x'), ('imap_porta', '993', 'x'),
+       ('tamanho_minimo_anexo_bytes', '10240', 'x'), ('mensagem_convocacao_padrao', '"Olá {nome}"', 'x'), ('ddi_padrao', '"55"', 'x'), ('ddd_padrao', '"61"', 'x')
+       on conflict (chave) do nothing`);
+  try {
+    await ana.w.carregarConfig();
+    const tela = () => ana.$('#config-lista');
+    const itens = () => ana.$$('#config-lista .config-item').filter(i => i.style.display !== 'none');
+
+    // nome claro em cima, explicação embaixo e o nome técnico pequeno (para suporte)
+    const item = chave => ana.$(`#cfg-${chave}`).closest('.config-item');
+    assert.equal(item('sanitizacao_meses_sem_movimentacao').querySelector('.config-titulo').textContent.trim(), 'Sugerir quem está parado há mais de');
+    assert.equal(item('sanitizacao_meses_sem_movimentacao').querySelector('.config-chave').textContent, 'sanitizacao_meses_sem_movimentacao');
+    assert.equal(item('sanitizacao_meses_sem_movimentacao').querySelector('.config-unidade').textContent, 'meses');
+    assert.match(item('modelo_ia_avaliacao').querySelector('.config-titulo').textContent, /IA que analisa o currículo/);
+    assert.equal(ana.$('#cfg-sanitizacao_detectar_duplicidade').tagName, 'SELECT', 'sim/não em vez de digitar "true"');
+    assert.equal(ana.$('#cfg-sanitizacao_pesos').tagName, 'TEXTAREA');
+
+    // o que não vale (ou não se mexe) NÃO aparece: servidor e porta do e-mail, a segunda avaliação e a regra de nota de vaga baixa,
+    // mesmo com as linhas existindo no banco (o ensaio tem as faixas e a aderência; os de e-mail o teste acabou de inserir)
+    for (const k of ['imap_servidor', 'imap_porta', 'faixa_ambigua_min', 'faixa_ambigua_max', 'sanitizacao_aderencia_min'])
+      assert.equal(ana.$(`#cfg-${k}`), null, `${k} não aparece na tela`);
+    assert.equal(ana.$('#cfg-segunda-ativa'), null, 'sem o interruptor da segunda avaliação');
+    assert.ok(!/segunda avalia/i.test(tela().textContent), 'nenhuma menção à segunda avaliação');
+    assert.ok(!tela().textContent.includes('imap_servidor'));
+    assert.equal(ana.$$('.config-tag-sem-efeito').length, 0, 'todo campo que aparece vale: nenhum leva o aviso "Sem efeito hoje"');
+    assert.ok(!item('leitura_hora_inicio').querySelector('.config-tag-sem-efeito'));
+    assert.equal(ana.$('#cfg-tamanho_minimo_anexo_bytes').disabled, false, 'o tamanho mínimo da imagem é editável');
+
+    // atalhos para cada grupo, inclusive os blocos que já existiam
+    const atalhos = ana.$$('#config-atalhos .config-atalho').map(b => b.textContent);
+    for (const rotulo of ['Leitura de e-mails', 'Inteligência artificial', 'Limpeza do banco (LGPD)', 'WhatsApp e telefones', 'Níveis de experiência', 'Zona de perigo'])
+      assert.ok(atalhos.includes(rotulo), `falta o atalho ${rotulo}`);
+
+    // busca: por palavra do título, da explicação, do nome técnico e sem acento/maiúscula
+    const total = itens().length;
+    ana.define('#config-busca', 'WHATSAPP'); ana.w.filtrarConfig();
+    assert.ok(itens().length >= 3 && itens().length < total);
+    assert.ok(itens().every(i => /whatsapp|ddi|ddd|convoca/i.test(i.textContent)), 'só o que tem a ver com WhatsApp');
+    assert.equal(ana.$('#cfg-grupo-limpeza').style.display, 'none', 'grupo sem resultado some');
+    ana.define('#config-busca', 'confianca'); ana.w.filtrarConfig();         // sem acento acha "confiança"
+    assert.ok(itens().some(i => i.querySelector('#cfg-ia_confianca_minima')));
+    ana.define('#config-busca', 'zzzz-nada'); ana.w.filtrarConfig();
+    assert.equal(ana.$('#config-sem-resultado').style.display, '', 'avisa quando nada casa');
+    ana.define('#config-busca', ''); ana.w.filtrarConfig();
+    assert.equal(itens().length, total, 'limpar a busca mostra tudo de novo');
+
+    // validação ao salvar: número fora da faixa e JSON quebrado não chegam ao banco
+    const valorNoBanco = chave => sql(`select valor from configuracoes where chave = '${chave}'`);
+    const antes = valorNoBanco('ia_confianca_minima');
+    ana.define('#cfg-ia_confianca_minima', '150'); await ana.w.salvarConfig('ia_confianca_minima');
+    assert.match(ana.ultimoToast(), /de 0 a 100/);
+    assert.equal(valorNoBanco('ia_confianca_minima'), antes);
+    const pesos = valorNoBanco('sanitizacao_pesos');
+    ana.define('#cfg-sanitizacao_pesos', '{"limite_alta": 4,'); await ana.w.salvarConfig('sanitizacao_pesos');
+    assert.match(ana.ultimoToast(), /Formato inválido/);
+    assert.equal(valorNoBanco('sanitizacao_pesos'), pesos, 'o JSON quebrado não foi gravado');
+    // sim/não grava o booleano de verdade (não o texto "false")
+    ana.define('#cfg-sanitizacao_detectar_duplicidade', 'false'); await ana.w.salvarConfig('sanitizacao_detectar_duplicidade');
+    assert.equal(sql(`select jsonb_typeof(valor) || ':' || valor::text from configuracoes where chave = 'sanitizacao_detectar_duplicidade'`), 'boolean:false');
+    ana.define('#cfg-sanitizacao_detectar_duplicidade', 'true'); await ana.w.salvarConfig('sanitizacao_detectar_duplicidade');
+    // o JSON válido (o mesmo que já estava) salva como objeto
+    await ana.w.carregarConfig();
+    await ana.w.salvarConfig('sanitizacao_pesos');
+    assert.match(ana.ultimoToast(), /Configuração salva/);
+    assert.equal(sql(`select jsonb_typeof(valor) from configuracoes where chave = 'sanitizacao_pesos'`), 'object');
+    assert.deepEqual(ana.erros, []);
+  } finally {
+    sql(`delete from configuracoes where chave in (${extras.map(k => `'${k}'`).join(', ')})`);
+  }
+});
+
+test('configurações que agora valem: DDI/DDD e a mensagem do WhatsApp mudam o painel na hora; a imagem mínima é validada', async () => {
+  const chaves = ['ddi_padrao', 'ddd_padrao', 'mensagem_convocacao_padrao', 'tamanho_minimo_anexo_bytes'];
+  sql(`insert into configuracoes (chave, valor, descricao) values ('ddi_padrao', '"55"', 'x'), ('ddd_padrao', '"61"', 'x'),
+       ('mensagem_convocacao_padrao', to_jsonb('Olá {nome}, meu nome é {gestor} e você terá uma entrevista no dia {data} às {hora}.'::text), 'x'),
+       ('tamanho_minimo_anexo_bytes', '10240', 'x') on conflict (chave) do nothing`);
+  const noBanco = chave => sql(`select valor from configuracoes where chave = '${chave}'`);
+  try {
+    await ana.w.carregarBase();                                                       // como no login: o painel lê estas configurações
+    assert.equal(ana.w.eval('app.cache.config.ddd_padrao'), '61');
+    await ana.w.carregarConfig();
+
+    // DDI/DDD: padrão de sempre, depois o do painel (vale sem recarregar), e o do número, quando ele tem, continua valendo
+    assert.equal(ana.w.normalizaTelefone('99211-6739'), '5561992116739');
+    ana.define('#cfg-ddd_padrao', '11'); await ana.w.salvarConfig('ddd_padrao');
+    assert.equal(noBanco('ddd_padrao'), '"11"', 'grava texto, não número');
+    assert.equal(ana.w.normalizaTelefone('99211-6739'), '5511992116739');
+    assert.equal(ana.w.normalizaTelefone('(21) 99211-6739'), '5521992116739');
+    ana.define('#cfg-ddi_padrao', '351'); await ana.w.salvarConfig('ddi_padrao');
+    assert.equal(ana.w.normalizaTelefone('21992116739'), '35121992116739');
+    ana.define('#cfg-ddd_padrao', '611'); await ana.w.salvarConfig('ddd_padrao');       // inválido: nem chega ao banco
+    assert.match(ana.ultimoToast(), /só números, de 2 a 2 dígitos/);
+    assert.equal(noBanco('ddd_padrao'), '"11"');
+    ana.define('#cfg-ddi_padrao', '+55'); await ana.w.salvarConfig('ddi_padrao');
+    assert.match(ana.ultimoToast(), /só números/);
+    ana.w.eval(`app.cache.config.ddd_padrao = 'xx'; app.cache.config.ddi_padrao = ''`);   // valor estragado no banco: cai no padrão, sem quebrar
+    assert.equal(ana.w.normalizaTelefone('99211-6739'), '5561992116739');
+
+    // mensagem de convocação: marcador desconhecido e texto vazio são recusados; o certo vira a mensagem do agendamento
+    const original = noBanco('mensagem_convocacao_padrao');
+    ana.define('#cfg-mensagem_convocacao_padrao', 'Oi {nome}, sua entrevista é em {local}'); await ana.w.salvarConfig('mensagem_convocacao_padrao');
+    assert.match(ana.ultimoToast(), /Marcador \{local\} desconhecido/);
+    ana.define('#cfg-mensagem_convocacao_padrao', '   '); await ana.w.salvarConfig('mensagem_convocacao_padrao');
+    assert.match(ana.ultimoToast(), /não pode ficar vazia/);
+    assert.equal(noBanco('mensagem_convocacao_padrao'), original, 'nada foi gravado');
+    ana.define('#cfg-mensagem_convocacao_padrao', 'Oi {nome}! Aqui é {gestor}: entrevista em {data} às {hora}.');
+    await ana.w.salvarConfig('mensagem_convocacao_padrao');
+    assert.match(ana.ultimoToast(), /Configuração salva/);
+    ana.w.abrirAgendamento('cand-1', 'Maria Souza', '61999991234');
+    assert.match(ana.$('#ag-msg').value, /^Oi Maria Souza! Aqui é Ana Admin: entrevista em \d{2}\/\d{2}\/\d{4} às 09:00\.$/);
+    assert.equal(ana.$('#ag-msg').value, ana.$('#ag-preview').textContent, 'a prévia mostra o mesmo texto');
+    ana.w.fecharModal('modal-agendar');
+    // sem mensagem em Configurações, vale o texto de fábrica (o de sempre)
+    ana.w.eval(`app.cache.config.mensagem_convocacao_padrao = ''`);
+    ana.w.abrirAgendamento('cand-1', 'Maria Souza', '61999991234');
+    assert.match(ana.$('#ag-msg').value, /^Olá Maria Souza, meu nome é Ana Admin e você terá uma entrevista no dia .* às 09:00\.\nConfirme essa mensagem por favor\.$/);
+    ana.w.fecharModal('modal-agendar');
+
+    // tamanho mínimo da imagem: só de 1 KB a 1 MB
+    ana.define('#cfg-tamanho_minimo_anexo_bytes', '500'); await ana.w.salvarConfig('tamanho_minimo_anexo_bytes');
+    assert.match(ana.ultimoToast(), /de 1024 a 1048576/);
+    assert.equal(noBanco('tamanho_minimo_anexo_bytes'), '10240');
+    ana.define('#cfg-tamanho_minimo_anexo_bytes', '8192'); await ana.w.salvarConfig('tamanho_minimo_anexo_bytes');
+    assert.equal(noBanco('tamanho_minimo_anexo_bytes'), '8192');
+    assert.deepEqual(ana.erros, []);
+  } finally {
+    sql(`delete from configuracoes where chave in (${chaves.map(k => `'${k}'`).join(', ')})`);
+    ana.w.eval('app.cache.config = {}');
+  }
+});
+
+test('histórico do candidato: filtros por nome e telefone, registro à mão (sem interesse, desistência), alteração e exclusão só do administrador', async () => {
+  const limpar = () => sql(`delete from historico_candidatos where nome like '% Hist'`);
+  limpar();
+  sql(`insert into historico_candidatos (nome, telefone, data_evento, setor_vaga, vaga_titulo, status, observacao, origem) values
+       ('Maria Teste Hist', '(61) 99999-1111', '2026-09-10', 'Logística', 'Auxiliar de Logística', 'aprovado', 'Ótima conversa', 'sistema'),
+       ('João Teste Hist',  '61 98888-2222',   '2026-09-11', 'Loja', null, 'nao_compareceu', null, 'sistema'),
+       ('Ana Teste Hist',   null,              '2026-09-12', null, null, 'reprovado', 'Sem CNH', 'manual')`);
+  const linhas = p => p.$$('#hist-body tr.hist-linha');
+  const nomes = p => linhas(p).map(l => l.querySelector('.hist-nome').textContent);
+  const filtrar = async (p, nome = '', tel = '', status = '') => {
+    p.define('#hist-nome', nome); p.define('#hist-tel', tel); p.define('#hist-status', status);
+    await p.w.carregarHistorico();
+  };
+  try {
+    // a tela abre com tudo, do mais recente para o mais antigo
+    await filtrar(beto, 'teste hist');
+    assert.deepEqual(nomes(beto), ['Ana Teste Hist', 'João Teste Hist', 'Maria Teste Hist']);
+    assert.match(beto.$('#hist-contador').textContent, /3 registros com esses filtros/);
+    const maria = beto.$$('#hist-body tr.hist-linha').find(l => l.textContent.includes('Maria'));
+    assert.match(maria.textContent, /10\/09\/2026/);
+    assert.match(maria.textContent, /\(61\) 99999-1111/);
+    assert.match(maria.textContent, /Logística/);
+    assert.match(maria.textContent, /Aprovado/);
+    assert.match(maria.textContent, /Ótima conversa/);
+
+    // filtro por nome: parcial, sem acento nem maiúscula
+    await filtrar(beto, 'JOAO'); assert.deepEqual(nomes(beto), ['João Teste Hist']);
+    await filtrar(beto, 'mar'); assert.ok(nomes(beto).includes('Maria Teste Hist'));
+    // filtro por telefone: só os números, com ou sem máscara
+    await filtrar(beto, 'teste hist', '(61) 99999'); assert.deepEqual(nomes(beto), ['Maria Teste Hist']);
+    await filtrar(beto, 'teste hist', '98888-2222'); assert.deepEqual(nomes(beto), ['João Teste Hist']);
+    await filtrar(beto, 'teste hist', '61988882222'); assert.deepEqual(nomes(beto), ['João Teste Hist']);
+    // filtro por status
+    await filtrar(beto, 'teste hist', '', 'nao_compareceu'); assert.deepEqual(nomes(beto), ['João Teste Hist']);
+    // nada encontrado
+    await filtrar(beto, 'zzzz-ninguem');
+    assert.equal(linhas(beto).length, 0);
+    assert.match(beto.$('#hist-body').textContent, /Nada encontrado/);
+    assert.match(beto.$('#hist-contador').textContent, /Nenhum registro com esses filtros/);
+
+    // detalhes: o que existe do cadastro e a origem do registro
+    await filtrar(beto, 'teste hist');
+    const idMaria = sql(`select id from historico_candidatos where nome = 'Maria Teste Hist'`);
+    beto.w.alternarDetalheHistorico(idMaria);
+    assert.equal(beto.$$('#hist-body tr.hist-detalhe').length, 1);
+    assert.match(beto.$('#hist-body tr.hist-detalhe').textContent, /Origem do registro.*Automático/);
+    assert.match(beto.$('#hist-body tr.hist-detalhe').textContent, /não estão mais no Banco de Talentos/, 'sem cadastro ligado: avisa');
+    beto.w.alternarDetalheHistorico(idMaria);
+    assert.equal(beto.$$('#hist-body tr.hist-detalhe').length, 0, 'clicar de novo fecha');
+
+    // com o cadastro ainda no Banco de Talentos: currículo e análise da IA a um clique (inclusive de candidato inativo)
+    sql(`insert into historico_candidatos (candidato_id, nome, telefone, data_evento, status, origem)
+         select id, 'Ligada Teste Hist', '(61) 96666-4444', '2026-09-15', 'aprovado', 'manual' from candidatos where nome = 'Candidato 096 Silva'`);
+    const idLigada = sql(`select id from historico_candidatos where nome = 'Ligada Teste Hist'`);
+    const candLigado = sql(`select candidato_id from historico_candidatos where id = '${idLigada}'`);
+    await filtrar(beto, 'ligada teste');
+    beto.w.alternarDetalheHistorico(idLigada);
+    const detalhe = () => beto.$('#hist-body tr.hist-detalhe').textContent;
+    assert.match(detalhe(), /Ver currículo/);
+    assert.match(detalhe(), /Ver cadastro e análise da IA/);
+    assert.doesNotMatch(detalhe(), /não estão mais no Banco de Talentos/);
+    await beto.w.abrirTalento(candLigado);
+    assert.ok(beto.$('#drawer-talento').classList.contains('show'), 'abre o cadastro do candidato');
+    assert.match(beto.$('#t-ia').textContent, /Sugestão da IA/, 'com a análise da IA');
+    beto.w.fecharDrawer();
+    sql(`update candidatos set status_banco = 'inativo', inativado_em = now(), motivo_inativacao = 'teste do histórico' where id = '${candLigado}'`);
+    await filtrar(beto, 'ligada teste');
+    beto.w.alternarDetalheHistorico(idLigada);
+    assert.match(detalhe(), /Ver cadastro e análise da IA/, 'inativo ainda tem cadastro e análise');
+    await beto.w.abrirTalento(candLigado);
+    assert.ok(beto.$('#drawer-talento').classList.contains('show'));
+    beto.w.fecharDrawer();
+    sql(`update candidatos set status_banco = 'ativo', inativado_em = null, motivo_inativacao = null where id = '${candLigado}'`);
+    await filtrar(beto, 'teste hist');
+
+    // novo registro à mão: desistência depois de aprovado
+    beto.w.abrirRegistroHistorico();
+    beto.define('#hist-f-status', 'desistencia'); beto.w.dicaStatusHistorico();
+    assert.match(beto.$('#hist-f-dica').textContent, /documentação ou no treinamento/);
+    await beto.w.salvarRegistroHistorico();
+    assert.match(beto.ultimoToast(), /Informe o nome/, 'nome é obrigatório');
+    beto.define('#hist-f-nome', 'Carlos Desistente Hist'); beto.define('#hist-f-tel', '(61) 97777-3333'); beto.define('#hist-f-data', '2026-09-14');
+    beto.define('#hist-f-setor', 'Logística'); beto.define('#hist-f-obs', 'Desistiu no treinamento');
+    beto.define('#hist-f-status', '');
+    await beto.w.salvarRegistroHistorico();
+    assert.match(beto.ultimoToast(), /Escolha o status/);
+    beto.define('#hist-f-status', 'desistencia');
+    await beto.w.salvarRegistroHistorico();
+    assert.match(beto.ultimoToast(), /Registro criado/);
+    assert.equal(sql(`select status || '|' || origem || '|' || setor_vaga || '|' || data_evento || '|' || observacao from historico_candidatos where nome = 'Carlos Desistente Hist'`),
+      'desistencia|manual|Logística|2026-09-14|Desistiu no treinamento');
+    assert.ok(!nomes(beto).includes('Carlos Desistente Hist'), 'a tela recarrega respeitando o filtro que estava ativo ("teste hist")');
+    await filtrar(beto, 'desistente hist');
+    assert.deepEqual(nomes(beto), ['Carlos Desistente Hist'], 'o registro novo aparece');
+    await filtrar(beto, '', '', 'desistencia');
+    assert.ok(nomes(beto).includes('Carlos Desistente Hist'));
+
+    // alterar: a linha do sistema vira "desistência" e deixa de acompanhar a entrevista
+    await filtrar(beto, 'maria teste');
+    beto.w.abrirRegistroHistorico(idMaria);
+    assert.notEqual(beto.$('#hist-f-aviso').style.display, 'none', 'avisa que a linha veio de Entrevistas');
+    assert.equal(beto.$('#hist-f-nome').value, 'Maria Teste Hist');
+    assert.equal(beto.$('#hist-f-status').value, 'aprovado');
+    beto.define('#hist-f-status', 'desistencia'); beto.define('#hist-f-obs', 'Desistiu na documentação');
+    await beto.w.salvarRegistroHistorico();
+    assert.match(beto.ultimoToast(), /Registro atualizado/);
+    assert.equal(sql(`select status || '|' || observacao || '|' || alterado_manual from historico_candidatos where id = '${idMaria}'`), 'desistencia|Desistiu na documentação|true');
+    assert.match(beto.$('#hist-body').textContent, /Desistência/);
+    // abrir e salvar sem mudar nada não grava (nem faz barulho)
+    beto.w.abrirRegistroHistorico(idMaria);
+    const antes = sql(`select atualizado_em from historico_candidatos where id = '${idMaria}'`);
+    await beto.w.salvarRegistroHistorico();
+    assert.equal(sql(`select atualizado_em from historico_candidatos where id = '${idMaria}'`), antes);
+
+    // exclusão: só o administrador (o botão nem aparece para o RH, e o banco recusa mesmo assim)
+    assert.equal(beto.$$('#hist-body .btn-sm.vermelho').length, 0, 'sem botão de excluir para o RH');
+    const recusa = await beto.w.eval(`db.rpc('historico_excluir', { p_id: '${idMaria}' })`);
+    assert.match(recusa.error.message, /Somente o administrador/);
+    await filtrar(ana, 'teste hist');
+    assert.ok(ana.$$('#hist-body .btn-sm.vermelho').length >= 3, 'o administrador vê o botão');
+    await ana.w.excluirRegistroHistorico(idMaria);
+    assert.match(ana.ultimoToast(), /Registro excluído/);
+    assert.equal(sqlNum(`select count(*) from historico_candidatos where id = '${idMaria}'`), 0);
+    assert.ok(!nomes(ana).includes('Maria Teste Hist'));
+    assert.deepEqual(beto.erros, []); assert.deepEqual(ana.erros, []);
+  } finally {
+    limpar();
+  }
+});
+
+test('IA pausada: o servidor responde 503 com o motivo e o painel mostra; o currículo enviado fica na fila', async () => {
+  const http = require('node:http');
+  const servidor = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ detail: 'O envio para a IA está pausado pelo administrador (Configurações → Zona de perigo)' }));
+    });
+  });
+  await new Promise(r => servidor.listen(0, '127.0.0.1', r));
+  const painel = await abrirPainel(BETO, 'gerente_rh', { apiUrl: `http://127.0.0.1:${servidor.address().port}` });
+  try {
+    await painel.w.eval(`db.auth.getSession = async () => ({ data: { session: { access_token: 'token-de-teste' } } })`);
+    await painel.w.avaliarUploadAgora('00000000-0000-0000-0000-00000000dd01');
+    assert.match(painel.ultimoToast(), /pausado pelo administrador/);
+    assert.match(painel.ultimoToast(), /fica na fila/);
+    assert.equal(painel.toasts.at(-1).tipo, 'erro');
+
+    await painel.w.abrirModalVaga();
+    painel.define('#ia-vaga-pedido', 'auxiliar contábil para o financeiro, nível júnior, precisa de Excel');
+    await painel.w.gerarRascunhoVaga();
+    assert.match(painel.ultimoToast(), /pausado pelo administrador/, 'o rascunho de vaga mostra o motivo do servidor');
+    assert.equal(painel.$('#ia-vaga-btn').disabled, false, 'o botão volta a funcionar');
+    assert.deepEqual(painel.erros, []);
+  } finally {
+    painel.fim();
+    await new Promise(r => servidor.close(r));
+  }
+});
+
+test('sexo estimado pelo nome: a ficha diz de onde veio, o filtro segue com as 4 opções de sempre e a correção do RH vira manual', async () => {
+  limparFiltros(beto);
+  const [a, b, c] = ['Candidato 095 Silva', 'Candidato 096 Silva', 'Candidato 097 Silva'].map(idDe);   // nenhum outro teste usa estes
+  sql(`update candidatos set sexo = 'feminino', sexo_origem = 'ia_nome' where id = '${a}'`);           // estimado pela IA
+  sql(`update candidatos set sexo = 'masculino', sexo_origem = 'informado' where id = '${b}'`);        // o currículo informa
+  sql(`update candidatos set sexo = null, sexo_origem = null where id = '${c}'`);                      // sem sexo
+
+  // a ficha: estimado avisa, informado não precisa de aviso, sem sexo mostra traço
+  await beto.w.abrirTalento(a);
+  assert.match(beto.$('#t-dados').textContent, /SexoFeminino — estimado pela IA a partir do nome/);
+  await beto.w.abrirTalento(b);
+  assert.match(beto.$('#t-dados').textContent, /SexoMasculino(?! —)/);
+  await beto.w.abrirTalento(c);
+  assert.match(beto.$('#t-dados').textContent, /Sexo—/);
+  beto.w.fecharDrawer();
+
+  // o filtro segue com as quatro opções de sempre (sem opção própria para o estimado) e cada uma funciona como antes
+  assert.deepEqual([...beto.$$('#filtro-b-sexo option')].map(o => o.value), ['', 'feminino', 'masculino', 'nao_informado']);
+  beto.define('#filtro-b-sexo', 'nao_informado');
+  await beto.w.carregarBanco();
+  assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where status_banco = 'ativo' and sexo is null`));
+  beto.define('#filtro-b-sexo', 'feminino');
+  await beto.w.carregarBanco();
+  assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where status_banco = 'ativo' and sexo = 'feminino'`));
+
+  // o RH corrige a estimativa da IA: vira "manual" e sai da lista de revisão
+  await beto.w.abrirTalento(a);
+  await beto.w.abrirEdicaoCandidato();          // assíncrona: espera as opções de região antes de preencher o formulário
+  assert.equal(beto.$('#ed-sexo').value, 'feminino');
+  beto.define('#ed-sexo', 'masculino');
+  await beto.w.salvarEdicaoCandidato();
+  assert.match(beto.ultimoToast(), /Dados atualizados/);
+  assert.equal(sql(`select sexo || '/' || sexo_origem from candidatos where id = '${a}'`), 'masculino/manual');
+  assert.match(beto.$('#t-dados').textContent, /SexoMasculino — definido pelo RH/);
+
+  // "Não informado" escolhido pelo RH também é decisão dele (fica em branco e marcado como manual)
+  await beto.w.abrirTalento(b);
+  await beto.w.abrirEdicaoCandidato();
+  beto.define('#ed-sexo', '');
+  await beto.w.salvarEdicaoCandidato();
+  assert.equal(sql(`select coalesce(sexo, 'vazio') || '/' || sexo_origem from candidatos where id = '${b}'`), 'vazio/manual');
+  beto.w.fecharDrawer();
+  limparFiltros(beto);
+  assert.deepEqual(beto.erros, []);
 });
 
 test('vaga: o assistente de IA fica desligado sem API_URL e, com o serviço, preenche o formulário', async () => {
@@ -1115,6 +2000,50 @@ test('permissões no banco: RH comum não edita configuração; usuário INATIVO
   const direto = await dani.w.eval(`db.from('candidatos').update({ status_banco: 'inativo' }).eq('nome', 'Candidato 060 Silva')`);
   assert.ok(direto.error, 'o painel não escreve direto em candidatos');
   dani.fim();
+});
+
+test('fila de exceções: aviso de plataforma (Trabalha Brasil) tem "Abrir currículo" no lugar de Ver e-mail e Reprocessar; a exceção comum não muda', async () => {
+  const LINK = 'https://events-api.bne.com.br/api/v1/events/tracking-event?evento=t&MessageId=1&url=http%3A%2F%2Fwww.trabalhabrasil.com.br%2Fvisualizar-curriculo%2Fu%3Fcurriculo%3DABC&sig=X';
+  sql(`insert into excecoes (email_remetente, tipo, status, detalhe_erro, email_assunto, link_curriculo)
+       values ('trabalhabrasil@trabalhabrasil.com.br', 'sem_anexo', 'pendente', 'Aviso do Trabalha Brasil: teste', 'Currículo enviado pelo Trabalha Brasil', '${LINK}')`);
+  sql(`insert into excecoes (email_remetente, tipo, status, detalhe_erro) values ('candidata.sem.anexo@gmail.com', 'sem_anexo', 'pendente', 'E-mail sem anexo nem link de currículo')`);
+  try {
+    await beto.w.carregarExcecoes();
+    const linhas = beto.$$('#excecoes-lista .exc-full');
+    const botoes = l => [...l.querySelectorAll('.exc-btns button')].map(b => b.textContent.replace(/\s+/g, ' ').trim());
+    const portal = linhas.find(l => l.textContent.includes('trabalhabrasil@trabalhabrasil.com.br'));
+    const comum = linhas.find(l => l.textContent.includes('candidata.sem.anexo@gmail.com'));
+    assert.ok(portal && comum, 'as duas exceções aparecem');
+    assert.deepEqual(botoes(portal), ['Abrir currículo', 'Revisar', 'Ignorar'], 'aviso de plataforma: só o botão que leva ao currículo (e o que tira o aviso da fila)');
+    assert.deepEqual(botoes(comum), ['Ver e-mail', 'Reprocessar', 'Revisar', 'Ignorar'], 'exceção comum: como sempre');
+    assert.match(portal.textContent, /Aviso do Trabalha Brasil/);
+
+    // "Abrir currículo" abre o endereço do e-mail em outra aba, sem dar acesso ao painel (noopener)
+    let aberto = null;
+    beto.w.open = (...args) => { aberto = args; return null; };
+    portal.querySelector('button[data-url]').click();
+    assert.deepEqual(aberto, [LINK, '_blank', 'noopener,noreferrer']);
+
+    // o que não é http/https nunca abre, nem por chamada direta
+    aberto = null;
+    for (const perigoso of ['javascript:alert(1)', 'data:text/html,<b>', 'ftp://x.test/a', '', null]) beto.w.abrirLinkExterno(perigoso);
+    assert.equal(aberto, null, 'endereço que não é web não abre');
+    assert.equal(beto.w.eval("linkWebSeguro('javascript:alert(1)')"), '');           // const de script comum: só o eval a enxerga
+    assert.equal(beto.w.eval(`linkWebSeguro('${LINK}')`), LINK);
+    beto.w.open = () => null;
+
+    // "Revisar" tira o aviso da fila
+    const id = sql(`select id from excecoes where email_remetente = 'trabalhabrasil@trabalhabrasil.com.br'`);
+    await beto.w.resolverExcecao(id, 'revisado');                          // grava e recarrega a lista sem esperar: aguarda o recarregamento acabar
+    await esperar(700);
+    const restantes = beto.$$('#excecoes-lista .exc-full').map(l => l.textContent);
+    assert.ok(restantes.some(t => t.includes('candidata.sem.anexo@gmail.com')), 'a outra exceção continua pendente');
+    assert.ok(!restantes.some(t => t.includes('trabalhabrasil@trabalhabrasil.com.br')), 'revisado sai da lista de pendentes');
+    assert.equal(sql(`select status from excecoes where id = '${id}'`), 'revisado');
+  } finally {
+    sql(`delete from excecoes where email_remetente in ('trabalhabrasil@trabalhabrasil.com.br', 'candidata.sem.anexo@gmail.com')`);
+    beto.w.open = () => null;
+  }
 });
 
 test('nenhum erro de script em toda a sessão', () => {

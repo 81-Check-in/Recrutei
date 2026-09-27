@@ -20,6 +20,7 @@ from config import (
     FORMATOS_ACEITOS, TAMANHO_MAXIMO_ANEXO, MAX_ANEXOS_POR_EMAIL,
     MODO_SIMULACAO, log,
 )
+from utils import html_para_texto
 
 
 def _decodificar(valor: Optional[str]) -> str:
@@ -85,6 +86,33 @@ def _extrair_corpo(msg: email.message.Message) -> str:
         except Exception:
             pass
     return corpo
+
+
+def _extrair_corpo_texto(msg: email.message.Message, com_links: bool = False) -> str:
+    """
+    O corpo como texto legível, sem marcação HTML: é o que se lê quando o candidato escreve o currículo no próprio e-mail.
+    Um e-mail costuma trazer o mesmo texto em duas versões (puro e HTML): vale a mais completa, sem repetir.
+    com_links: mantém o endereço de cada link ("Ver perfil: https://...") — para o RH ler na Fila de Exceção.
+    """
+    puro, html = [], []
+    partes = msg.walk() if msg.is_multipart() else [msg]
+    for parte in partes:
+        tipo = parte.get_content_type()
+        if tipo not in ("text/plain", "text/html"):
+            continue
+        if parte.get("Content-Disposition") and "attachment" in str(parte.get("Content-Disposition")):
+            continue
+        try:
+            carga = parte.get_payload(decode=True)
+            if not carga:
+                continue
+            texto = carga.decode(parte.get_content_charset() or "utf-8", errors="replace")
+        except Exception:
+            continue
+        (puro if tipo == "text/plain" else html).append(texto)
+    texto_puro = html_para_texto("\n".join(puro), com_links)
+    texto_html = html_para_texto("\n".join(html), com_links)
+    return texto_html if len(texto_html) > len(texto_puro) else texto_puro
 
 
 def _assinatura_confere(tipo: str, conteudo: bytes) -> bool:
@@ -198,6 +226,8 @@ def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
         "remetente": remetente.lower(),
         "assunto": _decodificar(msg.get("Subject")),
         "corpo": _extrair_corpo(msg),
+        "corpo_texto": _extrair_corpo_texto(msg),
+        "corpo_com_links": _extrair_corpo_texto(msg, com_links=True),
         "recebido_em": recebido,
         "anexos": _extrair_anexos(msg),
     }
@@ -248,6 +278,21 @@ def buscar_novos(limite: int = 0, apos_uid: int = 0,
                 log.error(f"  Erro ao ler mensagem {uid}: {e}")
 
     return mensagens, validade
+
+
+def contar_nao_lidos(apos_uid: int = 0, uidvalidity_salvo: int = 0) -> int:
+    """
+    Quantos e-mails a próxima leitura pegaria (o mesmo critério de buscar_novos: não lidos, depois do marcador de progresso), sem baixar
+    nada. Alimenta a tela Status do painel. Levanta exceção se a caixa não responder: quem chama decide o que fazer.
+    """
+    with conexao_imap() as conn:
+        conn.select(IMAP_PASTA_ENTRADA, readonly=True)
+        if apos_uid and uidvalidity_salvo and _uidvalidity(conn) != uidvalidity_salvo:
+            apos_uid = 0
+        status, dados = conn.uid("SEARCH", *_criterio_busca(apos_uid))
+        if status != "OK":
+            raise RuntimeError("Falha ao contar as mensagens não lidas")
+        return len([u for u in dados[0].split() if int(u) > apos_uid])          # "UID n:*" sempre inclui o maior UID da caixa
 
 
 def buscar_por_message_id(message_id: str) -> Optional[Dict]:

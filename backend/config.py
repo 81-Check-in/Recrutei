@@ -63,6 +63,17 @@ if len(IDENTIDADE_CHAVE) < 32:
 MODO_SIMULACAO = os.getenv("MODO_SIMULACAO", "false").lower() == "true"
 LIMITE_EMAILS = int(os.getenv("LIMITE_EMAILS", "0"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Leitura da caixa em tempo (quase) real (python main.py --continuo, ou --agendada = um ciclo por batida do cron). Os valores de
+# verdade vêm de Configurações (leitura_intervalo_minutos, leitura_hora_inicio, leitura_hora_fim, leitura_dias_semana, fuso de
+# Brasília); estes valem quando a configuração falta ou está inválida. Fora da janela o robô só dá sinal de vida.
+FUSO_EXECUCAO = "America/Sao_Paulo"
+LEITURA_INTERVALO_PADRAO_MIN = 10           # de quantos em quantos minutos lê os e-mails não lidos
+LEITURA_INICIO_PADRAO = "07:30"
+LEITURA_FIM_PADRAO = "18:00"                # a leitura das 18:00 já não acontece: a janela é [início, fim)
+LEITURA_DIAS_PADRAO = (1, 2, 3, 4, 5, 6)    # dias ISO: 1 = segunda ... 6 = sábado, 7 = domingo
+PEDIDOS_DO_RH_CADA_S = 30                   # de quantos em quantos segundos o modo contínuo olha os pedidos do RH (tentar de novo, envio manual)
+LEASE_MINUTOS = 30                          # quanto tempo uma instância do robô "reserva" o trabalho (evita duas instâncias lendo a mesma caixa)
+LIMITE_POR_LEITURA_PADRAO = 50              # e-mails por leitura no modo contínuo quando LIMITE_EMAILS não está definido (o resto fica para a leitura seguinte)
 # Reincidência: o mesmo currículo NÃO é lido de novo, seja qual for a vaga. Só volta a ser lido depois de
 # tantos dias da importação anterior E se o candidato foi sanitizado (inativo ou com os dados excluídos).
 REENVIO_DIAS_MINIMO = 30
@@ -104,6 +115,10 @@ TAMANHO_MINIMO_ANEXO = 10 * 1024       # imagens: 10 KB
 TAMANHO_MINIMO_DOCUMENTO = 500         # PDF/DOC/DOCX: 500 bytes
 TAMANHO_MAXIMO_ANEXO = 10 * 1024 * 1024  # 10 MB
 MAX_ANEXOS_POR_EMAIL = 5
+# Plataformas de vagas que AVISAM por e-mail que há um currículo lá (o remetente é o sistema, não o candidato): domínio -> dados.
+# O e-mail não traz o currículo: o RH abre o link do perfil (botão "Abrir currículo" na Fila de Exceção), baixa o arquivo e o envia por
+# "Enviar currículo". "link" é o texto do botão/link do e-mail que leva ao currículo. Para acrescentar outra plataforma, basta uma linha.
+PORTAIS_DE_CURRICULO = {"trabalhabrasil.com.br": {"nome": "Trabalha Brasil", "link": "Ver perfil"}}
 
 # Limites contra arquivos maliciosos (bombas de descompressão, imagens gigantes)
 LIMITE_PIXELS_IMAGEM = 60_000_000
@@ -116,7 +131,8 @@ TEMPO_MAX_EXTRACAO = 180        # segundos por currículo (Linux/macOS)
 # ── Banco de Talentos: análise da IA por candidato ──
 # Versão do prompt de análise; vai em analises_ia.versao_prompt. Suba quando mudar o texto do prompt
 # de forma que altere o resultado, para dar para comparar análises antigas e novas.
-VERSAO_PROMPT_ANALISE = 4
+# 5 = o prompt do RH (igual ao 4) + regra na lista de funções: vale a experiência que predomina, não o cargo mais alto.
+VERSAO_PROMPT_ANALISE = 5
 # Confiança (0–100) abaixo da qual a análise vira "revisão manual necessária". O valor em uso vem
 # de Configurações (ia_confianca_minima); este é só o padrão quando a configuração falta.
 CONFIANCA_MINIMA_PADRAO = 60

@@ -21,6 +21,16 @@ MIGRACOES=(
   036_niveis_habilitar_desabilitar.sql
   037_candidatos_da_vaga_views.sql
   038_selecao_por_loja.sql
+  039_link_do_curriculo_na_excecao.sql
+  040_horario_e_pausa_da_ia.sql
+  041_sexo_pelo_nome.sql
+  042_historico_candidato.sql
+  043_sanitizacao_um_mes.sql
+  044_bloqueios_nome.sql
+  045_filtro_sexo_dos_selecionados.sql
+  046_status_do_robo.sql
+  047_sanitizacao_so_inativa_expurgo_automatico.sql
+  048_filtros_email_telefone_cargos.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(
@@ -33,4 +43,11 @@ TESTES_SQL=(
   ensaio/18_teste_email_de_envio.sql
   ensaio/19_teste_selecao.sql
   ensaio/21_teste_niveis.sql
+  ensaio/22_teste_link_curriculo.sql
+  ensaio/23_teste_pausa_ia.sql
+  ensaio/24_teste_sexo_pelo_nome.sql
+  ensaio/25_teste_historico.sql
+  ensaio/26_teste_status_do_robo.sql
+  ensaio/27_teste_expurgo_automatico.sql
+  ensaio/28_teste_filtros_email_telefone_cargos.sql
 )

@@ -14,6 +14,7 @@ function abrirCandidatosDaVaga(vagaId, titulo, pronta = true) {
   vagaEmProcesso = { id: vagaId, titulo, pronta };
   $('#busca-candidatos').value = '';
   $('#filtro-cand-status').value = '';
+  $('#filtro-cand-sexo').value = '';
   estadoCandidatos.limite = estadoCandidatos.tamanhoPagina;
   irPara('candidatos');
 }
@@ -49,9 +50,10 @@ async function carregarCandidatos() {
   const el = $('#candidatos-body');
 
   const status = $('#filtro-cand-status').value;
+  const sexo   = $('#filtro-cand-sexo').value;
   const busca  = $('#busca-candidatos').value.trim();
   atualizarModoVaga();
-  paginaInicialSeFiltroMudou(estadoCandidatos, JSON.stringify([status, busca, vagaEmProcesso?.id || null]));
+  paginaInicialSeFiltroMudou(estadoCandidatos, JSON.stringify([status, sexo, busca, vagaEmProcesso?.id || null]));
 
   if (estadoCandidatos.limite === estadoCandidatos.tamanhoPagina) {
     el.innerHTML = '<tr><td colspan="6"><div class="estado-vazio"><i class="ti ti-loader-2 girando"></i><p>Carregando...</p></div></td></tr>';
@@ -60,6 +62,7 @@ async function carregarCandidatos() {
   let q = db.from('vw_candidatos').select('*', { count: 'exact' });
   if (status === 'aguardando') q = q.in('status', ['aguardando', 'selecionado']);
   else if (status) q = q.eq('status', status);
+  if (sexo) q = sexo === 'nao_informado' ? q.is('sexo', null) : q.eq('sexo', sexo);
   if (busca) q = q.ilike('nome', `%${busca}%`);
   if (vagaEmProcesso) q = q.eq('vaga_id', vagaEmProcesso.id);
 

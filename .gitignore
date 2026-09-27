@@ -1,0 +1,8 @@
+# Planilhas e arquivos de importação trazem dados pessoais de candidatos (nome, celular...).
+# O repositório é público: nada disso pode ser commitado. Para uma exceção consciente, use `git add -f`.
+importacao/
+*.xlsx
+*.xlsm
+*.xls
+*.ods
+*.csv

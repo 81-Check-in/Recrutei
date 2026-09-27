@@ -16,7 +16,7 @@ psql_() { docker exec -i "$C" psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
 sql()   { psql_ -d "$1" -f "/repo/backend/sql/$2"; }
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$C"; then
-  docker rm -f "$C" >/dev/null 2>&1 || true
+  docker rm -fv "$C" >/dev/null 2>&1 || true
   docker run -d --name "$C" -e POSTGRES_PASSWORD=x -p "$PORTA_PG:5432" -v "$RAIZ":/repo:ro postgres:17-alpine >/dev/null
   # A imagem do Postgres sobe um servidor TEMPORÁRIO para inicializar e depois o definitivo: pg_isready responde já no
 # primeiro. O definitivo só está pronto quando a mensagem "ready to accept connections" aparece pela segunda vez.
