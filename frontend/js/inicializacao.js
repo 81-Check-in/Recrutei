@@ -63,6 +63,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     $('#'+id).addEventListener('change', carregarBanco));
   const recarregarBanco = debounce(carregarBanco);
   ['busca-banco','filtro-b-cidade'].forEach(id => $('#'+id).addEventListener('input', recarregarBanco));
+  ligarAutocompleteLocal('#filtro-b-cidade', '#filtro-b-cidade-lista');
+  ligarAutocompleteLocal('#av-local', '#av-local-lista');
+  ligarAutocompleteLocal('#av-excluir-locais', '#av-excluir-locais-lista', true);
 
   // Sanitização: trocar de visão descarta a seleção (as linhas são outras)
   $('#san-visao').addEventListener('change', () => { selecaoSanitizacao.clear(); carregarSanitizacao(); });
@@ -72,6 +75,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   $('#filtro-cand-status').addEventListener('change', carregarCandidatos);
   $('#filtro-cand-sexo').addEventListener('change', carregarCandidatos);
   $('#busca-candidatos').addEventListener('input', debounce(carregarCandidatos));
+
+  // Filtros da Fila de exceções (e-mail espera a pessoa parar de digitar)
+  ['exc-filtro-data','exc-filtro-tipo'].forEach(id => $('#'+id).addEventListener('change', carregarExcecoes));
+  $('#exc-filtro-email').addEventListener('input', debounce(carregarExcecoes));
 
   // Agendamento: atualiza mensagem ao mudar data/hora
   ['ag-data','ag-hora','ag-nome'].forEach(id =>

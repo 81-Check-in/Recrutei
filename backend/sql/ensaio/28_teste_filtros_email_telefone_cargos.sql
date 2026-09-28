@@ -109,7 +109,7 @@ begin
   assert pg_temp.quem('{"email":"x.com","cargos_experiencia":["padeira"]}') = 'T48 Flavia', 'e-mail + cargo';
   assert pg_temp.quem('{"email":"x.com","telefone":"5555-4444"}') = 'T48 Edu', 'e-mail + telefone';
   assert pg_temp.quem('{"email":"gmail","telefone":"7777"}') = '-', 'e-mail de um e telefone de outro: ninguém';
-  assert pg_temp.quem('{"palavras":["caixa"],"palavras_modo":"qualquer","cargos_experiencia":["operadora"]}') = 'T48 Ana', 'palavras-chave + cargo';
+  assert pg_temp.quem('{"palavras":["caixa"],"cargos_experiencia":["operadora"]}') = 'T48 Ana', 'palavras-chave + cargo';
   assert pg_temp.quem('{"local":"padaria","cargos_experiencia":["acougueiro"]}') = 'T48 Bia', 'local + cargo (o texto "Padaria Y" está no currículo do Bia)';
   assert pg_temp.quem('{"palavras":["repositor"],"cargos_experiencia":["repositor"]}') = 'T48 Caio', 'a palavra-chave acha quem só cita; o cargo, quem teve';
   assert pg_temp.quem('{"palavras":["repositor"]}') = 'T48 Ana,T48 Caio', 'palavras-chave continuam achando a menção no objetivo (sem mudança)';

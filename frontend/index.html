@@ -137,6 +137,7 @@
     <div class="topbar">
       <div class="topbar-l">
         <button type="button" class="burger" id="menu-mobile" onclick="abrirSidebar()" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false"><i class="ti ti-menu-2"></i></button>
+        <button type="button" class="topbar-voltar" id="topo-voltar" style="display:none" onclick="irPara('vagas')" aria-label="Voltar às vagas" title="Voltar às vagas"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
         <span class="topbar-tit" id="page-title">Dashboard</span>
       </div>
       <div class="topbar-r">
@@ -196,7 +197,7 @@
                   <div class="exc-meta">Candidatos sugeridos para limpeza aguardando a sua decisão</div></div>
                 <span class="pill pill-purple" id="m-sanitizacao">0</span>
               </div>
-              <div class="exc-row" onclick="irPara('vagas')" style="cursor:pointer">
+              <div class="exc-row" onclick="irParaFilaDeExcecoes()" style="cursor:pointer">
                 <i class="ti ti-alert-triangle" style="color:var(--yellow);font-size:19px"></i>
                 <div style="flex:1"><div class="exc-email">Fila de exceções</div>
                   <div class="exc-meta">E-mails que não puderam ser processados</div></div>
@@ -214,7 +215,7 @@
           <div class="painel-hd"><div class="painel-tit">
             <i class="ti ti-alert-triangle" style="color:var(--yellow);margin-right:5px;font-size:15px"></i>
             Últimas exceções</div>
-            <button class="link" onclick="irPara('vagas')">Ver todas</button></div>
+            <button class="link" onclick="irParaFilaDeExcecoes()">Ver todas</button></div>
           <div id="excecoes-resumo"></div>
         </div>
       </div>
@@ -222,44 +223,34 @@
       <!-- ══ VAGAS ══ -->
       <div class="screen" id="screen-vagas">
         <div class="sec-hd">
-          <div class="tabs">
-            <span class="tab-pilula" id="tabs-pilula" aria-hidden="true"></span>
-            <button class="tab active" onclick="trocarAba('vagas',this)">
-              <i class="ti ti-briefcase" style="font-size:15px"></i>Vagas abertas
-              <span class="cnt" id="count-vagas">0</span></button>
-            <button class="tab" onclick="trocarAba('excecoes',this)">
-              <i class="ti ti-alert-triangle" style="font-size:15px"></i>Fila de exceções
-              <span class="cnt" id="count-exc">0</span></button>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <button class="btn-sm azul" id="btn-reprocessar-tudo" style="display:none" onclick="reprocessarTudo()"
-              title="Pede reprocessamento de todas as exceções pendentes">
-              <i class="ti ti-refresh"></i>Reprocessar tudo</button>
-            <button class="btn-sm" onclick="abrirModalUploadManual()"
-              title="Envia um currículo recebido fora do e-mail (WhatsApp, indicação, etc.) para a IA avaliar">
-              <i class="ti ti-upload"></i>Enviar currículo</button>
-            <button class="btn-primary" onclick="abrirModalVaga()"><i class="ti ti-plus"></i>Nova vaga</button>
-          </div>
+          <div class="sec-tit">Vagas abertas</div>
+          <button class="btn-primary" onclick="abrirModalVaga()"><i class="ti ti-plus"></i>Nova vaga</button>
         </div>
-        <div class="sub-screen active" id="sub-vagas"><div class="vagas-grid" id="vagas-grid"></div></div>
-        <div class="sub-screen" id="sub-excecoes">
-          <div id="excecoes-lista"></div>
-          <div class="lista-rodape">
-            <span class="contador-lista" id="excecoes-contador"></span>
-            <button type="button" class="btn-mais" id="excecoes-mais" style="display:none" onclick="maisExcecoes()">
-              <i class="ti ti-chevron-down"></i>Carregar mais</button>
-          </div>
-        </div>
+        <div class="vagas-grid" id="vagas-grid"></div>
       </div>
 
       <!-- ══ BANCO DE TALENTOS ══ -->
       <div class="screen" id="screen-banco">
+        <div class="sec-hd">
+          <div class="tabs">
+            <span class="tab-pilula" id="tabs-pilula" aria-hidden="true"></span>
+            <button class="tab active" onclick="trocarAba('banco',this)">
+              <i class="ti ti-users-group" style="font-size:15px"></i>Currículos</button>
+            <button class="tab" onclick="trocarAba('excecoes',this)">
+              <i class="ti ti-alert-triangle" style="font-size:15px"></i>Fila de exceções
+              <span class="cnt" id="count-exc">0</span></button>
+          </div>
+          <button class="btn-sm azul" id="btn-reprocessar-tudo" style="display:none" onclick="reprocessarTudo()"
+            title="Pede reprocessamento de todas as exceções pendentes">
+            <i class="ti ti-refresh"></i>Reprocessar tudo</button>
+        </div>
+        <div class="sub-screen active" id="sub-banco">
         <div class="banco-ranking" id="banco-ranking" style="display:none" role="region" aria-label="Currículos selecionados para a vaga">
           <i class="ti ti-target-arrow" aria-hidden="true"></i>
           <div class="banco-ranking-txt"><strong>Currículos selecionados para <span id="banco-ranking-titulo">a vaga</span></strong>
             <span>Setor, função e nível iguais aos da vaga, da maior nota para a menor. Só quem está disponível para esta vaga aparece.</span></div>
           <div class="banco-ranking-ctl">
-            <select class="sel" id="rk-ordem" aria-label="Ordenar os currículos por" onchange="mudarFiltroRanking()">
+            <select class="sel" id="rk-ordem" aria-label="Ordenar os currículos por" onchange="mudarOrdemRanking()">
               <option value="nota">Maior nota</option>
               <option value="distancia">Mais perto da loja</option>
             </select>
@@ -269,17 +260,22 @@
               <option value="masculino">Masculino</option>
               <option value="nao_informado">Não informado</option>
             </select>
-            <select class="sel" id="rk-km" aria-label="Distância máxima até a loja mais próxima das escolhidas" onchange="mudarFiltroRanking()"
-              title="Distância em linha reta até a loja mais próxima entre as escolhidas abaixo (estimativa). Quem não tem região identificada fica de fora quando há limite">
-              <option value="">Qualquer distância</option>
-              <option value="5">Até 5 km</option>
-              <option value="10">Até 10 km</option>
-              <option value="20">Até 20 km</option>
-              <option value="30">Até 30 km</option>
-            </select>
+            <button type="button" class="btn-filtros-av" id="btn-filtros-av-rk" onclick="alternarFiltrosAvancados()"
+                    aria-expanded="false" aria-controls="painel-filtros-av">
+              <i class="ti ti-adjustments-horizontal"></i>Mais filtros
+              <span class="badge-cnt" id="badge-filtros-av-rk" style="display:none">0</span></button>
           </div>
           <button type="button" class="btn-sm" onclick="sairDoRanking()"><i class="ti ti-arrow-left"></i>Voltar ao banco inteiro</button>
-          <div class="banco-ranking-lojas">
+          <div class="banco-ranking-lojas" id="rk-distancia" style="display:none">
+            <label class="rk-km-campo">Distância máxima
+              <select class="sel" id="rk-km" aria-label="Distância máxima até a loja mais próxima das escolhidas" onchange="mudarFiltroRanking()"
+                title="Distância em linha reta até a loja mais próxima entre as escolhidas abaixo (estimativa). Quem não tem região identificada fica de fora quando há limite">
+                <option value="">Qualquer distância</option>
+                <option value="5">Até 5 km</option>
+                <option value="10">Até 10 km</option>
+                <option value="20">Até 20 km</option>
+                <option value="30">Até 30 km</option>
+              </select></label>
             <span class="banco-ranking-lojas-tit"><i class="ti ti-building-store" aria-hidden="true"></i>Distância em relação a</span>
             <div class="empresas-grid" id="rk-lojas" role="group" aria-label="Lojas usadas para medir a distância"></div>
             <span class="banco-ranking-lojas-nota" id="rk-lojas-nota"></span>
@@ -316,8 +312,9 @@
         <div class="painel-av" id="painel-filtros-av" style="display:none">
           <div class="av-grid">
             <div class="f-campo"><label for="filtro-b-cidade">Cidade onde mora</label>
-              <input id="filtro-b-cidade" type="text" placeholder="ex.: Ceilândia"></div>
-            <div class="f-campo"><label for="filtro-b-status">Situação no banco</label>
+              <input id="filtro-b-cidade" type="text" placeholder="ex.: Ceilândia" autocomplete="off">
+              <div class="local-lista" id="filtro-b-cidade-lista"></div></div>
+            <div class="f-campo" id="campo-status-banco"><label for="filtro-b-status">Situação no banco</label>
               <select class="sel" id="filtro-b-status" style="width:100%">
                 <option value="ativo">Disponíveis</option>
                 <option value="">Todos</option>
@@ -337,22 +334,14 @@
                 title="Só os números contam (parênteses, espaço e hífen são ignorados). Pode digitar só um pedaço, com pelo menos 3 números"
                 onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
             <div class="f-campo av-span2"><label for="av-palavras">Palavras-chave</label>
-              <input id="av-palavras" type="text" placeholder="ex.: empilhadeira, cnh b (separe por vírgula)"></div>
-            <div class="f-campo"><label for="av-palavras-modo">Combinar palavras</label>
-              <select class="sel" id="av-palavras-modo" style="width:100%">
-                <option value="todas">Todas elas</option>
-                <option value="qualquer">Qualquer uma</option>
-              </select></div>
-            <div class="f-campo"><label for="av-palavras-onde">Onde buscar</label>
-              <select class="sel" id="av-palavras-onde" style="width:100%">
-                <option value="curriculo">No currículo</option>
-                <option value="analise">Na análise da IA</option>
-                <option value="ambos">Nos dois</option>
-              </select></div>
+              <input id="av-palavras" type="text" placeholder="ex.: empilhadeira, cnh b (separe por vírgula)"
+                title="Acha quem tem qualquer uma das palavras (separadas por vírgula), no currículo ou na análise da IA"></div>
             <div class="f-campo"><label for="av-local">Endereço/bairro contém</label>
-              <input id="av-local" type="text" placeholder="cidade ou bairro (busca no currículo)"></div>
+              <input id="av-local" type="text" placeholder="cidade ou bairro (busca no currículo)" autocomplete="off">
+              <div class="local-lista" id="av-local-lista"></div></div>
             <div class="f-campo"><label for="av-excluir-locais">Exceto quem mora em</label>
-              <input id="av-excluir-locais" type="text" placeholder="separe por vírgula"></div>
+              <input id="av-excluir-locais" type="text" placeholder="separe por vírgula" autocomplete="off">
+              <div class="local-lista" id="av-excluir-locais-lista"></div></div>
             <div class="f-campo"><label for="av-escolaridade">Escolaridade mínima</label>
               <select class="sel" id="av-escolaridade" style="width:100%">
                 <option value="">Qualquer</option>
@@ -375,8 +364,9 @@
               <input id="av-idade-min" type="number" min="14" max="85" placeholder="anos"></div>
             <div class="f-campo"><label for="av-idade-max">Idade máxima</label>
               <input id="av-idade-max" type="number" min="14" max="85" placeholder="anos"></div>
-            <label class="av-check"><input type="checkbox" id="av-cnh"> Só quem informa CNH</label>
             <label class="av-check"><input type="checkbox" id="av-revisao"> Só revisão manual necessária</label>
+            <label class="av-check" title="Já tem registro no Histórico do candidato (entrevista, não compareceu, sem interesse...), pelo cadastro, nome ou telefone">
+              <input type="checkbox" id="av-historico"> Com passagem pelo RH</label>
             <label class="av-check"><input type="checkbox" id="av-sem-info" checked>
               Incluir quem não informou idade/escolaridade/experiência</label>
           </div>
@@ -404,6 +394,35 @@
         <div class="lista-rodape">
           <button type="button" class="btn-mais" id="banco-mais" style="display:none" onclick="maisBanco()">
             <i class="ti ti-chevron-down"></i>Carregar mais</button>
+        </div>
+        </div>
+        <div class="sub-screen" id="sub-excecoes">
+          <div class="tabs" id="exc-subtabs" style="margin-bottom:16px">
+            <span class="tab-pilula" id="exc-subtabs-pilula" aria-hidden="true"></span>
+            <button class="subtab active" onclick="trocarGrupoExcecoes('falhas',this)">
+              <i class="ti ti-alert-triangle" style="font-size:15px"></i>Falhas de leitura
+              <span class="cnt" id="count-exc-falhas">0</span></button>
+            <button class="subtab" onclick="trocarGrupoExcecoes('portal',this)">
+              <i class="ti ti-building-store" style="font-size:15px"></i>Jobbol / Trabalha Brasil
+              <span class="cnt" id="count-exc-portal">0</span></button>
+          </div>
+          <div class="filtros" id="excecoes-filtros">
+            <div class="busca"><i class="ti ti-search"></i>
+              <input id="exc-filtro-email" type="text" placeholder="Buscar por e-mail do remetente..."
+                aria-label="Buscar por e-mail do remetente" autocomplete="off"></div>
+            <input class="sel" id="exc-filtro-data" type="date" aria-label="Data de envio" title="Data de envio">
+            <select class="sel" id="exc-filtro-tipo" aria-label="Tipo de erro">
+              <option value="">Todos os tipos de erro</option>
+            </select>
+            <button type="button" class="btn-limpar-filtros" id="exc-btn-limpar" style="display:none" onclick="limparFiltrosExcecoes()">
+              <i class="ti ti-filter-off"></i>Limpar filtros</button>
+          </div>
+          <div id="excecoes-lista"></div>
+          <div class="lista-rodape">
+            <span class="contador-lista" id="excecoes-contador"></span>
+            <button type="button" class="btn-mais" id="excecoes-mais" style="display:none" onclick="maisExcecoes()">
+              <i class="ti ti-chevron-down"></i>Carregar mais</button>
+          </div>
         </div>
       </div>
 
@@ -477,6 +496,7 @@
             <option value="">Todos os status</option>
             <option value="aguardando">Aguardando entrevista</option>
             <option value="entrevista_agendada">Entrevista agendada</option>
+            <option value="aguardando_gerente">Aguardando o gerente</option>
             <option value="aprovado">Aprovado</option>
             <option value="reprovado">Reprovado</option>
             <option value="nao_compareceu">Não compareceu</option>
@@ -544,12 +564,6 @@
               title="Só administrador: gera a lista agora, sem esperar o próximo ciclo">
               <i class="ti ti-refresh"></i>Gerar sugestões agora</button>
           </div>
-          <p class="san-explica">Toda semana o sistema sugere para limpeza quem ficou
-            <strong>1 mês sem nenhuma alteração</strong>, contado da entrada no sistema, e mostra o motivo: parado, reprovado várias vezes,
-            com currículo que a IA não conseguiu classificar, duplicado ou com prazo de armazenamento vencido. Você também pode mandar um
-            candidato para cá pelo botão <strong>Sanitizar</strong> do cadastro. E <strong>você decide</strong>: manter ou inativar.
-            A sanitização <strong>não apaga nada</strong>: quem fica inativo tem os dados pessoais apagados sozinho, depois do prazo
-            definido em Configurações (padrão: 6 meses). Reativar antes desse prazo cancela a contagem.</p>
         </div>
         <div class="filtros">
           <select class="sel" id="san-visao" aria-label="Mostrar">
@@ -595,10 +609,6 @@
               <div class="painel-sub" id="hist-contador">Carregando…</div></div>
             <button type="button" class="btn-primary" onclick="abrirRegistroHistorico()"><i class="ti ti-plus"></i>Novo registro</button>
           </div>
-          <p class="san-explica">Quem <strong>veio e quem não veio</strong> ao processo seletivo, uma linha por entrevista. <strong>Aprovado, Reprovado e Não compareceu</strong>
-            entram sozinhos quando o resultado é registrado na tela Entrevistas. <strong>Sem interesse</strong> e <strong>Desistência</strong> (depois de aprovado, por exemplo na
-            documentação ou no treinamento) você registra aqui. O nome, o celular, a data, o setor da vaga e o status <strong>continuam aqui mesmo depois de os dados do
-            candidato serem excluídos do Banco de Talentos</strong>; para apagar uma linha, só o administrador.</p>
         </div>
         <div class="filtros">
           <div class="busca"><i class="ti ti-search"></i>
@@ -628,9 +638,6 @@
             <div><div class="painel-tit"><i class="ti ti-ban" style="margin-right:6px;color:var(--red)"></i>Bloqueios de e-mails</div>
               <div class="painel-sub" id="ln-contador">Carregando…</div></div>
           </div>
-          <p class="san-explica">Endereços dos quais o RH <strong>não quer mais receber nada</strong> — por exemplo, de quem oferece risco à empresa.
-            O sistema ignora esses e-mails e também os currículos que trouxerem um deles. Para bloquear um candidato que já está no banco, use o botão
-            <strong>Bloquear</strong> no cadastro dele: assim ele também sai das listas e nunca mais é atribuído a uma vaga.</p>
           <form class="ln-form" onsubmit="event.preventDefault();bloquearEmailManual()">
             <input id="ln-email" type="email" placeholder="e-mail a bloquear" aria-label="E-mail a bloquear" autocomplete="off" required>
             <input id="ln-motivo" type="text" placeholder="motivo (obrigatório)" aria-label="Motivo do bloqueio" maxlength="300" required>
@@ -709,6 +716,12 @@
     <button class="btn-drawer verde" id="d-btn-agendar" style="display:none"
       onclick="fecharDrawer();abrirAgendamento(app.candidatoAberto.id,app.candidatoAberto.nome,app.candidatoAberto.telefone_e164||app.candidatoAberto.telefone)">
       <i class="ti ti-brand-whatsapp"></i>Agendar entrevista</button>
+    <button class="btn-drawer" id="d-btn-encaminhar-gerente" style="display:none" onclick="encaminharAoGerente()"
+      title="Marca que o currículo foi mandado ao gerente da loja (fora do sistema) e espera a decisão dele">
+      <i class="ti ti-building-store"></i>Encaminhar ao gerente</button>
+    <button class="btn-drawer verde" id="d-btn-aprovar-gerente" style="display:none" onclick="aprovarPeloGerente()"
+      title="O gerente da loja aprovou este candidato">
+      <i class="ti ti-check"></i>Aprovado pelo gerente</button>
   </div>
 </div>
 
@@ -852,6 +865,16 @@
   </div>
 </div></div>
 
+<div class="modal-overlay" id="modal-ver-curriculo"><div class="modal" style="width:780px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-file-text" style="color:var(--blue)"></i><span id="pv-titulo">Currículo</span></div>
+    <button class="modal-x" onclick="fecharModal('modal-ver-curriculo')" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
+  <div id="pv-corpo"></div>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-ver-curriculo')">Fechar</button>
+    <button class="btn-primary" id="pv-baixar"><i class="ti ti-download"></i>Baixar original</button></div>
+</div></div>
+
 <div class="modal-overlay" id="modal-ver-email"><div class="modal" style="width:560px">
   <div class="modal-hd"><div class="modal-tit">
     <i class="ti ti-mail" style="color:var(--blue)"></i>E-mail original</div>
@@ -926,6 +949,14 @@
   <div class="modal-acoes">
     <button class="btn-cancel" onclick="fecharModal('modal-historico')">Cancelar</button>
     <button class="btn-primary" id="hist-f-salvar" onclick="salvarRegistroHistorico()">Salvar</button></div>
+</div></div>
+
+<!-- Histórico do candidato, visto a partir do Banco de Talentos: só leitura, sem sair da tela -->
+<div class="modal-overlay" id="modal-historico-candidato"><div class="modal" style="width:520px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-history" style="color:var(--blue)"></i><span id="hc-titulo">Histórico do candidato</span></div>
+    <button class="modal-x" onclick="fecharModal('modal-historico-candidato')" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
+  <div id="hc-lista"></div>
 </div></div>
 
 <div class="modal-overlay" id="modal-editar-candidato"><div class="modal" style="width:560px">
@@ -1097,6 +1128,7 @@
 <script src="js/sanitizacao.js"></script>
 <script src="js/lista-negra.js"></script>
 <script src="js/consideracoes.js"></script>
+<script src="js/visualizacao-curriculo.js"></script>
 <script src="js/configuracoes.js"></script>
 <script src="js/status.js"></script>
 <script src="js/ui-global.js"></script>

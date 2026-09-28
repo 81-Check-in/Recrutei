@@ -1,8 +1,9 @@
 FROM python:3.11-slim
 
-# OCR de currículos escaneados: Tesseract (português) e Poppler (PDF → imagem)
+# OCR de currículos escaneados: Tesseract (português) e Poppler (PDF → imagem).
+# antiword: lê .doc antigo (Word 97-2003, binário OLE — python-docx só lê o .docx novo, em zip/XML).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-por poppler-utils \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-por poppler-utils antiword \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

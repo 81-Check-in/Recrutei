@@ -201,7 +201,7 @@ async function carregarStatus() {
 }
 
 function irParaFilaDeExcecoes() {
-  irPara('vagas');
+  irPara('banco');
   const aba = $$('.tabs .tab')[1];
   if (aba) trocarAba('excecoes', aba);
 }

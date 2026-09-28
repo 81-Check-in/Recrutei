@@ -2,6 +2,7 @@
 import io
 import re
 import signal
+import subprocess
 import threading
 import zipfile
 from contextlib import contextmanager
@@ -129,6 +130,25 @@ def _zip_seguro(conteudo: bytes) -> bool:
         return False
 
 
+def _de_doc_legado(conteudo: bytes) -> Optional[str]:
+    """
+    .doc antigo (Word 97-2003, binário OLE — não é zip/XML como o DOCX, por isso _de_docx() não lê). Usa o antiword
+    (instalado no Dockerfile via apt-get; sem ele, este .doc fica sem texto). "-" pede ao antiword ler da entrada padrão.
+    """
+    try:
+        resultado = subprocess.run(["antiword", "-"], input=conteudo, capture_output=True, timeout=30)
+    except FileNotFoundError:
+        log.warning("  antiword não está instalado: não dá para ler .doc antigo (Word 97-2003)")
+        return None
+    except subprocess.TimeoutExpired:
+        log.warning("  antiword demorou demais para ler o .doc")
+        return None
+    if resultado.returncode != 0:
+        log.warning(f"  Falha ao ler .doc antigo: {resultado.stderr.decode(errors='replace').strip()}")
+        return None
+    return resultado.stdout.decode("utf-8", errors="replace")
+
+
 def _de_docx(conteudo: bytes) -> Optional[str]:
     if not _zip_seguro(conteudo):
         log.warning("  DOCX inválido ou grande demais depois de descomprimido")
@@ -184,6 +204,13 @@ def _de_google_docs(url: str) -> Tuple[Optional[str], bool]:
                 texto = _de_docx(r.content)
                 if texto and len(texto.strip()) >= 100:
                     return texto, False
+                continue
+            # Foto do currículo mandada pelo Drive/Fotos do celular (comum: candidato tira foto da folha impressa).
+            # Sem isto, os bytes da imagem caiam no decode de texto abaixo e viravam lixo binário ("não é currículo").
+            if tipo.startswith("image/") or r.content[:3] == b"\xff\xd8\xff" or r.content[:8] == b"\x89PNG\r\n\x1a\n":
+                texto = _de_imagem(r.content)
+                if texto and len(texto.strip()) >= 100:
+                    return texto, True
                 continue
             if "text/html" in tipo:
                 continue  # página de aviso/confirmação do Drive, não é o arquivo
@@ -257,6 +284,10 @@ def arquivo_do_google_docs(url: str) -> Optional[Dict]:
                 tipo, ext = "application/pdf", ".pdf"
             elif conteudo[:2] == b"PK" and _e_docx(conteudo):
                 tipo, ext = _MIME_DOCX, ".docx"
+            elif conteudo[:3] == b"\xff\xd8\xff":
+                tipo, ext = "image/jpeg", ".jpg"           # foto do currículo (Drive/Fotos do celular)
+            elif conteudo[:8] == b"\x89PNG\r\n\x1a\n":
+                tipo, ext = "image/png", ".png"
             else:
                 continue                                  # página de aviso do Drive (HTML), texto puro etc.
             return {"conteudo": conteudo, "tipo_mime": tipo, "nome": _nome_do_download(r, ext), "tamanho": len(conteudo)}
@@ -271,8 +302,11 @@ def _extrair(conteudo: bytes, tipo_mime: str) -> Tuple[Optional[str], bool]:
     if "wordprocessingml" in tipo_mime:
         return _de_docx(conteudo), False
     if tipo_mime == "application/msword":
-        # .doc antigo: tenta como docx, senão OCR não se aplica
+        # ".doc" cobre dois formatos: OOXML (zip) mal rotulado — _de_docx() já resolve — e o binário antigo,
+        # que precisa do antiword. Tenta os dois; nenhum tem OCR (não é imagem).
         texto = _de_docx(conteudo)
+        if texto is None:
+            texto = _de_doc_legado(conteudo)
         return texto, False
     if tipo_mime.startswith("image/"):
         return _de_imagem(conteudo), True

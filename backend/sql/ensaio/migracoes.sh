@@ -31,6 +31,11 @@ MIGRACOES=(
   046_status_do_robo.sql
   047_sanitizacao_so_inativa_expurgo_automatico.sql
   048_filtros_email_telefone_cargos.sql
+  049_selecao_mais_filtros.sql
+  050_gerente_loja_tipos.sql
+  051_gerente_loja.sql
+  052_historico_no_banco.sql
+  053_opcoes_cidade.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(
@@ -50,4 +55,8 @@ TESTES_SQL=(
   ensaio/26_teste_status_do_robo.sql
   ensaio/27_teste_expurgo_automatico.sql
   ensaio/28_teste_filtros_email_telefone_cargos.sql
+  ensaio/29_teste_selecao_mais_filtros.sql
+  ensaio/30_teste_gerente_loja.sql
+  ensaio/31_teste_historico_no_banco.sql
+  ensaio/32_teste_opcoes_cidade.sql
 )

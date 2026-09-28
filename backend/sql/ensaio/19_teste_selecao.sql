@@ -113,7 +113,8 @@ begin
   assert (select total from selecionar_curriculos_vaga(vaga, 1, 0, 'nota', null, null, 'feminino') limit 1) = 2, 'o total acompanha o filtro, mesmo com a página menor';
   assert pg_temp.ordem_sexo(vaga, 'feminino', 1, 1) = array['Sel G'], 'paginação dentro do filtro';
   assert pg_temp.ordem(vaga) = array['Sel A', 'Sel F', 'Sel B', 'Sel G'], 'a chamada antiga (sem p_sexo) segue igual';
-  assert not has_function_privilege('anon', 'public.selecionar_curriculos_vaga(uuid, integer, integer, text, numeric, text[], text)', 'execute'), 'anônimo não executa';
+  assert not has_function_privilege('anon',
+    'public.selecionar_curriculos_vaga(uuid, integer, integer, text, numeric, text[], text, jsonb, jsonb, text)', 'execute'), 'anônimo não executa';
   assert (select count(*) from pg_proc where proname = 'selecionar_curriculos_vaga') = 1, 'só uma versão da função (a antiga saiu)';
   update candidatos set sexo = null where id in (a, f, g);                                      -- volta ao que o resto do teste espera
 

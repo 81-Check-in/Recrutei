@@ -507,7 +507,7 @@ test('sanitização: a fila só mantém ou inativa (ninguém exclui); RH comum n
   await ana.w.carregarSanitizacao();
   assert.equal(ana.$$('#san-body .btn-sm.vermelho').length, 0, 'nem para o administrador: a fila não exclui');
   assert.equal(ana.$$('#san-bulk .vermelho').length, 0);
-  assert.match(ana.$('.san-explica').textContent, /não apaga nada/);
+  assert.equal(ana.$('.san-explica'), null, 'a legenda longa foi removida');
   // o banco recusa "excluir" mesmo por fora do painel, para administrador e para RH
   const sugAlvo = beto.$$('#san-body tr[data-id]')[0].dataset.id;
   const recusaRH = await beto.w.eval(`db.rpc('sanitizacao_decidir', { p_sugestao_id: '${sugAlvo}', p_decisao: 'excluir' })`);
@@ -822,6 +822,15 @@ test('atribuição: a vaga em que o candidato já foi reprovado aparece bloquead
 
 // ── 8. Etapa 2: requisito Diferencial, ranking por vaga e assistente de IA ──
 const esperar = ms => new Promise(r => setTimeout(r, ms));
+// para consultas cujo tempo varia com o volume acumulado pelos testes anteriores (ex. seleção por vaga, mais lenta
+// no fim da suíte): espera até a condição bater em vez de um tempo fixo, sem deixar a espera indo para sempre
+const esperarAte = async (condicao, tentativas = 40, intervalo = 250) => {
+  for (let i = 0; i < tentativas; i++) { if (await condicao()) return; await esperar(intervalo); }
+};
+// espera a seleção de uma vaga terminar de carregar: mudou de conteúdo (não é mais o que tinha antes de navegar) e
+// não está mais no spinner de "Carregando..." (loading() usa o ícone .girando) — só então dá para ler o resultado
+const esperarRanking = (p, antes) => esperarAte(() =>
+  p.$('#banco-lista').innerHTML !== antes && !p.$('#banco-lista').querySelector('.girando'), 60, 250);
 
 test('vaga: o formulário tem os três tipos de requisito e o Diferencial é gravado', async () => {
   await beto.w.abrirModalVaga();
@@ -894,6 +903,9 @@ test('vaga: função e nível são obrigatórios, a função depende do setor e 
 });
 
 test('seleção de CVs: filtra por setor + função + nível da vaga, ordena pela nota, exclui quem não pode e atribui daqui', async () => {
+  // "Mais filtros" é o mesmo painel/estado da tela normal do banco (049): sem isso, um filtro deixado
+  // aceso por um teste anterior (ex. revisão manual) vazaria para a seleção e escondia candidatos válidos
+  limparFiltros(beto);
   // vaga de Logística / Supervisor / pleno, com requisitos dos três tipos (aparecem na atribuição)
   const vaga = sql(`with s as (select id from setores where nome = 'Logística'),
       v as (insert into vagas (setor_id, titulo, descricao, quantidade, funcao_setor, nivel_funcao)
@@ -915,8 +927,11 @@ test('seleção de CVs: filtra por setor + função + nível da vaga, ordena pel
   assert.equal(btn.textContent.trim(), 'Selecionar CVs');
   assert.match(card.textContent, /Supervisor · Pleno/);
   assert.equal(card.querySelector('.vaga-stat:nth-child(3) .vaga-stat-val').textContent, '2', 'No banco: os dois que combinam nos três campos');
+  const antesRanking = beto.$('#banco-lista').innerHTML;
   beto.w.verCandidatosDaVaga(btn.dataset.vaga, btn.dataset.titulo, !!btn.dataset.pronta);
-  await esperar(900);
+  // tempo fixo é frágil aqui (a consulta da seleção varia de duração conforme a carga da máquina/volume acumulado);
+  // espera o conteúdo MUDAR (não só "ter cartão": o de antes ainda pode estar na tela até a resposta nova chegar)
+  await esperarRanking(beto, antesRanking);
 
   assert.equal(beto.$('#banco-ranking').style.display, 'flex');
   assert.equal(beto.$('#banco-ranking-titulo').textContent, 'Auxiliar Contábil Ranking');
@@ -945,7 +960,7 @@ test('seleção de CVs: filtra por setor + função + nível da vaga, ordena pel
   assert.ok(textoCartoes(beto)[0].includes('Candidato 081 Silva'), '"não informado" = sem sexo cadastrado');
   await filtrarPorSexo('masculino');
   assert.equal(textoCartoes(beto).length, 0);
-  assert.match(beto.$('#banco-lista').textContent, /Nenhum currículo selecionado com esse sexo/);
+  assert.match(beto.$('#banco-lista').textContent, /Nenhum currículo encontrado com esses filtros/);
   await filtrarPorSexo('');
   assert.equal(textoCartoes(beto).length, 2, 'sem filtro voltam os dois');
   [c1, c2].forEach((id, i) => sql(`update candidatos set sexo = ${sexoAntes[i] ? `'${sexoAntes[i]}'` : 'null'} where id='${id}'`));
@@ -955,8 +970,9 @@ test('seleção de CVs: filtra por setor + função + nível da vaga, ordena pel
   assert.equal(beto.$('#atr-vaga').value, vaga, 'a vaga do ranking já vem escolhida');
   assert.match(beto.$('#atr-vaga-info').textContent, /Diferenciais/);
   assert.match(beto.$('#atr-vaga-info').textContent, /Registro no CRC/);
+  const antesAtribuir = beto.$('#banco-lista').innerHTML;
   await beto.w.confirmarAtribuicao();
-  await esperar(500);
+  await esperarRanking(beto, antesAtribuir);
   const depois = textoCartoes(beto);
   assert.ok(!depois.some(t => t.includes('Candidato 080 Silva')), 'quem foi atribuído sai do ranking (está em processo)');
   assert.ok(depois[0].includes('Candidato 081 Silva'), 'o próximo assume o topo');
@@ -1361,10 +1377,10 @@ test('status do robô: o RH lê a linha, a tela mostra os números e o ponto do 
     assert.equal(texto('#st-proxima'), '—');
     assert.match(texto('#status-atualizado'), /há 20 min/);
 
-    // o atalho da fila de exceções abre a aba certa de Vagas
+    // o atalho da fila de exceções abre a aba certa do Banco de Talentos
     beto.w.irParaFilaDeExcecoes();
     await new Promise(r => setTimeout(r, 300));
-    assert.equal(beto.w.eval('app.telaAtual'), 'vagas');
+    assert.equal(beto.w.eval('app.telaAtual'), 'banco');
     assert.ok(beto.$('#sub-excecoes').classList.contains('active'));
 
     // o administrador vê o atalho para as configurações
@@ -1795,6 +1811,8 @@ test('vaga: o assistente de IA fica desligado sem API_URL e, com o serviço, pre
 
 // ── 9. Etapa 3: região, distância até as lojas e considerações ──────────
 test('distância: a atribuição mostra as lojas da vaga; a seleção ordena por distância e filtra por km; a região do RH vale', async () => {
+  // idem: "Mais filtros" é compartilhado com a seleção de CVs (049); começa limpo
+  limparFiltros(beto);
   // vaga (Logística / Supervisor / pleno) com duas lojas de local conhecido (CFS → Samambaia pela migração; CFT → Taguatinga aqui) e 3 candidatos que casam
   sql(`insert into empresas (sigla, nome, regiao_id) select 'CFT', 'Castelo Forte T', id from regioes_df where nome = 'Taguatinga' on conflict do nothing`);
   await beto.w.carregarBase();                                            // a loja nova entra no cache do painel (no uso real, o login já a traz)
@@ -1814,8 +1832,12 @@ test('distância: a atribuição mostra as lojas da vaga; a seleção ordena por
   await beto.w.carregarVagas();
   const card = beto.$$('.vaga-card').find(c => c.textContent.includes('Zeladoria Especial do Teste'));
   const btn = card.querySelector('.btn-triagem');
+  const antesRanking = beto.$('#banco-lista').innerHTML;
   beto.w.verCandidatosDaVaga(btn.dataset.vaga, btn.dataset.titulo);
-  await esperar(900);
+  // este ponto do teste roda tarde na suíte (muitos candidatos já acumulados pelos testes anteriores): um tempo fixo
+  // fica frágil (a consulta varia de duração); espera o conteúdo MUDAR (não só "ter cartão": o de antes ainda pode
+  // estar na tela até a resposta nova chegar), com uma folga generosa de teto
+  await esperarRanking(beto, antesRanking);
   assert.equal(beto.$('#rk-ordem').value, 'nota');
   const meus = () => textoCartoes(beto).filter(t => /Candidato 08[345] Silva/.test(t));
   assert.equal(meus().length, 3, 'os três têm o setor, a função e o nível da vaga');
@@ -1838,10 +1860,11 @@ test('distância: a atribuição mostra as lojas da vaga; a seleção ordena por
   // lojas de referência (038): a seleção começa nas lojas da vaga; o RH marca outras, várias ou TODAS
   const marcadasLojas = () => beto.$$('#rk-lojas input[data-loja]').filter(c => c.checked).map(c => c.value).sort();
   const marcarLoja = async (sigla, valor) => {
+    const antes = beto.$('#banco-lista').innerHTML;
     const c = sigla === 'TODAS' ? beto.$('#rk-lojas-todas') : beto.$(`#rk-lojas input[value="${sigla}"]`);
     c.checked = valor;
-    c.dispatchEvent(new beto.w.Event('change', { bubbles: true }));
-    await esperar(700);
+    c.dispatchEvent(new beto.w.Event('change', { bubbles: true }));      // o onchange dispara mudarFiltroRanking() sem esperar (é evento de DOM)
+    await esperarRanking(beto, antes);
   };
   assert.deepEqual(beto.$$('#rk-lojas input[data-loja]').map(c => c.value).sort(), ['CFR', 'CFS', 'CFT'], 'um chip por loja cadastrada');
   assert.equal(beto.$$('#rk-lojas input[data-loja]').filter(c => c.disabled).length, 0, 'todas têm região: nenhuma desabilitada');
@@ -1859,7 +1882,7 @@ test('distância: a atribuição mostra as lojas da vaga; a seleção ordena por
   beto.define('#rk-km', '10');
   await beto.w.mudarFiltroRanking();
   assert.deepEqual(meus(), [], 'até 10 km da CFR: ninguém (Ceilândia e Gama ficam a ~11 km dela)');
-  assert.match(beto.$('#banco-lista').textContent, /entre as escolhidas/, 'a mensagem de lista vazia fala das lojas escolhidas');
+  assert.match(beto.$('#banco-lista').textContent, /Nenhum currículo encontrado com esses filtros/, 'a mensagem de lista vazia (genérica desde a 049) aparece');
 
   await marcarLoja('TODAS', true);
   assert.deepEqual(marcadasLojas(), ['CFR', 'CFS', 'CFT'], 'TODAS marca todas as lojas');
@@ -2008,14 +2031,25 @@ test('fila de exceções: aviso de plataforma (Trabalha Brasil) tem "Abrir curr�
        values ('trabalhabrasil@trabalhabrasil.com.br', 'sem_anexo', 'pendente', 'Aviso do Trabalha Brasil: teste', 'Currículo enviado pelo Trabalha Brasil', '${LINK}')`);
   sql(`insert into excecoes (email_remetente, tipo, status, detalhe_erro) values ('candidata.sem.anexo@gmail.com', 'sem_anexo', 'pendente', 'E-mail sem anexo nem link de currículo')`);
   try {
-    await beto.w.carregarExcecoes();
-    const linhas = beto.$$('#excecoes-lista .exc-full');
     const botoes = l => [...l.querySelectorAll('.exc-btns button')].map(b => b.textContent.replace(/\s+/g, ' ').trim());
-    const portal = linhas.find(l => l.textContent.includes('trabalhabrasil@trabalhabrasil.com.br'));
+
+    // grupo padrão "falhas" (link_curriculo nulo): só a exceção comum; o aviso de plataforma mora no outro grupo
+    await beto.w.carregarExcecoes();
+    let linhas = beto.$$('#excecoes-lista .exc-full');
     const comum = linhas.find(l => l.textContent.includes('candidata.sem.anexo@gmail.com'));
-    assert.ok(portal && comum, 'as duas exceções aparecem');
-    assert.deepEqual(botoes(portal), ['Abrir currículo', 'Revisar', 'Ignorar'], 'aviso de plataforma: só o botão que leva ao currículo (e o que tira o aviso da fila)');
+    assert.ok(comum, 'a exceção comum aparece no grupo padrão');
+    assert.equal(linhas.find(l => l.textContent.includes('trabalhabrasil@trabalhabrasil.com.br')), undefined,
+      'o aviso de plataforma não aparece no grupo "falhas"');
     assert.deepEqual(botoes(comum), ['Ver e-mail', 'Reprocessar', 'Revisar', 'Ignorar'], 'exceção comum: como sempre');
+
+    // grupo "portal" (avisos de plataforma, ex. Trabalha Brasil)
+    const abaPortal = beto.$$('#exc-subtabs .subtab')[1];
+    beto.w.trocarGrupoExcecoes('portal', abaPortal);
+    await esperar(400);
+    linhas = beto.$$('#excecoes-lista .exc-full');
+    const portal = linhas.find(l => l.textContent.includes('trabalhabrasil@trabalhabrasil.com.br'));
+    assert.ok(portal, 'o aviso de plataforma aparece no grupo "portal"');
+    assert.deepEqual(botoes(portal), ['Abrir currículo', 'Revisar', 'Ignorar'], 'aviso de plataforma: só o botão que leva ao currículo (e o que tira o aviso da fila)');
     assert.match(portal.textContent, /Aviso do Trabalha Brasil/);
 
     // "Abrir currículo" abre o endereço do e-mail em outra aba, sem dar acesso ao painel (noopener)
@@ -2032,17 +2066,107 @@ test('fila de exceções: aviso de plataforma (Trabalha Brasil) tem "Abrir curr�
     assert.equal(beto.w.eval(`linkWebSeguro('${LINK}')`), LINK);
     beto.w.open = () => null;
 
-    // "Revisar" tira o aviso da fila
+    // "Revisar" tira o aviso da fila (dentro do grupo "portal")
     const id = sql(`select id from excecoes where email_remetente = 'trabalhabrasil@trabalhabrasil.com.br'`);
     await beto.w.resolverExcecao(id, 'revisado');                          // grava e recarrega a lista sem esperar: aguarda o recarregamento acabar
     await esperar(700);
-    const restantes = beto.$$('#excecoes-lista .exc-full').map(l => l.textContent);
-    assert.ok(restantes.some(t => t.includes('candidata.sem.anexo@gmail.com')), 'a outra exceção continua pendente');
-    assert.ok(!restantes.some(t => t.includes('trabalhabrasil@trabalhabrasil.com.br')), 'revisado sai da lista de pendentes');
+    const restantesPortal = beto.$$('#excecoes-lista .exc-full').map(l => l.textContent);
+    assert.ok(!restantesPortal.some(t => t.includes('trabalhabrasil@trabalhabrasil.com.br')), 'revisado sai da lista de pendentes');
     assert.equal(sql(`select status from excecoes where id = '${id}'`), 'revisado');
+
+    // a exceção comum, no outro grupo, continua intacta
+    const abaFalhas = beto.$$('#exc-subtabs .subtab')[0];
+    beto.w.trocarGrupoExcecoes('falhas', abaFalhas);
+    await esperar(400);
+    const restantesFalhas = beto.$$('#excecoes-lista .exc-full').map(l => l.textContent);
+    assert.ok(restantesFalhas.some(t => t.includes('candidata.sem.anexo@gmail.com')), 'a outra exceção continua pendente, no grupo dela');
   } finally {
     sql(`delete from excecoes where email_remetente in ('trabalhabrasil@trabalhabrasil.com.br', 'candidata.sem.anexo@gmail.com')`);
     beto.w.open = () => null;
+  }
+});
+
+// ── 10. Visualização do currículo: PDF/imagem abrem em outra aba; .docx é desenhado; o resto cai no texto extraído ──
+test('currículo: PDF/imagem continuam abrindo em outra aba; .docx é desenhado no painel; o que não dá é mostrado como texto extraído', async () => {
+  sql(`insert into candidatos (nome, cidade, uf, hash_identidade) values ('Cand Preview Um', 'Brasília', 'DF', 'hash-preview-1')`);
+  const id = idDe('Cand Preview Um');
+  sql(`insert into curriculos (candidato_id, origem, texto_extraido, tipo_mime, storage_path, nome_arquivo, atual)
+       values ('${id}', 'anexo_pdf', '<script>alert(1)</script> texto do currículo original', 'application/pdf', '2026/09/preview.pdf', 'preview.pdf', true)`);
+
+  // este ensaio não sobe o serviço de Storage (só PostgREST): simula createSignedUrl/download para testar o
+  // ROTEAMENTO do preview (qual caminho cada formato toma) sem depender de rede real.
+  // "db.storage" é getter do supabase-js (cria um StorageClient NOVO a cada leitura: mutar ".from" de uma leitura
+  // não afeta a próxima), então a simulação sobrepõe o próprio getter no objeto "db" (propriedade própria, na
+  // frente do getter do protótipo); "delete" no fim devolve o getter original.
+  beto.w.eval(`
+    Object.defineProperty(db, 'storage', { configurable: true, get: () => ({
+      from: () => ({
+        createSignedUrl: async () => ({ data: { signedUrl: 'https://exemplo.test/preview.pdf' }, error: null }),
+        download: async () => ({ data: new Blob(['conteudo']), error: null }),
+      })
+    }) });
+  `);
+
+  try {
+    // PDF: abre em outra aba, como sempre; o modal de visualização nem aparece
+    let aberto = null;
+    beto.w.open = (...args) => { aberto = args; return null; };
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.deepEqual(aberto, ['https://exemplo.test/preview.pdf', '_blank']);
+    assert.equal(beto.$('#modal-ver-curriculo').classList.contains('show'), false);
+
+    // imagem: o navegador também mostra nativamente — mesmo caminho do PDF
+    sql(`update curriculos set tipo_mime = 'image/jpeg' where candidato_id = '${id}'`);
+    aberto = null;
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.ok(aberto, 'imagem também abre em outra aba');
+    assert.equal(beto.$('#modal-ver-curriculo').classList.contains('show'), false);
+    beto.w.open = () => null;
+
+    // .docx: desenhado no painel (a biblioteca é simulada aqui, sem depender de rede/CDN no teste)
+    sql(`update curriculos set tipo_mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+           nome_arquivo = 'Currículo.docx' where candidato_id = '${id}'`);
+    beto.w.eval(`window.docx = { chamadas: 0, renderAsync: async (dados, el) => { window.docx.chamadas++; el.textContent = 'PREVIEW-DOCX-OK'; } }`);
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.ok(beto.$('#modal-ver-curriculo').classList.contains('show'), 'o modal abre para .docx');
+    assert.equal(beto.$('#pv-titulo').textContent, 'Currículo.docx');
+    assert.match(beto.$('#pv-corpo').textContent, /PREVIEW-DOCX-OK/);
+    assert.equal(typeof beto.$('#pv-baixar').onclick, 'function', 'o botão de baixar o original fica pronto');
+    beto.w.fecharModal('modal-ver-curriculo');
+
+    // .docx que falha ao desenhar: cai no texto extraído (escapado), com aviso, sem travar o painel
+    beto.w.eval(`window.docx.renderAsync = async () => { throw new Error('docx quebrado'); }`);
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.match(beto.$('#pv-corpo').textContent, /não tem\s+visualização com a formatação original/);
+    assert.match(beto.$('#pv-corpo').textContent, /texto do currículo original/);
+    assert.equal(beto.$('#pv-corpo').innerHTML.includes('<script>alert'), false, 'o texto do candidato é escapado, nunca vira HTML');
+
+    // .doc antigo (Word 97-2003): nem tenta desenhar — só o .docx moderno tem visualizador — vai direto para o texto
+    beto.w.eval(`window.docx.chamadas = 0; window.docx.renderAsync = async () => { window.docx.chamadas++; };`);
+    sql(`update curriculos set tipo_mime = 'application/msword', nome_arquivo = 'Currículo.doc' where candidato_id = '${id}'`);
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.match(beto.$('#pv-corpo').textContent, /Word 97-2003 \(\.doc\)/);
+    assert.match(beto.$('#pv-corpo').textContent, /texto do currículo original/);
+    assert.equal(beto.w.eval('window.docx.chamadas'), 0, '.doc não chama o visualizador de .docx');
+
+    // sem nenhum texto extraído: mensagem de "baixe para abrir", sem quebrar
+    sql(`update curriculos set texto_extraido = null where candidato_id = '${id}'`);
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.match(beto.$('#pv-corpo').textContent, /Sem visualização disponível/);
+    beto.w.fecharModal('modal-ver-curriculo');
+
+    // sem arquivo algum: avisa e nem abre o modal
+    sql(`update curriculos set storage_path = null where candidato_id = '${id}'`);
+    await beto.w.verCurriculoDoCandidato(id);
+    assert.match(beto.ultimoToast(), /não disponível/);
+    assert.equal(beto.$('#modal-ver-curriculo').classList.contains('show'), false);
+
+    delete beto.w.docx;
+    assert.deepEqual(beto.erros, []);
+  } finally {
+    beto.w.eval("delete db.storage");
+    beto.w.open = () => null;
+    sql(`delete from candidatos where id = '${id}'`);
   }
 });
 

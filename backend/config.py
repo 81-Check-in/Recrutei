@@ -118,7 +118,17 @@ MAX_ANEXOS_POR_EMAIL = 5
 # Plataformas de vagas que AVISAM por e-mail que há um currículo lá (o remetente é o sistema, não o candidato): domínio -> dados.
 # O e-mail não traz o currículo: o RH abre o link do perfil (botão "Abrir currículo" na Fila de Exceção), baixa o arquivo e o envia por
 # "Enviar currículo". "link" é o texto do botão/link do e-mail que leva ao currículo. Para acrescentar outra plataforma, basta uma linha.
-PORTAIS_DE_CURRICULO = {"trabalhabrasil.com.br": {"nome": "Trabalha Brasil", "link": "Ver perfil"}}
+PORTAIS_DE_CURRICULO = {
+    "trabalhabrasil.com.br": {"nome": "Trabalha Brasil", "link": "Ver perfil"},
+    "jobbol.com.br": {"nome": "Jobbol", "link": "Ver currículo do candidato"},
+}
+
+# Golpes de boleto/cobrança falsa (o remetente troca de domínio a cada vez, então bloquear por remetente não
+# adianta; o texto do assunto se repete). Trecho em minúsculas, sem acento: basta aparecer no assunto.
+ASSUNTOS_BLOQUEADOS = (
+    "nova guia de pagamento",
+    "boleto vencido",
+)
 
 # Limites contra arquivos maliciosos (bombas de descompressão, imagens gigantes)
 LIMITE_PIXELS_IMAGEM = 60_000_000

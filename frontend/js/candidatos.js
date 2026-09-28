@@ -95,6 +95,8 @@ async function carregarCandidatos() {
     const [cls, lbl] = STATUS_CANDIDATURA[c.status] || ['pill-gray', c.status];
     const aberta = !c.encerrada_em;
     const precisaAgendar = PRECISA_AGENDAR.includes(c.status);
+    const ehLoja = c.setor_nome === 'Loja';
+    const aguardandoGerente = c.status === 'aguardando_gerente';
     const nota = c.nota_curriculo ?? c.nota;               // a nota que a IA deu ao currículo (não há mais avaliação da IA por vaga)
     const pillNota = nota == null ? 'pill-gray'
       : nota >= 76 ? 'pill-green' : nota >= 51 ? 'pill-yellow' : 'pill-red';
@@ -116,6 +118,13 @@ async function carregarCandidatos() {
         <button class="btn-sm" onclick="abrirCandidatura('${c.id}')"><i class="ti ti-eye"></i>Ver</button>
         ${precisaAgendar
           ? `<button class="btn-sm azul" data-id="${c.id}" data-nome="${escapeHtml(c.nome)}" data-tel="${escapeHtml(c.telefone_e164 || '')}" onclick="abrirAgendamento(this.dataset.id, this.dataset.nome, this.dataset.tel)"><i class="ti ti-brand-whatsapp"></i>Agendar</button>`
+          : ''}
+        ${ehLoja && precisaAgendar
+          ? `<button class="btn-sm" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="encaminharAoGerentePorId(this.dataset.id, this.dataset.nome)" title="Marca que o currículo foi mandado ao gerente da loja (fora do sistema) e espera a decisão dele"><i class="ti ti-building-store"></i>Encaminhar ao gerente</button>`
+          : ''}
+        ${aguardandoGerente
+          ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="aprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente da loja aprovou este candidato"><i class="ti ti-check"></i>Aprovado</button>
+             <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente da loja reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
           : ''}
         ${aberta
           ? `<button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="devolverAoBancoPorId(this.dataset.id, this.dataset.nome)" title="Cancelar a seleção: o candidato volta ao Banco de Talentos, com a qualificação que já tem"><i class="ti ti-arrow-back-up"></i>${vagaEmProcesso ? 'Cancelar seleção' : ''}</button>`
@@ -163,6 +172,54 @@ async function reprovarCandidatura() {
   if (!await encerrarCandidatura(c.id, 'reprovado', motivo.trim())) return;
   fecharDrawer();
   toast(`${c.nome || 'Candidato'} reprovado — volta ao Banco de Talentos`);
+  await recarregarTelaDeCandidaturas();
+}
+
+// ── Vagas do setor Loja: triagem final com o gerente (a IA/o RH não entrevista; o RH manda o currículo por
+// fora do sistema e registra aqui a decisão dele). Ver backend/sql/051_gerente_loja.sql. ──
+async function encaminharAoGerentePorId(id, nome) {
+  if (!await confirmar({
+    titulo: 'Encaminhar ao gerente', rotulo: 'Encaminhar', perigo: false,
+    mensagem: `Encaminhar ${nome || 'este candidato'} ao gerente da loja?\n\nO currículo continua sendo enviado por fora do sistema ` +
+              '(WhatsApp, e-mail...): isto só marca que a candidatura está aguardando a decisão dele.'
+  })) return;
+  const { error } = await db.rpc('encaminhar_ao_gerente', { p_candidatura_id: id });
+  if (error) { toast(mensagemErro(error), 'erro'); return; }
+  fecharDrawer();
+  toast(`${nome || 'Candidato'} encaminhado ao gerente da loja`);
+  await recarregarTelaDeCandidaturas();
+}
+
+async function encaminharAoGerente() {
+  const c = app.candidatoAberto;
+  if (c) await encaminharAoGerentePorId(c.id, c.nome);
+}
+
+async function aprovarCandidaturaGerentePorId(id, nome) {
+  if (!await confirmar({
+    titulo: 'Aprovar candidato', rotulo: 'Aprovar', perigo: false,
+    mensagem: `Marcar ${nome || 'este candidato'} como aprovado pelo gerente da loja?`
+  })) return;
+  const { error } = await db.rpc('aprovar_candidatura_gerente', { p_candidatura_id: id });
+  if (error) { toast(mensagemErro(error), 'erro'); return; }
+  fecharDrawer();
+  toast(`${nome || 'Candidato'} aprovado`);
+  await recarregarTelaDeCandidaturas();
+}
+
+async function aprovarPeloGerente() {
+  const c = app.candidatoAberto;
+  if (c) await aprovarCandidaturaGerentePorId(c.id, c.nome);
+}
+
+async function reprovarCandidaturaGerentePorId(id, nome) {
+  if (!await confirmar({
+    titulo: 'Reprovar candidato', rotulo: 'Reprovar', perigo: true,
+    mensagem: `Marcar ${nome || 'este candidato'} como reprovado pelo gerente da loja?\n\nA candidatura é encerrada e o candidato volta ao Banco de Talentos.`
+  })) return;
+  if (!await encerrarCandidatura(id, 'reprovado', 'Reprovado pelo gerente da loja')) return;
+  fecharDrawer();
+  toast(`${nome || 'Candidato'} reprovado — volta ao Banco de Talentos`);
   await recarregarTelaDeCandidaturas();
 }
 
@@ -220,6 +277,8 @@ async function abrirCandidatura(id) {
   $('#d-btn-devolver').style.display  = aberta ? 'flex' : 'none';
   $('#d-btn-reprovar').style.display  = aberta ? 'flex' : 'none';
   $('#d-btn-agendar').style.display   = PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
+  $('#d-btn-encaminhar-gerente').style.display = c.setor_nome === 'Loja' && PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
+  $('#d-btn-aprovar-gerente').style.display    = c.status === 'aguardando_gerente' && aberta ? 'flex' : 'none';
   $('#d-btn-curriculo').style.display = c.storage_path ? 'flex' : 'none';
   $('#d-sem-arquivo').style.display   = c.storage_path ? 'none' : 'flex';
 
@@ -239,15 +298,17 @@ function abrirTalentoDaCandidatura() {
 async function dadosDoCurriculoDaCandidatura(candidaturaId) {
   const id = candidaturaId || app.candidatoAberto?.id;
   if (!id) return null;
-  const { data } = await db.from('vw_candidaturas').select('storage_path,nome_arquivo').eq('id', id).maybeSingle();
+  const { data } = await db.from('vw_candidaturas').select('candidato_id,storage_path,nome_arquivo').eq('id', id).maybeSingle();
   if (!data?.storage_path) { toast('Arquivo do currículo não disponível', 'erro'); return null; }
-  return data;
+  // tipo_mime/texto_extraido não estão em vw_candidaturas: uma segunda consulta, direto na tabela (mesma política de leitura)
+  const { data: cv } = await db.from('curriculos').select('tipo_mime,texto_extraido')
+    .eq('candidato_id', data.candidato_id).eq('atual', true).maybeSingle();
+  return { ...data, tipo_mime: cv?.tipo_mime, texto_extraido: cv?.texto_extraido };
 }
 
 async function verCurriculo(candidaturaId) {
   const cv = await dadosDoCurriculoDaCandidatura(candidaturaId);
-  const url = cv && await urlDoCurriculo(cv.storage_path);
-  if (url) window.open(url, '_blank');
+  if (cv) await abrirPreviewCurriculo(cv);
 }
 
 async function baixarCurriculo(candidaturaId) {

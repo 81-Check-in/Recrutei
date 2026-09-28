@@ -19,7 +19,7 @@ import status_robo
 from config import (
     FORMATOS_ACEITOS, TAMANHO_MINIMO_ANEXO, TAMANHO_MINIMO_DOCUMENTO, LIMITE_EMAILS, REENVIO_DIAS_MINIMO,
     MODO_SIMULACAO, MODELO_CLASSIFICACAO_PADRAO, MODELO_AVALIACAO_PADRAO,
-    CONFIANCA_MINIMA_PADRAO, VERSAO_PROMPT_ANALISE, PORTAIS_DE_CURRICULO, log,
+    CONFIANCA_MINIMA_PADRAO, VERSAO_PROMPT_ANALISE, PORTAIS_DE_CURRICULO, ASSUNTOS_BLOQUEADOS, log,
 )
 from utils import (
     extrair_telefone, extrair_email, gerar_hash_identidade, gerar_hash_arquivo,
@@ -642,6 +642,13 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
     # Remetente bloqueado
     if bd.remetente_bloqueado(msg["remetente"]):
         log.info("  Remetente bloqueado — ignorando")
+        stats.bloqueados += 1
+        return _marcar_lido()
+
+    # Assunto de golpe conhecido (boleto/cobrança falsa): o remetente muda a cada e-mail, o assunto não
+    assunto_normalizado = normalizar_texto(msg.get("assunto"))
+    if any(padrao in assunto_normalizado for padrao in ASSUNTOS_BLOQUEADOS):
+        log.info("  Assunto bloqueado — ignorando")
         stats.bloqueados += 1
         return _marcar_lido()
 

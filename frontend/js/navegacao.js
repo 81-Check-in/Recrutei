@@ -54,7 +54,7 @@ let navAnterior = -1;   // posição do item de menu anterior, para a direção 
 
 function irPara(tela, el) {
   app.telaAtual = tela;
-  if (tela === 'banco' && el) rankingVaga = null;           // clicou no menu: banco inteiro, não o ranking de uma vaga
+  if (tela === 'banco' && el) { rankingVaga = null; resetarAbaBanco(); }  // clicou no menu: banco inteiro (aba "Currículos"), não o ranking de uma vaga nem a fila de exceções
   if (tela === 'candidatos' && el) vagaEmProcesso = null;   // clicou no menu: todos os candidatos em processo, não os de uma vaga
   $$('.nav-item').forEach(n => {
     n.classList.remove('active');
@@ -71,6 +71,7 @@ function irPara(tela, el) {
   if (itemAtivo) deslizarPilula($('#nav-pilula'), itemAtivo, 'y');
   posicionarAbas();
   $('#page-title').textContent = TITULOS[tela] || tela;
+  atualizarBotaoVoltarTopo();
   $('#periodo-wrap').style.display = tela === 'dashboard' ? 'flex' : 'none';
   fecharSidebar();
 
@@ -78,5 +79,14 @@ function irPara(tela, el) {
      banco: carregarBanco, candidatos: carregarCandidatos,
      entrevistas: carregarEntrevistas, historico: carregarHistorico, sanitizacao: carregarSanitizacao, listanegra: carregarListaNegra,
      status: carregarStatus, config: carregarConfig }[tela])?.();
+}
+
+// A setinha ao lado do título só aparece quando a tela atual "veio de" outra — hoje só a seleção de CVs (dentro do
+// Banco de Talentos), que sempre começa em Vagas. Chamada a cada navegação e também quando o estado muda sem navegar
+// (ex.: sairDoRanking(), que fica na mesma tela). Cresce aqui se um dia outra tela ganhar o mesmo comportamento.
+function atualizarBotaoVoltarTopo() {
+  const btn = $('#topo-voltar');
+  if (!btn) return;
+  btn.style.display = app.telaAtual === 'banco' && rankingVaga ? 'flex' : 'none';
 }
 

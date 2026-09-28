@@ -159,6 +159,8 @@ function posicionarMenu() {
 function posicionarAbas() {
   const aba = $('.tab.active');
   if (aba) deslizarPilula($('#tabs-pilula'), aba, 'x', false);
+  const subaba = $('.subtab.active');
+  if (subaba) deslizarPilula($('#exc-subtabs-pilula'), subaba, 'x', false);
 }
 function reposicionarPilulas() { posicionarMenu(); posicionarAbas(); }
 

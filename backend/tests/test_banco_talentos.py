@@ -91,6 +91,18 @@ AVISO_TRABALHA_BRASIL_HTML = (
     "<tr><td>Caso não queira mais receber, <a href='https://events-api.bne.com.br/api/v1/events/x?url=privacidade'>unsubscribe</a></td></tr>"
     "</table></body></html>")
 
+# Aviso da Jobbol no formato real (nomes e códigos inventados): o link fica só no href, sem "botão" separado
+LINK_JOBBOL = "https://www.jobbol.com.br/get-curriculo?id=0000000&tk=chavefalsadetestecomsessentaequatrocaracteresxx0000000000000000&c=UP0000000"
+AVISO_JOBBOL_HTML = (
+    "<!DOCTYPE html><html><body><p>Nova candidatura recebida</p>"
+    "<p>Você recebeu uma nova candidatura para a vaga abaixo.</p>"
+    "<p>Candidato: Fulano de Teste</p><p>E-mail: fulano@teste.test</p>"
+    "<p>Vaga: Auxiliar de Logística</p><p>Cidade: Brasília / DF</p>"
+    "<p>Código da vaga: 00000000000</p><p>Protocolo: UP0000000</p>"
+    f"<p><a href='{LINK_JOBBOL}'>Ver currículo do candidato</a></p>"
+    "<p>Atenção: O currículo fica disponível por 30 dias.</p>"
+    "</body></html>")
+
 
 class TestUtils(unittest.TestCase):
     def test_link_do_html_acha_o_link_pelo_texto_inclusive_de_um_botao_dentro_dele(self):
@@ -430,6 +442,7 @@ class TestArquivoDoGoogleDocs(unittest.TestCase):
     """Currículo enviado como LINK do Google Docs/Drive: o arquivo é guardado para o RH abrir no painel."""
     DOC = "https://docs.google.com/document/d/1AbC_dEf-123/edit?usp=sharing"
     PDF = b"%PDF-1.7\n" + b"x" * 500
+    JPEG = b"\xff\xd8\xff" + b"x" * 200   # foto tirada do celular e compartilhada pelo Drive (achado em exceções reais de 2026-09-28)
 
     @staticmethod
     def _docx() -> bytes:
@@ -496,6 +509,66 @@ class TestArquivoDoGoogleDocs(unittest.TestCase):
     def test_grande_demais_nao_e_guardado(self):
         with patch.object(extrator, "TAMANHO_MAXIMO_ANEXO", 200), self._com(self._resp(self.PDF), self._resp(self.PDF)):
             self.assertIsNone(extrator.arquivo_do_google_docs(self.DOC))
+
+    # ── Foto do currículo por link (achado em exceções reais: sem isto, os bytes da imagem viravam "texto" ilegível
+    #    e o candidato caía em "não é currículo" mesmo tendo mandado uma foto de verdade) ──
+    def test_foto_do_curriculo_por_link_passa_pelo_ocr(self):
+        with patch.object(extrator, "_de_imagem", return_value="Fulano de Tal " * 10) as ocr, self._com(self._resp(self.JPEG)):
+            texto, aplicou_ocr = extrator.extrair_google_docs(self.DOC)
+        self.assertIn("Fulano de Tal", texto)
+        self.assertTrue(aplicou_ocr)
+        ocr.assert_called_once_with(self.JPEG)
+
+    def test_foto_sem_texto_legivel_pelo_ocr_nao_e_aceita(self):
+        with patch.object(extrator, "_de_imagem", return_value="pouco texto"), \
+             self._com(self._resp(self.JPEG), self._resp(self.JPEG)):
+            self.assertIsNone(extrator.extrair_google_docs(self.DOC)[0])
+
+    def test_foto_do_curriculo_e_guardada_como_arquivo_original(self):
+        with self._com(self._resp(b"", status=404), self._resp(self.JPEG)):
+            a = extrator.arquivo_do_google_docs("https://drive.google.com/file/d/9ZyX/view")
+        self.assertEqual((a["tipo_mime"], a["conteudo"]), ("image/jpeg", self.JPEG))
+
+
+class TestDocAntigo(unittest.TestCase):
+    """
+    .doc (application/msword) cobre dois formatos: OOXML (zip) mal rotulado, que _de_docx() já lê, e o binário
+    OLE antigo (Word 97-2003), que só o antiword lê (achado ao investigar exceções reais de arquivo_corrompido
+    em 2026-09-28: CVs .doc verdadeiros nunca eram lidos, porque _de_docx() só sabe abrir zip).
+    """
+    OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"x" * 300   # assinatura do .doc binário antigo
+
+    def _com_antiword(self, **kw):
+        resultado = MagicMock(returncode=kw.get("returncode", 0),
+                               stdout=kw.get("stdout", b"texto do curriculo"), stderr=kw.get("stderr", b""))
+        return patch.object(extrator.subprocess, "run", return_value=resultado, side_effect=kw.get("side_effect"))
+
+    def test_doc_realmente_ooxml_nao_chama_o_antiword(self):
+        # .doc que na verdade é OOXML (zip) mal rotulado: _de_docx() já resolve, sem precisar do antiword
+        with patch.object(extrator, "_de_docx", return_value="texto do docx") as de_docx, self._com_antiword() as run:
+            texto, ocr = extrator.extrair(b"conteudo qualquer", "application/msword")
+        self.assertEqual(texto, "texto do docx")
+        self.assertFalse(ocr)
+        de_docx.assert_called_once_with(b"conteudo qualquer")
+        run.assert_not_called()
+
+    def test_doc_binario_antigo_le_pelo_antiword(self):
+        with self._com_antiword(stdout="Fulano de Tal\nExperiência: 5 anos".encode()) as run:
+            texto, ocr = extrator.extrair(self.OLE, "application/msword")
+        self.assertEqual(texto, "Fulano de Tal\nExperiência: 5 anos")
+        self.assertFalse(ocr)
+        self.assertEqual(run.call_args.args[0], ["antiword", "-"])
+        self.assertEqual(run.call_args.kwargs["input"], self.OLE)
+
+    def test_antiword_nao_instalado_nao_derruba_a_extracao(self):
+        with self._com_antiword(side_effect=FileNotFoundError()):
+            self.assertIsNone(extrator.extrair(self.OLE, "application/msword")[0])
+
+    def test_antiword_com_erro_ou_travado_devolve_none(self):
+        with self._com_antiword(returncode=1, stderr=b"formato desconhecido"):
+            self.assertIsNone(extrator.extrair(self.OLE, "application/msword")[0])
+        with self._com_antiword(side_effect=extrator.subprocess.TimeoutExpired(cmd="antiword", timeout=30)):
+            self.assertIsNone(extrator.extrair(self.OLE, "application/msword")[0])
 
 
 class TestPromptDeQualificacao(unittest.TestCase):
@@ -1140,6 +1213,16 @@ class TestProcessarMensagem(unittest.TestCase):
         extrair.assert_not_called()
         self.assertEqual(stats.bloqueados, 1)
 
+    def test_assunto_de_golpe_e_ignorado_e_marcado_lido(self):
+        stats = pipeline.Estatisticas()
+        bd = _bd_falso(email_ja_processado=False, remetente_bloqueado=False)
+        msg = self.msg(assunto="IMPORTANTE: Nova guia de pagamento (Vencimento: 05/08/2026) 501718")
+        with patch.object(pipeline, "bd", bd), patch.object(pipeline.extrator, "extrair") as extrair:
+            lido = pipeline.processar_mensagem(msg, {}, AREAS, stats)
+        self.assertTrue(lido)
+        extrair.assert_not_called()
+        self.assertEqual(stats.bloqueados, 1)
+
     def test_curriculo_de_endereco_bloqueado_no_texto_e_ignorado_sem_virar_excecao(self):
         stats = pipeline.Estatisticas()
         bd = _bd_falso(email_ja_processado=False, obter_ou_criar_remetente={"id": "rem-1"})
@@ -1335,8 +1418,8 @@ class TestProcessarMensagem(unittest.TestCase):
         bd.remetente_tem_curriculo.assert_not_called()                    # o remetente é o portal: "já tem currículo" não vale
         identificar.assert_not_called()                                   # e o corpo do aviso não é lido como currículo
 
-    def rodar_aviso(self, corpo, excecao_id=None):
-        msg = self.msg(remetente="trabalhabrasil@trabalhabrasil.com.br", anexos=[], corpo=corpo, corpo_texto="", corpo_com_links="")
+    def rodar_aviso(self, corpo, excecao_id=None, remetente="trabalhabrasil@trabalhabrasil.com.br"):
+        msg = self.msg(remetente=remetente, anexos=[], corpo=corpo, corpo_texto="", corpo_com_links="")
         bd = _bd_falso(email_ja_processado=False, obter_ou_criar_remetente={"id": "rem-1"})
         with patch.object(pipeline, "bd", bd):
             pipeline.processar_mensagem(msg, {}, AREAS, pipeline.Estatisticas(), excecao_id=excecao_id)
@@ -1360,6 +1443,20 @@ class TestProcessarMensagem(unittest.TestCase):
         bd.registrar_excecao.assert_not_called()                          # não duplica a fila
         self.assertEqual(bd.atualizar_excecao.call_args.args[0], "exc-tb")
         self.assertEqual(bd.atualizar_excecao.call_args.args[1]["link_curriculo"], LINK_VER_PERFIL)
+
+    # ── Jobbol: mesmo mecanismo genérico (config.PORTAIS_DE_CURRICULO), botão "Ver currículo do candidato" ──
+    def test_aviso_da_jobbol_guarda_o_link_do_curriculo_para_o_botao_abrir_curriculo(self):
+        bd = self.rodar_aviso(AVISO_JOBBOL_HTML, remetente="notify@jobbol.com.br")
+        exc = bd.registrar_excecao.call_args.args[0]
+        self.assertEqual(exc["link_curriculo"], LINK_JOBBOL)
+        self.assertIn("Aviso do Jobbol", exc["detalhe_erro"])
+        self.assertIn('Clique em "Abrir currículo"', exc["detalhe_erro"])
+        self.assertNotIn("Ver e-mail", exc["detalhe_erro"])
+
+    def test_reconhece_a_jobbol_pelo_dominio_e_subdominio_sem_confundir_com_parecidos(self):
+        self.assertEqual(pipeline._portal_de_curriculos("notify@jobbol.com.br")["nome"], "Jobbol")
+        self.assertEqual(pipeline._portal_de_curriculos("a@mail.jobbol.com.br")["link"], "Ver currículo do candidato")
+        self.assertIsNone(pipeline._portal_de_curriculos("a@naojobbol.com.br"))
 
     def test_excecao_comum_nao_leva_a_coluna_do_link(self):
         # a coluna é da migração 039: e-mail comum não pode depender dela

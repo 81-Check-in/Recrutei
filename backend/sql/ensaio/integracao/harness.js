@@ -25,7 +25,7 @@ function jwt(sub) {
 }
 
 const ORDEM_SCRIPTS = ['nucleo', 'autenticacao', 'navegacao', 'dashboard', 'vagas', 'banco-talentos', 'candidatos',
-  'entrevistas', 'historico', 'sanitizacao', 'lista-negra', 'consideracoes', 'configuracoes', 'status', 'ui-global', 'inicializacao'];
+  'entrevistas', 'historico', 'sanitizacao', 'lista-negra', 'consideracoes', 'visualizacao-curriculo', 'configuracoes', 'status', 'ui-global', 'inicializacao'];
 
 // Abre o painel como um usuário: monta o DOM do index.html, injeta o supabase-js (o mesmo da CDN) apontando para o
 // PostgREST local com o JWT do usuário, e roda os scripts do painel na ordem do HTML.

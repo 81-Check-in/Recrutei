@@ -11,8 +11,6 @@ async function carregarVagas() {
 
   if (error) { erro(el, error.message); return; }
 
-  $('#count-vagas').textContent = data.length;
-
   if (!data.length) {
     vazio(el, 'ti-briefcase', 'Nenhuma vaga cadastrada',
       'Clique em "Nova vaga" para começar');
@@ -293,8 +291,73 @@ async function encerrarVaga(id, titulo) {
   carregarVagas();
 }
 
-// ── Fila de exceções ──
+// ── Fila de exceções (aba do Banco de Talentos: ver trocarAba()) ──
+// A fila é separada em dois grupos: "falhas" (link_curriculo vazio — precisa de investigação/RH) e "portal"
+// (Jobbol/Trabalha Brasil — o remetente é a plataforma, o currículo está lá; ver config.PORTAIS_DE_CURRICULO).
+// Os dois usam a MESMA lista/paginação (#excecoes-lista): trocar de grupo recarrega do zero, como um filtro.
 const estadoExcecoes = novoEstadoLista(50);
+let grupoExcecoesAtivo = 'falhas';
+
+const CFG_EXCECOES = {
+  sem_anexo:            ['ti-mail-off','Sem currículo','yellow'],
+  formato_invalido:     ['ti-file-x','Formato inválido','red'],
+  arquivo_corrompido:   ['ti-file-x','Sem leitura','red'],
+  ocr_falhou:           ['ti-scan','OCR falhou','red'],
+  docs_privado:         ['ti-lock','Docs privado','blue'],
+  nao_e_curriculo:      ['ti-file-off','Não é currículo','yellow'],
+  vaga_nao_identificada:['ti-help-circle','Vaga indefinida','blue'],
+  erro_processamento:   ['ti-alert-triangle','Erro','red']
+};
+
+function trocarGrupoExcecoes(grupo, el) {
+  if (!el || el.classList.contains('active')) return;
+  $$('#exc-subtabs .subtab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  deslizarPilula($('#exc-subtabs-pilula'), el, 'x');
+  grupoExcecoesAtivo = grupo;
+  carregarExcecoes();
+}
+
+function lerFiltrosExcecoes() {
+  return {
+    email: $('#exc-filtro-email').value.trim(),
+    data: $('#exc-filtro-data').value,
+    tipo: $('#exc-filtro-tipo').value
+  };
+}
+
+function algumFiltroExcecaoEmUso() {
+  const f = lerFiltrosExcecoes();
+  return !!(f.email || f.data || f.tipo);
+}
+
+function limparFiltrosExcecoes() {
+  $('#exc-filtro-email').value = '';
+  $('#exc-filtro-data').value = '';
+  $('#exc-filtro-tipo').value = '';
+  carregarExcecoes();
+}
+
+// Preenche o <select> de tipo de erro uma única vez, com os mesmos rótulos usados nos selos da lista.
+function prepararFiltroTipoExcecoes() {
+  const sel = $('#exc-filtro-tipo');
+  if (sel.options.length > 1) return;
+  Object.entries(CFG_EXCECOES).forEach(([valor, [, lbl]]) => {
+    sel.insertAdjacentHTML('beforeend', `<option value="${valor}">${escapeHtml(lbl)}</option>`);
+  });
+}
+
+// Contador de cada aba (falhas/portal): SEM os filtros da tela, pra sempre mostrar o tamanho real de cada fila
+// (o contador da aba não devia encolher só porque um filtro de busca está ativo). Atualiza também o selo
+// da aba "Fila de exceções" (soma dos dois grupos).
+async function atualizarContadoresGrupoExcecoes() {
+  const base = () => db.from('excecoes').select('id', { count: 'exact', head: true }).eq('status', 'pendente');
+  const [falhas, portal] = await Promise.all([base().is('link_curriculo', null), base().not('link_curriculo', 'is', null)]);
+  const nFalhas = falhas.count ?? 0, nPortal = portal.count ?? 0;
+  $('#count-exc-falhas').textContent = nFalhas;
+  $('#count-exc-portal').textContent = nPortal;
+  $('#count-exc').textContent = nFalhas + nPortal;
+}
 
 function maisExcecoes() {
   const btn = $('#excecoes-mais');
@@ -303,44 +366,49 @@ function maisExcecoes() {
   carregarExcecoes();
 }
 
-// Aviso de plataforma de vagas (ex.: Trabalha Brasil): o currículo está no portal e o e-mail traz o endereço dele (backend/sql/039).
-// O endereço vem de um e-mail de terceiros: só http/https vira botão, e abre em outra aba sem dar acesso a esta.
+// Aviso de plataforma de vagas (Jobbol, Trabalha Brasil): o currículo está no portal e o e-mail traz o endereço dele
+// (backend/sql/039). O endereço vem de um e-mail de terceiros: só http/https vira botão, e abre em outra aba sem dar acesso a esta.
 const linkWebSeguro = u => /^https?:\/\/\S+$/i.test(u || '') ? u : '';
 function abrirLinkExterno(url) {
   if (!linkWebSeguro(url)) return;
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+// Início e fim do dia (hora local do navegador) de uma data "AAAA-MM-DD" de <input type=date>, em ISO/UTC para a consulta.
+function limitesDoDia(dataStr) {
+  const [ano, mes, dia] = dataStr.split('-').map(Number);
+  return [new Date(ano, mes - 1, dia, 0, 0, 0).toISOString(), new Date(ano, mes - 1, dia, 23, 59, 59, 999).toISOString()];
+}
+
 async function carregarExcecoes() {
   const el = $('#excecoes-lista');
+  prepararFiltroTipoExcecoes();
+  const f = lerFiltrosExcecoes();
+  $('#exc-btn-limpar').style.display = algumFiltroExcecaoEmUso() ? '' : 'none';
+  paginaInicialSeFiltroMudou(estadoExcecoes, JSON.stringify([grupoExcecoesAtivo, f.email, f.data, f.tipo]));
 
-  const montar = () => db.from('excecoes').select('*', { count: 'exact' })
-    .eq('status', 'pendente').order('recebido_em', { ascending: false });
+  const montar = () => {
+    let q = db.from('excecoes').select('*', { count: 'exact' }).eq('status', 'pendente');
+    q = grupoExcecoesAtivo === 'portal' ? q.not('link_curriculo', 'is', null) : q.is('link_curriculo', null);
+    if (f.email) q = q.ilike('email_remetente', `%${f.email}%`);
+    if (f.data) { const [ini, fim] = limitesDoDia(f.data); q = q.gte('recebido_em', ini).lte('recebido_em', fim); }
+    if (f.tipo) q = q.eq('tipo', f.tipo);
+    return q.order('recebido_em', { ascending: false });
+  };
 
   const resultado = await carregarLista(el, estadoExcecoes, montar,
-    { icone: 'ti-circle-check', msg: 'Nenhuma exceção pendente',
-      sub: 'Tudo que chegou foi processado com sucesso' });
+    { icone: 'ti-circle-check',
+      msg: algumFiltroExcecaoEmUso() ? 'Nenhuma exceção com esses filtros' : 'Nenhuma exceção pendente',
+      sub: algumFiltroExcecaoEmUso() ? 'Tente ajustar ou limpar os filtros' : 'Tudo que chegou foi processado com sucesso' });
 
   if (!resultado) { destravarBotaoMais($('#excecoes-mais')); return; }   // erro() já foi desenhado
 
-  $('#count-exc').textContent = estadoExcecoes.total;
   atualizarPaginacao($('#excecoes-mais'), estadoExcecoes, $('#excecoes-contador'), ' pendentes');
   if (!resultado.data.length) return;
   const { data } = resultado;
 
-  const CFG = {
-    sem_anexo:            ['ti-mail-off','Sem currículo','yellow'],
-    formato_invalido:     ['ti-file-x','Formato inválido','red'],
-    arquivo_corrompido:   ['ti-file-x','Sem leitura','red'],
-    ocr_falhou:           ['ti-scan','OCR falhou','red'],
-    docs_privado:         ['ti-lock','Docs privado','blue'],
-    nao_e_curriculo:      ['ti-file-off','Não é currículo','yellow'],
-    vaga_nao_identificada:['ti-help-circle','Vaga indefinida','blue'],
-    erro_processamento:   ['ti-alert-triangle','Erro','red']
-  };
-
   el.innerHTML = data.map(e => {
-    const [ic, lbl, cor] = CFG[e.tipo] || ['ti-alert-triangle', e.tipo, 'gray'];
+    const [ic, lbl, cor] = CFG_EXCECOES[e.tipo] || ['ti-alert-triangle', e.tipo, 'gray'];
     // Reprocessamento já pedido: mostra o selo em vez do botão, pra não pedir duas vezes
     // (a rotina do backend limpa reprocessar_solicitado_em quando termina a tentativa).
     const botaoReprocessar = e.reprocessar_solicitado_em
@@ -410,6 +478,7 @@ async function resolverExcecao(id, status) {
   if (error) { toast(error.message, 'erro'); return; }
   toast(status === 'revisado' ? 'Marcado como revisado' : 'Item ignorado');
   carregarExcecoes();
+  atualizarContadoresGrupoExcecoes();
 }
 
 // Só marca o pedido — quem busca o e-mail de novo e tenta classificar/avaliar é o
@@ -437,10 +506,13 @@ async function reprocessarExcecao(id, btn) {
 // Mesma ideia do reprocessarExcecao(), mas em massa: marca todas as pendentes que
 // ainda não têm pedido em aberto (pra não reiniciar a contagem de quem já está na fila).
 async function reprocessarTudo() {
-  if (!estadoExcecoes.total) return;
+  // Conta de novo (não usa estadoExcecoes.total): a lista na tela pode estar filtrada por grupo/e-mail/data/tipo,
+  // mas este botão pede reprocessamento de TODAS as pendentes do banco, filtro nenhum.
+  const { count } = await db.from('excecoes').select('id', { count: 'exact', head: true }).eq('status', 'pendente');
+  if (!count) return;
   if (!await confirmar({
     titulo: 'Reprocessar tudo', rotulo: 'Reprocessar', perigo: false,
-    mensagem: `Pedir reprocessamento de todas as exceções pendentes (${estadoExcecoes.total})?\n\nA rotina tenta cada uma na próxima execução.`
+    mensagem: `Pedir reprocessamento de todas as exceções pendentes (${count})?\n\nA rotina tenta cada uma na próxima execução.`
   })) return;
 
   const btn = $('#btn-reprocessar-tudo');
@@ -615,6 +687,19 @@ async function carregarUploadsManuais() {
   }).join('');
 }
 
+// Clicar no menu "Banco de Talentos" sempre volta para a aba "Currículos" (não fica preso na Fila de
+// exceções de uma visita anterior). Só troca de verdade se estava na outra aba: evita recarregar à toa.
+function resetarAbaBanco() {
+  const tab = $$('.tab')[0];
+  if (!tab || tab.classList.contains('active')) return;
+  $$('.tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  $$('.sub-screen').forEach(s => s.classList.remove('active'));
+  $('#sub-banco').classList.add('active');
+  $('#btn-reprocessar-tudo').style.display = 'none';
+}
+
+// Abas do Banco de Talentos: "banco" (currículos) e "excecoes" (e-mails que não puderam ser processados)
 function trocarAba(aba, el) {
   $$('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
@@ -622,8 +707,13 @@ function trocarAba(aba, el) {
   $$('.sub-screen').forEach(s => s.classList.remove('active'));
   $('#sub-' + aba).classList.add('active');
   $('#btn-reprocessar-tudo').style.display = aba === 'excecoes' ? 'flex' : 'none';
-  if (aba === 'excecoes') carregarExcecoes();
-  else carregarVagas();
+  if (aba === 'excecoes') {
+    // As sub-abas (falhas/portal) ficaram ocultas até agora: a pílula precisa da largura real, só disponível depois de aparecer.
+    const subaba = $('#exc-subtabs .subtab.active');
+    if (subaba) deslizarPilula($('#exc-subtabs-pilula'), subaba, 'x', false);
+    carregarExcecoes();
+    atualizarContadoresGrupoExcecoes();
+  } else carregarBanco();
 }
 
 

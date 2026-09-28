@@ -14,11 +14,12 @@ const estadoBanco = novoEstadoLista(50);
 let filtrosAvancados = null;
 let opcoesBancoCarregadas = false;
 
+// O botão "Mais filtros" existe duas vezes (barra normal e barra da seleção de CVs): mesmo painel, mesmo estado.
 function alternarFiltrosAvancados() {
   const painel = $('#painel-filtros-av');
   const abrir = painel.style.display === 'none';
   painel.style.display = abrir ? 'block' : 'none';
-  $('#btn-filtros-av').setAttribute('aria-expanded', String(abrir));
+  ['#btn-filtros-av', '#btn-filtros-av-rk'].forEach(s => $(s)?.setAttribute('aria-expanded', String(abrir)));
 }
 
 const TELEFONE_MIN_DIGITOS = 3;          // menos que isso casaria com quase todo mundo
@@ -30,12 +31,7 @@ function lerFiltrosAvancados() {
   let ativos = 0;
 
   const palavras = $('#av-palavras').value.split(',').map(p => p.trim()).filter(Boolean);
-  if (palavras.length) {
-    texto.palavras = palavras;
-    texto.palavras_modo = $('#av-palavras-modo').value;
-    texto.palavras_onde = $('#av-palavras-onde').value;
-    ativos++;
-  }
+  if (palavras.length) { texto.palavras = palavras; ativos++; }   // sempre "qualquer uma", sempre no currículo e na análise
   const cargos = $('#av-cargos-exp').value.split(',').map(p => p.trim()).filter(Boolean);
   if (cargos.length) { texto.cargos_experiencia = cargos; ativos++; }
   const email = $('#av-email').value.trim();
@@ -57,8 +53,8 @@ function lerFiltrosAvancados() {
   if (escolaridade) { colunas.escolaridade_min = escolaridade; ativos++; }
   const experiencia = $('#av-experiencia').value.trim();
   if (experiencia) { colunas.experiencia_min = Number(experiencia); ativos++; }
-  if ($('#av-cnh').checked) { colunas.cnh = true; ativos++; }
   if ($('#av-revisao').checked) { colunas.revisao = true; ativos++; }
+  if ($('#av-historico').checked) { colunas.tem_historico = true; ativos++; }
   colunas.incluir_sem_info = $('#av-sem-info').checked;
   if (!colunas.incluir_sem_info) ativos++;                 // o padrão é incluir
 
@@ -79,10 +75,13 @@ function algumFiltroEmUso() {
 
 function atualizarIndicadoresFiltros() {
   const n = contarFiltrosDoPainel();
-  const badge = $('#badge-filtros-av');
-  badge.style.display = n ? 'inline-flex' : 'none';
-  badge.textContent = n;
-  $('#btn-filtros-av').classList.toggle('ativo', n > 0);
+  for (const sufixo of ['', '-rk']) {
+    const badge = $('#badge-filtros-av' + sufixo);
+    if (!badge) continue;
+    badge.style.display = n ? 'inline-flex' : 'none';
+    badge.textContent = n;
+    $('#btn-filtros-av' + sufixo).classList.toggle('ativo', n > 0);
+  }
   $('#btn-limpar-filtros').style.display = algumFiltroEmUso() ? '' : 'none';
 }
 
@@ -108,12 +107,10 @@ function aplicarFiltrosAvancados() {
 function limparCamposAvancados() {
   ['av-palavras', 'av-cargos-exp', 'av-email', 'av-telefone', 'av-local', 'av-excluir-locais', 'av-idade-min', 'av-idade-max', 'av-experiencia']
     .forEach(id => { $('#' + id).value = ''; });
-  $('#av-palavras-modo').value = 'todas';
-  $('#av-palavras-onde').value = 'curriculo';
   $('#av-escolaridade').value = '';
   $('#av-rotatividade').value = '';
-  $('#av-cnh').checked = false;
   $('#av-revisao').checked = false;
+  $('#av-historico').checked = false;
   $('#av-sem-info').checked = true;
   filtrosAvancados = null;
   atualizarIndicadoresFiltros();
@@ -176,8 +173,8 @@ function aplicarColunasAvancadas(q, c) {
   q = comSemInfo(q, 'nascimento_ref', idade, sem);
   if (c.escolaridade_min) q = comSemInfo(q, 'escolaridade_ord', [['gte', ESCOLARIDADE_ORD[c.escolaridade_min]]], sem);
   if (c.experiencia_min != null) q = comSemInfo(q, 'anos_experiencia', [['gte', c.experiencia_min]], sem);
-  if (c.cnh) q = q.not('cnh', 'is', null);
   if (c.revisao) q = q.eq('revisao_manual', true);
+  if (c.tem_historico) q = q.gt('total_historico', 0);
   return q;
 }
 
@@ -212,7 +209,9 @@ function montarConsultaBanco() {
   return q.order('id');                                                // desempate estável na paginação
 }
 
-// Áreas e cargos que a IA já sugeriu, para os filtros (a IA pode sugerir uma área fora da lista de setores)
+// Áreas, cargos e cidades já presentes no banco, para os filtros (a IA pode sugerir uma área fora da lista de setores)
+let opcoesCidades = [];         // [{valor, total}], da mais comum para a menos — alimenta o autocomplete de cidade/local
+
 async function carregarOpcoesBanco(forcar = false) {
   if (opcoesBancoCarregadas && !forcar) return;
   const { data, error } = await db.from('vw_banco_opcoes').select('tipo,valor,total');
@@ -229,7 +228,49 @@ async function carregarOpcoesBanco(forcar = false) {
   };
   monta('#filtro-b-area', 'area', 'Todas as áreas', app.cache.setores.map(s => s.nome));
   monta('#filtro-b-cargo', 'cargo', 'Todos os cargos');
+  opcoesCidades = (data || []).filter(o => o.tipo === 'cidade')
+    .sort((a, b) => b.total - a.total || a.valor.localeCompare(b.valor, 'pt-BR'));
   opcoesBancoCarregadas = true;
+}
+
+// ── Autocomplete de cidade (Cidade onde mora / Endereço-bairro contém / Exceto quem mora em) ──
+// Não existe bairro normalizado (é texto livre no currículo); a sugestão é sempre de CIDADE, a partir de quem
+// já está no banco (vw_banco_opcoes, tipo "cidade" — mesma fonte de Área/Cargo). `multiplo` = campo com vários
+// valores por vírgula: o clique completa só o pedaço que está sendo digitado, sem apagar o resto.
+function ligarAutocompleteLocal(idCampo, idLista, multiplo = false) {
+  const input = $(idCampo), lista = $(idLista);
+  if (!input || !lista) return;
+
+  const termoAtual = () => multiplo ? input.value.split(',').pop() : input.value;
+
+  const desenhar = () => {
+    const termo = normBusca(termoAtual().trim());
+    const itens = (termo ? opcoesCidades.filter(o => normBusca(o.valor).includes(termo)) : opcoesCidades).slice(0, 8);
+    if (!itens.length) { lista.style.display = 'none'; return; }
+    lista.innerHTML = itens.map(o =>
+      `<button type="button" data-valor="${escapeHtml(o.valor)}">${escapeHtml(o.valor)}<span>${o.total}</span></button>`).join('');
+    lista.style.display = 'block';
+  };
+
+  input.addEventListener('focus', desenhar);
+  input.addEventListener('input', desenhar);
+  input.addEventListener('blur', () => setTimeout(() => { lista.style.display = 'none'; }, 150));  // dá tempo do clique valer
+
+  lista.addEventListener('mousedown', ev => {          // mousedown (antes do blur) pra não perder o clique
+    const btn = ev.target.closest('button[data-valor]');
+    if (!btn) return;
+    ev.preventDefault();
+    if (!multiplo) {
+      input.value = btn.dataset.valor;
+    } else {
+      const partes = input.value.split(',').map(p => p.trim());
+      partes[partes.length - 1] = btn.dataset.valor;
+      input.value = partes.filter(Boolean).join(', ') + ', ';
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    lista.style.display = 'none';
+    input.focus();
+  });
 }
 
 function maisBanco() {
@@ -252,7 +293,37 @@ function htmlTagsCandidato(c) {
     t.push('<span class="tag-mini roxo" title="Está na lista de sugestões de sanitização">Sugerido p/ limpeza</span>');
   if (c.total_reprovacoes > 0)
     t.push(`<span class="tag-mini vermelho" title="Reprovações anteriores em vagas">↺ ${c.total_reprovacoes} reprovaç${c.total_reprovacoes > 1 ? 'ões' : 'ão'}</span>`);
+  if (c.total_historico > 0)
+    t.push(`<button type="button" class="tag-mini clicavel" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}"
+        onclick="event.stopPropagation();abrirHistoricoDoCandidato(this.dataset.id,this.dataset.nome)"
+        title="Já tem registro no Histórico do candidato — clique para ver"><i class="ti ti-history"></i>Já passou pelo RH</button>`);
   return t.join(' ');
+}
+
+// ── Popup do Histórico do candidato (a partir do card do Banco de Talentos) ──
+// historico_do_candidato() (backend/sql/052) casa por candidato_id (linhas novas, criadas pela tela Entrevistas)
+// OU por nome/telefone (a planilha antiga importada: 10.504 linhas sem candidato_id) — sem essa segunda checagem
+// o popup viria vazio pra quase todo mundo. Mostra TODOS os registros que baterem (entrevista, não compareceu,
+// sem interesse...), sem sair do Banco de Talentos.
+async function abrirHistoricoDoCandidato(candidatoId, nome) {
+  $('#hc-titulo').textContent = nome ? `Histórico de ${nome}` : 'Histórico do candidato';
+  $('#hc-lista').innerHTML = '<p class="sem-dados">Carregando…</p>';
+  abrirModal('modal-historico-candidato');
+
+  const { data, error } = await db.rpc('historico_do_candidato', { p_candidato_id: candidatoId });
+
+  if (error) { $('#hc-lista').innerHTML = `<p class="sem-dados">${escapeHtml(mensagemErro(error))}</p>`; return; }
+  if (!data.length) { $('#hc-lista').innerHTML = '<p class="sem-dados">Nenhum registro no histórico.</p>'; return; }
+
+  $('#hc-lista').innerHTML = data.map(h => {
+    const st = HISTORICO_STATUS[h.status] || { rotulo: h.status, classe: 'pill-gray' };
+    const titulo = h.vaga_titulo || h.setor_vaga || 'Sem vaga associada';
+    return `<div class="hist-item">
+      <div class="hist-topo"><strong>${escapeHtml(titulo)}</strong><span class="pill ${st.classe}">${st.rotulo}</span></div>
+      <div class="hist-meta">${dataDoHistorico(h.data_evento)}${h.setor_vaga && h.vaga_titulo ? ' · ' + escapeHtml(h.setor_vaga) : ''}</div>
+      ${h.observacao ? `<div class="hist-res">${escapeHtml(h.observacao)}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 // Card de um candidato na lista. `extra` só existe no ranking de uma vaga: { selo, termos, meta } (HTML já escapado).
@@ -343,9 +414,20 @@ async function verCandidatosDaVaga(vagaId, titulo, pronta = true) {
   $('#rk-ordem').value = 'nota';
   $('#rk-km').value = '';
   $('#rk-sexo').value = '';
+  $('#rk-distancia').style.display = 'none';
+  $('#filtro-b-status').value = 'ativo';          // a seleção já é só de quem está disponível para a vaga
   montarLojasRanking(lojasDaVaga);
   estadoBanco.limite = estadoBanco.tamanhoPagina;
   irPara('banco');
+}
+
+// "Maior nota" e "Mais perto da loja" (rk-ordem): só ao ordenar por distância faz sentido escolher as lojas de
+// referência e um limite de km. Trocar de volta para "Maior nota" tira o limite (senão ficaria filtrando escondido).
+function mudarOrdemRanking() {
+  const distancia = $('#rk-ordem').value === 'distancia';
+  $('#rk-distancia').style.display = distancia ? 'flex' : 'none';
+  if (!distancia) $('#rk-km').value = '';
+  return mudarFiltroRanking();
 }
 
 // ── Lojas de referência da distância ──
@@ -413,8 +495,12 @@ function atualizarModoRanking() {
   const ativo = !!rankingVaga;
   $('#banco-ranking').style.display = ativo ? 'flex' : 'none';
   $('#banco-filtros').style.display = ativo ? 'none' : '';
-  if (ativo) $('#painel-filtros-av').style.display = 'none';
   $('#ordem-banco').style.display = ativo ? 'none' : '';
+  // "Mais filtros" (painel-filtros-av) continua igual nos dois modos — é o mesmo painel, com os dois botões
+  // (#btn-filtros-av e #btn-filtros-av-rk) abrindo e fechando ele. Só "Situação no banco" não faz sentido na
+  // seleção (já é só quem está disponível para a vaga): esconde o campo.
+  $('#campo-status-banco').style.display = ativo ? 'none' : '';
+  atualizarBotaoVoltarTopo();
   if (!ativo) return;
   $('#banco-ranking-titulo').textContent = rankingVaga.titulo || 'vaga';
 }
@@ -424,23 +510,32 @@ const classeNotaCv = n => n == null ? 'baixa' : n >= 75 ? 'alta' : n >= 50 ? 'me
 async function carregarRankingVaga() {
   const el = $('#banco-lista');
   atualizarModoRanking();
-  if (estadoBanco.limite === estadoBanco.tamanhoPagina) loading(el);
-  const versao = ++estadoBanco.versao;
+  atualizarIndicadoresFiltros();
 
   const km = $('#rk-km').value;
   const sexo = $('#rk-sexo').value;
+  const cidade = normBusca($('#filtro-b-cidade').value.trim());
+  // Ordem, sexo, distância, cidade ou "Mais filtros" mudou: volta para a 1ª página (senão "carregar mais" pularia
+  // direto para o meio de uma lista diferente da que a pessoa vê agora)
+  paginaInicialSeFiltroMudou(estadoBanco,
+    JSON.stringify(['rk', rankingVaga.id, $('#rk-ordem').value, sexo, km, lojasDoRanking(), cidade, filtrosAvancados]));
+  if (estadoBanco.limite === estadoBanco.tamanhoPagina) loading(el);
+  const versao = ++estadoBanco.versao;
   const { data: ranking, error } = await db.rpc('selecionar_curriculos_vaga', {
     p_vaga_id: rankingVaga.id, p_limite: estadoBanco.limite, p_deslocamento: 0,
     p_ordem: $('#rk-ordem').value, p_km_max: km ? Number(km) : null, p_lojas: lojasDoRanking(),
-    ...(sexo ? { p_sexo: sexo } : {}) });          // só envia quando há filtro: sem ele a função da 038 (sem p_sexo) segue funcionando
+    // "Mais filtros" (a mesma barra/painel do Banco de Talentos): palavras/local/e-mail/telefone/cargos vão em
+    // p_filtros (o mesmo formato de filtrar_banco_talentos); idade/escolaridade/experiência/CNH/revisão em p_colunas
+    ...(sexo ? { p_sexo: sexo } : {}),                    // só envia quando há filtro: sem ele a função da 038 (sem p_sexo) segue funcionando
+    p_filtros: filtrosAvancados?.texto || {}, p_colunas: filtrosAvancados?.colunas || {}, p_cidade: cidade || null });
   if (versao !== estadoBanco.versao) return;               // trocou de tela ou de vaga enquanto esperava
   if (error) { erro(el, mensagemErro(error)); destravarBotaoMais($('#banco-mais')); return; }
 
   estadoBanco.total = ranking[0]?.total ?? 0;
   if (!ranking.length) {
-    vazio(el, 'ti-target-arrow', sexo ? 'Nenhum currículo selecionado com esse sexo' : 'Nenhum currículo com o setor, a função e o nível desta vaga',
-      sexo ? 'Escolha "Qualquer sexo" (ou tire o limite de distância) para ver os outros currículos selecionados para esta vaga'
-      : km ? 'Nenhum candidato mora até essa distância da loja mais próxima entre as escolhidas. Quem não tem região identificada fica de fora quando há limite de distância'
+    const filtroAtivo = !!(sexo || km || cidade || filtrosAvancados?.ativos);
+    vazio(el, 'ti-target-arrow', filtroAtivo ? 'Nenhum currículo encontrado com esses filtros' : 'Nenhum currículo com o setor, a função e o nível desta vaga',
+      filtroAtivo ? 'Tire ou troque algum filtro (sexo, distância, cidade ou "Mais filtros") para ver os outros currículos selecionados para esta vaga'
          : 'Só aparecem currículos já qualificados pela IA com exatamente esse setor, função e nível. Quem foi reprovado nesta vaga não volta a ela');
     atualizarPaginacao($('#banco-mais'), estadoBanco, $('#banco-total'), ' currículos');
     return;
@@ -518,6 +613,7 @@ const STATUS_CANDIDATURA = {
   selecionado:         ['pill-yellow', 'Aguardando entrevista'],
   entrevista_agendada: ['pill-blue',   'Entrevista agendada'],
   entrevista_realizada:['pill-blue',   'Entrevistado'],
+  aguardando_gerente:  ['pill-yellow', 'Aguardando o gerente'],
   aprovado:            ['pill-green',  'Aprovado'],
   reprovado:           ['pill-red',    'Reprovado'],
   nao_compareceu:      ['pill-purple', 'Não compareceu'],
@@ -633,7 +729,7 @@ async function urlDoCurriculo(storagePath) {
 }
 
 async function curriculoDoCandidato(candidatoId) {
-  const { data } = await db.from('curriculos').select('storage_path,nome_arquivo')
+  const { data } = await db.from('curriculos').select('storage_path,nome_arquivo,tipo_mime,texto_extraido')
     .eq('candidato_id', candidatoId).eq('atual', true).maybeSingle();
   if (!data?.storage_path) { toast('Arquivo do currículo não disponível', 'erro'); return null; }
   return data;
@@ -643,8 +739,7 @@ async function verCurriculoDoCandidato(candidatoId) {
   const id = candidatoId || app.talentoAberto?.id;
   if (!id) return;
   const cv = await curriculoDoCandidato(id);
-  const url = cv && await urlDoCurriculo(cv.storage_path);
-  if (url) window.open(url, '_blank');
+  if (cv) await abrirPreviewCurriculo(cv);
 }
 
 async function baixarCurriculoDoCandidato(candidatoId) {

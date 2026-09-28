@@ -122,7 +122,15 @@ end $$;
 
 -- ───────────────────────────────────────────────────────────────────────
 --  3) A view do banco informa de onde veio o sexo
+--
+--  Dentro de um DO (não um CREATE OR REPLACE VIEW direto): se esta migração for reaplicada depois de uma mais
+--  nova que também estendeu a view (ex.: 052_historico_no_banco.sql), o Postgres recusa por tirar coluna do
+--  fim ("cannot drop columns from view") — o deploy repete tudo, então isso pode acontecer. Cai fora só desse
+--  erro específico (a migração mais nova prevalece, como deveria); qualquer outro erro continua estourando.
 -- ───────────────────────────────────────────────────────────────────────
+do $mig041_view$
+begin
+  execute $viewsql$
 create or replace view public.vw_banco_talentos with (security_invoker = true) as
 select
   c.id,
@@ -183,3 +191,10 @@ left join lateral (
    where ca.candidato_id = c.id and ca.encerrada_em is null limit 1
 ) ab on true
 where c.status_banco <> 'expurgado';
+  $viewsql$;
+exception when others then
+  if sqlerrm !~ 'cannot drop columns from view' then
+    raise;
+  end if;
+  raise notice 'vw_banco_talentos já foi estendida por uma migração mais nova que 041 (ex.: 052) — mantida como está.';
+end $mig041_view$;
