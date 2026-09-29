@@ -250,7 +250,7 @@
           <div class="banco-ranking-txt"><strong>Currículos selecionados para <span id="banco-ranking-titulo">a vaga</span></strong>
             <span>Setor, função e nível iguais aos da vaga, da maior nota para a menor. Só quem está disponível para esta vaga aparece.</span></div>
           <div class="banco-ranking-ctl">
-            <select class="sel" id="rk-ordem" aria-label="Ordenar os currículos por" onchange="mudarOrdemRanking()">
+            <select class="sel" id="rk-ordem" aria-label="Ordenar os currículos por" onchange="mudarFiltroRanking()">
               <option value="nota">Maior nota</option>
               <option value="distancia">Mais perto da loja</option>
             </select>
@@ -266,7 +266,7 @@
               <span class="badge-cnt" id="badge-filtros-av-rk" style="display:none">0</span></button>
           </div>
           <button type="button" class="btn-sm" onclick="sairDoRanking()"><i class="ti ti-arrow-left"></i>Voltar ao banco inteiro</button>
-          <div class="banco-ranking-lojas" id="rk-distancia" style="display:none">
+          <div class="banco-ranking-lojas">
             <label class="rk-km-campo">Distância máxima
               <select class="sel" id="rk-km" aria-label="Distância máxima até a loja mais próxima das escolhidas" onchange="mudarFiltroRanking()"
                 title="Distância em linha reta até a loja mais próxima entre as escolhidas abaixo (estimativa). Quem não tem região identificada fica de fora quando há limite">
@@ -831,6 +831,22 @@
       <i class="ti ti-brand-whatsapp"></i>Abrir WhatsApp e registrar</button></div>
 </div></div>
 
+<div class="modal-overlay" id="modal-encaminhar-gerente"><div class="modal">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-brand-whatsapp" style="color:var(--green)"></i>Encaminhar ao gerente</div>
+    <button class="modal-x" onclick="fecharModal('modal-encaminhar-gerente')"><i class="ti ti-x"></i></button></div>
+  <div class="f-campo"><label>Candidato</label><input id="eg-nome" type="text" readonly></div>
+  <div class="f-campo"><label>Loja <span style="font-weight:400;color:var(--gray-text)">(entre as vinculadas à vaga com WhatsApp do gerente cadastrado)</span></label>
+    <select id="eg-loja"></select></div>
+  <div class="f-campo"><label>Mensagem <span style="font-weight:400;color:var(--gray-text)">(editável)</span></label>
+    <textarea id="eg-msg" oninput="previewMensagemGerente()"></textarea></div>
+  <div class="wapp-prev"><strong><i class="ti ti-brand-whatsapp"></i> Prévia</strong><span id="eg-preview"></span></div>
+  <div class="modal-acoes">
+    <button class="btn-cancel" onclick="fecharModal('modal-encaminhar-gerente')">Cancelar</button>
+    <button class="btn-wapp" id="eg-confirmar" onclick="confirmarEncaminharGerente()">
+      <i class="ti ti-brand-whatsapp"></i>Encaminhar e abrir WhatsApp</button></div>
+</div></div>
+
 <div class="modal-overlay" id="modal-resultado"><div class="modal" style="width:410px">
   <div class="modal-hd"><div class="modal-tit">
     <i class="ti ti-clipboard-check" style="color:var(--blue)"></i>Registrar resultado</div>
@@ -1029,8 +1045,8 @@
     senão, deixe "só Banco de Talentos" e a IA classifica.</p>
   <div class="f-campo"><label for="up-vaga">Vaga <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
     <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
-  <div class="f-campo"><label>Arquivo <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC ou DOCX — até 10 MB)</span></label>
-    <input id="up-arquivo" type="file"
+  <div class="f-campo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC ou DOCX — até 10 MB cada; pode escolher vários de uma vez)</span></label>
+    <input id="up-arquivo" type="file" multiple
       accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></div>
   <div class="modal-acoes">
     <button class="btn-cancel" onclick="fecharModal('modal-upload-manual')">Cancelar</button>

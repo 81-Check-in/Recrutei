@@ -12,7 +12,7 @@ const posicaoEmpresa = sigla => {
 // Devolve true/false: iniciarSessao() usa o resultado para decidir se mostra a
 // tela cheia de "API fora do ar" (sem os setores/empresas, o app não funciona).
 // Configurações (tabela configuracoes) que o próprio painel usa, além do robô: telefone e mensagem do WhatsApp
-const CHAVES_CONFIG_DO_PAINEL = ['ddi_padrao', 'ddd_padrao', 'mensagem_convocacao_padrao'];
+const CHAVES_CONFIG_DO_PAINEL = ['ddi_padrao', 'ddd_padrao', 'mensagem_convocacao_padrao', 'mensagem_gerente_padrao'];
 
 async function carregarBase() {
   try {

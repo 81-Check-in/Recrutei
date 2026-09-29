@@ -560,26 +560,62 @@ async function abrirModalUploadManual() {
   carregarUploadsManuais();
 }
 
+// Envia 1 ou vários arquivos escolhidos de uma vez (input multiple). Um só: mostra o toast de cada etapa,
+// igual sempre foi. Vários: processa em sequência (o serviço da IA já avalia 1 por vez, backend/api.py) e só
+// mostra um toast-resumo no final; o detalhe de cada um (inclusive erro de análise) fica em "Últimos envios".
 async function enviarUploadManual() {
   const vagaId = $('#up-vaga').value;
-  const arquivo = $('#up-arquivo').files[0];
-  if (!arquivo) { toast('Escolha um arquivo', 'erro'); return; }
-  const ext = FORMATOS_UPLOAD_MANUAL[arquivo.type];
-  if (!ext) { toast('Formato não aceito — envie PDF, DOC ou DOCX', 'erro'); return; }
-  if (arquivo.size > TAMANHO_MAXIMO_UPLOAD_MANUAL) { toast('Arquivo maior que 10 MB', 'erro'); return; }
+  const arquivos = [...$('#up-arquivo').files];
+  if (!arquivos.length) { toast('Escolha um arquivo', 'erro'); return; }
+
+  const validos = [];
+  let semFormato = 0, semTamanho = 0;
+  for (const arquivo of arquivos) {
+    if (!FORMATOS_UPLOAD_MANUAL[arquivo.type]) { semFormato++; continue; }
+    if (arquivo.size > TAMANHO_MAXIMO_UPLOAD_MANUAL) { semTamanho++; continue; }
+    validos.push(arquivo);
+  }
+  if (!validos.length) {
+    toast(semFormato ? 'Formato não aceito — envie PDF, DOC ou DOCX' : 'Arquivo maior que 10 MB', 'erro');
+    return;
+  }
 
   const btn = $('#up-btn-enviar');
-  btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2 girando"></i>Enviando…';
+  btn.disabled = true;
+  const lote = validos.length > 1;
+  let registrados = 0;
 
+  for (let i = 0; i < validos.length; i++) {
+    const progresso = lote ? ` ${i + 1} de ${validos.length}` : '';
+    btn.innerHTML = `<i class="ti ti-loader-2 girando"></i>Enviando${progresso}…`;
+    const resultado = await enviarUmCurriculoManual(validos[i], vagaId, btn, progresso);
+    if (resultado.registrado) registrados++;
+    if (!lote) toast(resultado.mensagem, resultado.tipo);
+  }
+
+  $('#up-arquivo').value = '';
+  btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
+
+  if (lote) {
+    const ignorados = semFormato + semTamanho;
+    const partes = [`${registrados} de ${validos.length} currículos enviados`];
+    if (ignorados) partes.push(`${ignorados} ignorado${ignorados > 1 ? 's' : ''} (formato ou tamanho)`);
+    toast(partes.join(' — '), registrados ? 'ok' : 'erro');
+  }
+
+  carregarUploadsManuais();
+  if (registrados && app.telaAtual === 'banco') { opcoesBancoCarregadas = false; carregarBanco(); }
+}
+
+// Sobe 1 arquivo pro Storage, grava a fila e, com API_URL, já pede a análise da IA na hora.
+// `registrado` = true assim que o arquivo está gravado na fila (mesmo que a análise em si falhe depois —
+// nesse caso ele continua na fila para a rotina agendada tentar de novo, e some no card "Últimos envios").
+async function enviarUmCurriculoManual(arquivo, vagaId, btn, progresso) {
+  const ext = FORMATOS_UPLOAD_MANUAL[arquivo.type];
   const caminho = `manual/${new Date().getFullYear()}/${crypto.randomUUID()}${ext}`;
   const { error: erroUpload } = await db.storage.from('curriculos')
     .upload(caminho, arquivo, { contentType: arquivo.type, upsert: false });
-
-  if (erroUpload) {
-    toast(erroUpload.message, 'erro');
-    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
-    return;
-  }
+  if (erroUpload) return { registrado: false, tipo: 'erro', mensagem: erroUpload.message };
 
   const { data: registro, error } = await db.from('uploads_manuais').insert({
     vaga_id: vagaId || null,
@@ -591,27 +627,16 @@ async function enviarUploadManual() {
   }).select('id').single();
 
   if (error) {
-    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
-    toast(error.code === 'PGRST205' || /schema cache/.test(error.message)
+    return { registrado: false, tipo: 'erro', mensagem: error.code === 'PGRST205' || /schema cache/.test(error.message)
       ? 'Envio manual ainda não habilitado no banco. Rode backend/sql/019_uploads_manuais.sql.'
-      : error.message, 'erro');
-    return;
+      : error.message };
   }
 
-  $('#up-arquivo').value = '';
+  if (!API_URL) return { registrado: true, tipo: 'ok', mensagem: 'Currículo enviado — a IA analisa na próxima execução da rotina' };
 
-  if (!API_URL) {
-    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
-    toast('Currículo enviado — a IA analisa na próxima execução da rotina');
-    carregarUploadsManuais();
-    return;
-  }
-
-  btn.innerHTML = '<i class="ti ti-loader-2 girando"></i>Analisando…';
-  await avaliarUploadAgora(registro.id);
-  btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>Enviar para o banco';
-  carregarUploadsManuais();
-  if (app.telaAtual === 'banco') { opcoesBancoCarregadas = false; carregarBanco(); }
+  btn.innerHTML = `<i class="ti ti-loader-2 girando"></i>Analisando${progresso}…`;
+  const resultado = await avaliarUploadAgora(registro.id);
+  return { ...resultado, registrado: true };
 }
 
 // Chama backend/api.py pra analisar na hora. Se o serviço estiver fora do ar (ou
@@ -619,7 +644,7 @@ async function enviarUploadManual() {
 // processa depois, então aqui só avisamos que vai demorar mais, sem tratar como erro.
 async function avaliarUploadAgora(uploadId) {
   const { data: { session } } = await db.auth.getSession();
-  if (!session) { toast('Currículo enviado — a IA analisa na próxima execução da rotina'); return; }
+  if (!session) return { tipo: 'ok', mensagem: 'Currículo enviado — a IA analisa na próxima execução da rotina' };
 
   let resp;
   try {
@@ -628,33 +653,29 @@ async function avaliarUploadAgora(uploadId) {
       headers: { Authorization: `Bearer ${session.access_token}` }
     });
   } catch {
-    toast('Currículo enviado — análise imediata indisponível agora, entra na fila normal');
-    return;
+    return { tipo: 'erro', mensagem: 'Currículo enviado — análise imediata indisponível agora, entra na fila normal' };
   }
 
   if (!resp.ok) {
     const det = (await resp.json().catch(() => ({}))).detail;
-    toast(resp.status === 503 && typeof det === 'string'      // 503 = IA pausada na Zona de perigo: o currículo espera na fila
+    return { tipo: 'erro', mensagem: resp.status === 503 && typeof det === 'string'      // 503 = IA pausada na Zona de perigo: o currículo espera na fila
       ? `Currículo enviado — ${det}. Ele fica na fila e é analisado quando a pausa acabar`
-      : 'Currículo enviado — análise imediata falhou, entra na fila normal', 'erro');
-    return;
+      : 'Currículo enviado — análise imediata falhou, entra na fila normal' };
   }
 
   const resultado = await resp.json();
   if (resultado.status === 'erro') {
-    toast(resultado.detalhe_erro || 'Não foi possível analisar este currículo', 'erro');
-    return;
+    return { tipo: 'erro', mensagem: resultado.detalhe_erro || 'Não foi possível analisar este currículo' };
   }
   if (resultado.status === 'processado' && resultado.candidato_gerado_id) {
     const { data: c } = await db.from('vw_banco_talentos')
       .select('nome,area_sugerida,cargo_sugerido,nivel_sugerido').eq('id', resultado.candidato_gerado_id).maybeSingle();
     const sugestao = c ? [c.area_sugerida, c.cargo_sugerido, rotuloNivel(c.nivel_sugerido)].filter(Boolean).join(' / ') : '';
     const aviso = resultado.detalhe_erro ? ` (${resultado.detalhe_erro})` : '';
-    toast(`${c?.nome || 'Candidato'} entrou no Banco de Talentos${sugestao ? ' — ' + sugestao : ''}${aviso}`,
-          resultado.detalhe_erro ? 'erro' : 'ok');
-    return;
+    return { tipo: resultado.detalhe_erro ? 'erro' : 'ok',
+      mensagem: `${c?.nome || 'Candidato'} entrou no Banco de Talentos${sugestao ? ' — ' + sugestao : ''}${aviso}` };
   }
-  toast('Currículo enviado — a IA analisa na próxima execução da rotina');
+  return { tipo: 'ok', mensagem: 'Currículo enviado — a IA analisa na próxima execução da rotina' };
 }
 
 async function carregarUploadsManuais() {

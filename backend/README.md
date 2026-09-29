@@ -711,8 +711,8 @@ um segundo serviço no Railway com esse comando e Cron Schedule mais frequente, 
 quiser o resultado em minutos em vez de esperar a execução diária.
 
 **Enviar currículo manualmente** — exige rodar `backend/sql/019_uploads_manuais.sql`
-uma vez no banco (e a `021`, que torna a vaga opcional). No painel (Banco de Talentos ou Vagas → "Enviar currículo"), o RH sobe um arquivo
-(PDF/DOC/DOCX) direto pro Storage — para currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão) — e a **vaga é opcional**.
+uma vez no banco (e a `021`, que torna a vaga opcional). No painel (Banco de Talentos ou Vagas → "Enviar currículo"), o RH sobe um ou vários
+arquivos (PDF/DOC/DOCX) de uma vez direto pro Storage — para currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão) — e a **vaga é opcional**.
 O painel grava o pedido na fila (tabela `uploads_manuais`) e, se o serviço web estiver no ar (ver "Análise imediata" abaixo), chama a análise na
 hora. Sem o serviço web, o currículo fica na fila normal: a rotina diária (ou `python main.py --uploads-manuais`) baixa o arquivo, extrai o
 texto e o coloca no Banco de Talentos. Se o RH escolheu uma vaga, o candidato é atribuído a ela em nome dele (se já estiver em

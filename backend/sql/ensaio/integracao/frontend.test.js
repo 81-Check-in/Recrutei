@@ -13,8 +13,8 @@ const limparFiltros = p => {
   ['#busca-banco', '#filtro-b-cidade', '#filtro-b-area', '#filtro-b-cargo', '#filtro-b-nivel', '#filtro-b-sexo'].forEach(s => p.define(s, ''));
   p.define('#filtro-b-status', 'ativo'); p.define('#ordem-banco', 'entrada');
   ['#av-palavras', '#av-cargos-exp', '#av-email', '#av-telefone', '#av-local', '#av-excluir-locais', '#av-idade-min', '#av-idade-max', '#av-experiencia'].forEach(s => p.define(s, ''));
-  p.define('#av-palavras-modo', 'todas'); p.define('#av-palavras-onde', 'curriculo'); p.define('#av-escolaridade', '');
-  p.define('#av-rotatividade', ''); p.define('#av-cnh', false); p.define('#av-revisao', false); p.define('#av-sem-info', true);
+  p.define('#av-escolaridade', '');
+  p.define('#av-rotatividade', ''); p.define('#av-revisao', false); p.define('#av-sem-info', true);
   p.w.eval('filtrosAvancados = null');
 };
 const totalUi = p => p.w.eval('estadoBanco.total');
@@ -130,7 +130,7 @@ test('filtros avançados: faixa etária por data de nascimento = idade calculada
   }
 });
 
-test('filtros avançados: escolaridade, experiência, CNH e revisão manual', async () => {
+test('filtros avançados: escolaridade, experiência e revisão manual', async () => {
   limparFiltros(beto);
   beto.define('#av-escolaridade', 'superior'); beto.define('#av-experiencia', 5); beto.define('#av-sem-info', false);
   beto.w.aplicarFiltrosAvancados();
@@ -138,11 +138,11 @@ test('filtros avançados: escolaridade, experiência, CNH e revisão manual', as
   assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where status_banco='ativo' and escolaridade_ord >= 4 and anos_experiencia >= 5`));
 
   limparFiltros(beto);
-  beto.define('#av-cnh', true); beto.define('#av-revisao', true);
+  beto.define('#av-revisao', true);
   beto.w.aplicarFiltrosAvancados();
   await beto.w.carregarBanco();
-  assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where status_banco='ativo' and cnh is not null and revisao_manual`));
-  assert.match(beto.$('#badge-filtros-av').textContent, /3|2/);       // selo com a quantidade de filtros ativos
+  assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where status_banco='ativo' and revisao_manual`));
+  assert.equal(beto.$('#badge-filtros-av').textContent, '1');       // selo com a quantidade de filtros ativos
 });
 
 test('barra de filtros enxuta: nome, área, cargo, nível e sexo na barra; cidade e situação em "Mais filtros"; botão Limpar filtros', async () => {
@@ -173,13 +173,13 @@ test('barra de filtros enxuta: nome, área, cargo, nível e sexo na barra; cidad
   assert.equal(totalUi(beto), sqlNum(`select count(*) from vw_banco_talentos where cidade_norm like 'ceilandia%'`));
 
   // "Limpar" do painel: só o que mora nele (cidade, situação, avançados); a busca da barra continua
-  beto.define('#busca-banco', 'Candidato'); beto.define('#av-cnh', true); beto.w.aplicarFiltrosAvancados();
+  beto.define('#busca-banco', 'Candidato'); beto.define('#av-revisao', true); beto.w.aplicarFiltrosAvancados();
   await beto.w.carregarBanco();
-  assert.equal(beto.$('#badge-filtros-av').textContent, '3');            // cidade + situação + CNH
+  assert.equal(beto.$('#badge-filtros-av').textContent, '3');            // cidade + situação + revisão manual
   await beto.w.limparFiltrosAvancados();
   assert.equal(beto.$('#filtro-b-cidade').value, '');
   assert.equal(beto.$('#filtro-b-status').value, 'ativo');
-  assert.equal(beto.$('#av-cnh').checked, false);
+  assert.equal(beto.$('#av-revisao').checked, false);
   assert.equal(beto.$('#busca-banco').value, 'Candidato');
   assert.equal(beto.$('#badge-filtros-av').style.display, 'none');
   assert.notEqual(beto.$('#btn-limpar-filtros').style.display, 'none');   // a busca da barra ainda está em uso
@@ -213,11 +213,12 @@ test('filtros avançados de texto (currículo, análise, local, rotatividade) pa
   await beto.w.carregarBanco();
   assert.equal(totalUi(beto), 0);
 
-  beto.define('#av-palavras', 'baixa rotatividade'); beto.define('#av-palavras-onde', 'analise');
-  beto.define('#av-palavras-modo', 'qualquer'); beto.w.aplicarFiltrosAvancados();
+  // sem seletor de "onde" nem de "todas/qualquer" na tela (049): a busca por palavra-chave sempre olha o currículo
+  // E a análise da IA juntas, e sempre acha "qualquer uma delas"
+  beto.define('#av-palavras', 'baixa rotatividade'); beto.w.aplicarFiltrosAvancados();
   beto.define('#filtro-b-area', 'Administrativo');                       // texto (função) + coluna (filtro comum)
   await beto.w.carregarBanco();
-  assert.equal(totalUi(beto), sqlNum(`select count(*) from filtrar_banco_talentos('{"palavras":["baixa rotatividade"],"palavras_onde":"analise","palavras_modo":"qualquer"}') where status_banco='ativo' and area_sugerida='Administrativo'`));
+  assert.equal(totalUi(beto), sqlNum(`select count(*) from filtrar_banco_talentos('{"palavras":["baixa rotatividade"]}') where status_banco='ativo' and area_sugerida='Administrativo'`));
 
   limparFiltros(beto);
   beto.define('#av-rotatividade', 'alta'); beto.w.aplicarFiltrosAvancados();
@@ -1681,10 +1682,12 @@ test('IA pausada: o servidor responde 503 com o motivo e o painel mostra; o curr
   const painel = await abrirPainel(BETO, 'gerente_rh', { apiUrl: `http://127.0.0.1:${servidor.address().port}` });
   try {
     await painel.w.eval(`db.auth.getSession = async () => ({ data: { session: { access_token: 'token-de-teste' } } })`);
-    await painel.w.avaliarUploadAgora('00000000-0000-0000-0000-00000000dd01');
-    assert.match(painel.ultimoToast(), /pausado pelo administrador/);
-    assert.match(painel.ultimoToast(), /fica na fila/);
-    assert.equal(painel.toasts.at(-1).tipo, 'erro');
+    // avaliarUploadAgora() devolve {tipo, mensagem} (quem chama decide o que fazer com isso — no envio de um arquivo
+    // só, é o toast; em lote, vira parte do resumo); aqui só confirma que o motivo do 503 chega até o resultado
+    const resultado = await painel.w.avaliarUploadAgora('00000000-0000-0000-0000-00000000dd01');
+    assert.match(resultado.mensagem, /pausado pelo administrador/);
+    assert.match(resultado.mensagem, /fica na fila/);
+    assert.equal(resultado.tipo, 'erro');
 
     await painel.w.abrirModalVaga();
     painel.define('#ia-vaga-pedido', 'auxiliar contábil para o financeiro, nível júnior, precisa de Excel');

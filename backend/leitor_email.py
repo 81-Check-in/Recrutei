@@ -7,6 +7,7 @@ CLOSE, MOVE nem COPY. A única alteração feita na caixa é marcar como lida (\
 import imaplib
 import email
 import email.message      # usado nas anotações; sem isto o módulo só importa se outro já tiver carregado o submódulo
+import re
 import ssl
 from datetime import date
 from email.header import decode_header
@@ -203,6 +204,19 @@ def _uidvalidity(conn: imaplib.IMAP4_SSL) -> int:
     return int(dados[0]) if dados and dados[0] else 0
 
 
+def _message_id_seguro(bruto: Optional[str]) -> str:
+    """
+    Limpa o cabeçalho Message-ID do jeito que veio do e-mail (pode ter chegado com
+    "folding" do RFC 5322, ou seja, \\r\\n + espaço no meio do valor). Sem isso, um
+    \\r\\n embutido vira uma segunda linha de comando quando o valor é usado depois
+    em conn.uid("SEARCH", "HEADER", "Message-ID", ...): o imaplib não escapa nem
+    valida os argumentos, só manda tudo cru pro socket com um CRLF no final.
+    Um Message-ID de verdade nunca tem espaço/controle (RFC 5322 3.6.4), então
+    removê-los de qualquer lugar da string é seguro.
+    """
+    return re.sub(r"[\r\n\t\x00-\x1f\x7f]+", "", bruto or "").strip("<> ")
+
+
 def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
     """Busca e decodifica uma mensagem pelo UID. None se não achar ou não tiver remetente."""
     # PEEK não marca como lida: se o processo cair, o e-mail é relido
@@ -222,7 +236,7 @@ def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
 
     return {
         "uid": uid,
-        "message_id": (msg.get("Message-ID") or "").strip("<> "),
+        "message_id": _message_id_seguro(msg.get("Message-ID")),
         "remetente": remetente.lower(),
         "assunto": _decodificar(msg.get("Subject")),
         "corpo": _extrair_corpo(msg),
@@ -302,7 +316,11 @@ def buscar_por_message_id(message_id: str) -> Optional[Dict]:
     não se limita a UNSEEN). None se a mensagem não existir mais na caixa (ex.:
     apagada por outro cliente de e-mail).
     """
-    if not message_id:
+    if not message_id or re.search(r"[\r\n\x00-\x1f\x7f]", message_id):
+        # Um Message-ID de verdade não tem caractere de controle — se tiver, é lixo
+        # ou uma tentativa de injeção de comando IMAP (pode ter sido gravado no banco
+        # antes desta checagem existir). Recusar aqui, mesmo repetindo a sanitização
+        # já feita na leitura, evita mandar qualquer coisa crua pro conn.uid().
         return None
     with conexao_imap() as conn:
         conn.select(IMAP_PASTA_ENTRADA, readonly=True)

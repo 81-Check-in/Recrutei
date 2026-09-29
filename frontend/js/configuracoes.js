@@ -18,8 +18,8 @@ const GRUPOS_CONFIG = [
              'sanitizacao_reprovacoes_max', 'sanitizacao_confianca_min', 'sanitizacao_detectar_duplicidade',
              'sanitizacao_adiar_meses', 'sanitizacao_emails_aviso', 'sanitizacao_pesos'] },
   { id: 'whatsapp', atalho: 'WhatsApp e telefones', titulo: 'WhatsApp e telefones',
-    descricao: 'Mensagem de convocação para entrevista e como os telefones são completados.',
-    chaves: ['mensagem_convocacao_padrao', 'ddi_padrao', 'ddd_padrao'] }
+    descricao: 'Mensagem de convocação para entrevista, mensagem ao encaminhar pro gerente da loja e como os telefones são completados.',
+    chaves: ['mensagem_convocacao_padrao', 'mensagem_gerente_padrao', 'ddi_padrao', 'ddd_padrao'] }
 ];
 
 const CONFIG_INFO = {
@@ -63,6 +63,8 @@ const CONFIG_INFO = {
 
   mensagem_convocacao_padrao: { tipo: 'mensagem', titulo: 'Mensagem de convocação do WhatsApp',
     ajuda: 'Texto sugerido ao agendar a entrevista (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {gestor}, {data} e {hora}: eles são trocados pelos dados da entrevista.' },
+  mensagem_gerente_padrao: { tipo: 'mensagem', titulo: 'Mensagem ao encaminhar pro gerente da loja',
+    ajuda: 'Texto sugerido ao encaminhar um candidato ao gerente (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {vaga} e {link}: eles são trocados pelo nome do candidato, o título da vaga e o link do currículo. Só abre o WhatsApp sozinho se a loja escolhida tiver um WhatsApp de gerente cadastrado logo abaixo.' },
   ddi_padrao: { tipo: 'digitos', digitos: [1, 3], titulo: 'Código do país dos telefones (DDI)',
     ajuda: 'Acrescentado aos telefones que vêm sem ele (55 = Brasil), ao ler currículos e ao abrir o WhatsApp. De 1 a 3 números.' },
   ddd_padrao: { tipo: 'digitos', digitos: [2, 2], titulo: 'DDD assumido quando o telefone vem sem DDD',
@@ -147,6 +149,7 @@ async function carregarConfig() {
     <div class="estado-vazio" id="config-sem-resultado" style="display:none"><i class="ti ti-search-off"></i>Nenhuma configuração encontrada para essa busca.</div>`;
   atualizarEstimativas();
   await carregarNiveisConfig(el);
+  await carregarGerentesLojaConfig(el);
   await carregarZonaDePerigo(el);
   montarAtalhosConfig();
 }
@@ -335,6 +338,34 @@ async function salvarNivel(codigo) {
   const { data } = await db.from('niveis_funcao').select('codigo,nome').eq('ativo', true).order('ordem');
   if (data) app.cache.niveis = data;
   toast('Nível salvo');
+}
+
+// ── WhatsApp do gerente de cada loja ──
+// Usado por "Encaminhar ao gerente" (candidatos.js) para abrir o WhatsApp já com o currículo do candidato.
+// Loja sem número cadastrado: o botão continua funcionando, só não abre o WhatsApp sozinho (backend/sql/055).
+async function carregarGerentesLojaConfig(el) {
+  const { data, error } = await db.from('empresas').select('id,sigla,nome,gerente_whatsapp').eq('ativo', true).order('sigla');
+  if (error || !data?.length) return;
+  el.insertAdjacentHTML('beforeend', `<div class="config-grupo" id="config-gerentes-loja" data-atalho="WhatsApp dos gerentes">
+    <h3>WhatsApp do gerente de cada loja</h3>
+    <div class="config-desc" style="margin:-6px 0 8px">Usado pelo botão "Encaminhar ao gerente" (Candidatos, vagas do setor Loja) para abrir o
+      WhatsApp do gerente com o currículo do candidato já prontos. Loja sem número: o botão continua marcando o encaminhamento normalmente, só
+      não abre o WhatsApp sozinho.</div>
+    ${data.map(e => `<div class="config-item">
+        <div class="config-info"><div class="config-chave">${escapeHtml(e.sigla)} <span style="font-weight:400;color:var(--gray-text)">(${escapeHtml(e.nome)})</span></div></div>
+        <input class="config-input" id="gerente-tel-${e.id}" type="text" placeholder="Ex.: (61) 99999-1234" value="${escapeHtml(e.gerente_whatsapp || '')}">
+        <button class="btn-sm azul" onclick="salvarGerenteLoja('${e.id}')">Salvar</button>
+      </div>`).join('')}
+  </div>`);
+}
+
+async function salvarGerenteLoja(empresaId) {
+  const valor = $(`#gerente-tel-${empresaId}`).value.trim();
+  const { error } = await db.from('empresas').update({ gerente_whatsapp: valor || null }).eq('id', empresaId);
+  if (error) { toast(mensagemErro(error), 'erro'); return; }
+  const cache = app.cache.empresas?.find(e => e.id === empresaId);
+  if (cache) cache.gerente_whatsapp = valor || null;
+  toast('WhatsApp do gerente salvo');
 }
 
 // Preços por 1M tokens (US$). Manter igual a PRECOS em backend/config.py.

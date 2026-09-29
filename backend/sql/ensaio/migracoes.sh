@@ -36,6 +36,9 @@ MIGRACOES=(
   051_gerente_loja.sql
   052_historico_no_banco.sql
   053_opcoes_cidade.sql
+  054_loja_capital_atacadista.sql
+  055_encaminhar_gerente_whatsapp.sql
+  056_message_id_sem_controle.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(
@@ -59,4 +62,5 @@ TESTES_SQL=(
   ensaio/30_teste_gerente_loja.sql
   ensaio/31_teste_historico_no_banco.sql
   ensaio/32_teste_opcoes_cidade.sql
+  ensaio/33_teste_message_id_seguro.sql
 )

@@ -414,20 +414,10 @@ async function verCandidatosDaVaga(vagaId, titulo, pronta = true) {
   $('#rk-ordem').value = 'nota';
   $('#rk-km').value = '';
   $('#rk-sexo').value = '';
-  $('#rk-distancia').style.display = 'none';
   $('#filtro-b-status').value = 'ativo';          // a seleção já é só de quem está disponível para a vaga
   montarLojasRanking(lojasDaVaga);
   estadoBanco.limite = estadoBanco.tamanhoPagina;
   irPara('banco');
-}
-
-// "Maior nota" e "Mais perto da loja" (rk-ordem): só ao ordenar por distância faz sentido escolher as lojas de
-// referência e um limite de km. Trocar de volta para "Maior nota" tira o limite (senão ficaria filtrando escondido).
-function mudarOrdemRanking() {
-  const distancia = $('#rk-ordem').value === 'distancia';
-  $('#rk-distancia').style.display = distancia ? 'flex' : 'none';
-  if (!distancia) $('#rk-km').value = '';
-  return mudarFiltroRanking();
 }
 
 // ── Lojas de referência da distância ──
@@ -442,13 +432,16 @@ async function siglasDasLojasDaVaga(vagaId) {
 }
 
 // Desenha os chips das lojas (uma por loja + TODAS). `marcadas` = siglas que começam marcadas; nenhuma → todas.
+// Loja com padrao_distancia=false (ex.: Capital Atacadista) só entra na lista quando a própria vaga está
+// vinculada a ela — as lojas de sempre (padrao_distancia=true) continuam aparecendo sempre, como já era.
 function montarLojasRanking(marcadas = []) {
   const alvo = new Set(marcadas.map(x => String(x).toUpperCase()));
-  const comLocal = app.cache.empresas.filter(lojaTemLocal);
+  const visiveis = app.cache.empresas.filter(e => e.padrao_distancia || alvo.has(String(e.sigla).toUpperCase()));
+  const comLocal = visiveis.filter(lojaTemLocal);
   const iniciais = comLocal.some(e => alvo.has(String(e.sigla).toUpperCase()))
     ? comLocal.filter(e => alvo.has(String(e.sigla).toUpperCase())) : comLocal;
   const marcada = new Set(iniciais.map(e => e.id));
-  $('#rk-lojas').innerHTML = app.cache.empresas.map(e => {
+  $('#rk-lojas').innerHTML = visiveis.map(e => {
     const ok = lojaTemLocal(e);
     return `<label class="chk-empresa" title="${ok ? `Medir a distância até a ${escapeHtml(e.sigla)}` : `A ${escapeHtml(e.sigla)} ainda não tem região cadastrada: não dá para medir a distância até ela`}">
       <input type="checkbox" data-loja value="${escapeHtml(e.sigla)}" ${ok ? '' : 'disabled'} ${marcada.has(e.id) ? 'checked' : ''}> ${escapeHtml(e.sigla)}</label>`;
@@ -525,7 +518,7 @@ async function carregarRankingVaga() {
     p_vaga_id: rankingVaga.id, p_limite: estadoBanco.limite, p_deslocamento: 0,
     p_ordem: $('#rk-ordem').value, p_km_max: km ? Number(km) : null, p_lojas: lojasDoRanking(),
     // "Mais filtros" (a mesma barra/painel do Banco de Talentos): palavras/local/e-mail/telefone/cargos vão em
-    // p_filtros (o mesmo formato de filtrar_banco_talentos); idade/escolaridade/experiência/CNH/revisão em p_colunas
+    // p_filtros (o mesmo formato de filtrar_banco_talentos); idade/escolaridade/experiência/revisão em p_colunas
     ...(sexo ? { p_sexo: sexo } : {}),                    // só envia quando há filtro: sem ele a função da 038 (sem p_sexo) segue funcionando
     p_filtros: filtrosAvancados?.texto || {}, p_colunas: filtrosAvancados?.colunas || {}, p_cidade: cidade || null });
   if (versao !== estadoBanco.versao) return;               // trocou de tela ou de vaga enquanto esperava

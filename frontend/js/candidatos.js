@@ -176,23 +176,105 @@ async function reprovarCandidatura() {
 }
 
 // ── Vagas do setor Loja: triagem final com o gerente (a IA/o RH não entrevista; o RH manda o currículo por
-// fora do sistema e registra aqui a decisão dele). Ver backend/sql/051_gerente_loja.sql. ──
+// fora do sistema e registra aqui a decisão dele). Ver backend/sql/051_gerente_loja.sql e 055 (WhatsApp). ──
+// Uma vaga do setor Loja normalmente vale pra várias lojas: se alguma delas tem WhatsApp do gerente cadastrado
+// (Configurações → WhatsApp e telefones), abre um modal pra escolher a loja e manda o currículo já pronto. Sem
+// nenhuma loja com número, cai no fluxo simples de sempre (só marca o encaminhamento, o RH manda por fora).
 async function encaminharAoGerentePorId(id, nome) {
-  if (!await confirmar({
-    titulo: 'Encaminhar ao gerente', rotulo: 'Encaminhar', perigo: false,
-    mensagem: `Encaminhar ${nome || 'este candidato'} ao gerente da loja?\n\nO currículo continua sendo enviado por fora do sistema ` +
-              '(WhatsApp, e-mail...): isto só marca que a candidatura está aguardando a decisão dele.'
-  })) return;
-  const { error } = await db.rpc('encaminhar_ao_gerente', { p_candidatura_id: id });
-  if (error) { toast(mensagemErro(error), 'erro'); return; }
-  fecharDrawer();
-  toast(`${nome || 'Candidato'} encaminhado ao gerente da loja`);
-  await recarregarTelaDeCandidaturas();
+  const { data: c } = await db.from('vw_candidaturas')
+    .select('vaga_id,vaga_titulo,storage_path,nome').eq('id', id).maybeSingle();
+  const lojas = await lojasComGerenteDaVaga(c?.vaga_id);
+
+  if (!lojas.length) {
+    if (!await confirmar({
+      titulo: 'Encaminhar ao gerente', rotulo: 'Encaminhar', perigo: false,
+      mensagem: `Encaminhar ${nome || 'este candidato'} ao gerente da loja?\n\nO currículo continua sendo enviado por fora do sistema ` +
+                '(WhatsApp, e-mail...): isto só marca que a candidatura está aguardando a decisão dele.'
+    })) return;
+    const { error } = await db.rpc('encaminhar_ao_gerente', { p_candidatura_id: id });
+    if (error) { toast(mensagemErro(error), 'erro'); return; }
+    fecharDrawer();
+    toast(`${nome || 'Candidato'} encaminhado ao gerente da loja`);
+    await recarregarTelaDeCandidaturas();
+    return;
+  }
+
+  await abrirModalEncaminharGerente(id, nome || c.nome, c, lojas);
 }
 
 async function encaminharAoGerente() {
   const c = app.candidatoAberto;
   if (c) await encaminharAoGerentePorId(c.id, c.nome);
+}
+
+async function lojasComGerenteDaVaga(vagaId) {
+  if (!vagaId) return [];
+  const { data } = await db.from('vaga_empresas').select('empresas(id,sigla,nome,gerente_whatsapp)').eq('vaga_id', vagaId);
+  return (data || []).map(r => r.empresas).filter(e => e?.gerente_whatsapp);
+}
+
+let encaminharGerenteInfo = null;
+
+async function abrirModalEncaminharGerente(candidaturaId, nome, c, lojas) {
+  // 24h (não 1h como a prévia do currículo dentro do painel): o gerente pode só abrir o WhatsApp bem depois
+  const link = c.storage_path
+    ? (await db.storage.from('curriculos').createSignedUrl(c.storage_path, 86400)).data?.signedUrl
+    : null;
+  encaminharGerenteInfo = {
+    candidaturaId, lojas,
+    msg: montarMensagemGerente({
+      nome: nome || '[candidato]', vaga: c.vaga_titulo || '[vaga]',
+      link: link || '(sem arquivo de currículo anexado)'
+    })
+  };
+  $('#eg-nome').value = nome || '';
+  $('#eg-loja').innerHTML = lojas.map(l => `<option value="${l.id}">${escapeHtml(l.sigla)} — ${escapeHtml(l.nome)}</option>`).join('');
+  $('#eg-msg').value = encaminharGerenteInfo.msg;
+  $('#eg-preview').textContent = encaminharGerenteInfo.msg;
+  abrirModal('modal-encaminhar-gerente');
+}
+
+const MENSAGEM_GERENTE_DE_FABRICA =
+  'Olá! Segue o currículo de {nome} para a vaga de {vaga}. Dá uma olhada e me fala o que achou:\n{link}';
+
+function montarMensagemGerente(dados) {
+  const modelo = app.cache?.config?.mensagem_gerente_padrao;
+  const texto = typeof modelo === 'string' && modelo.trim() ? modelo : MENSAGEM_GERENTE_DE_FABRICA;
+  return texto.replace(/\{(nome|vaga|link)\}/g, (_, chave) => dados[chave]);
+}
+
+function previewMensagemGerente() {
+  $('#eg-preview').textContent = $('#eg-msg').value;
+}
+
+let encaminhandoGerente = false;
+
+async function confirmarEncaminharGerente() {
+  const info = encaminharGerenteInfo;
+  if (!info || encaminhandoGerente) return;
+  const empresaId = $('#eg-loja').value;
+  const loja = info.lojas.find(l => l.id === empresaId);
+  if (!loja) { toast('Escolha a loja', 'erro'); return; }
+
+  encaminhandoGerente = true;
+  const btn = $('#eg-confirmar');
+  btn.disabled = true;
+  try {
+    const { error } = await db.rpc('encaminhar_ao_gerente', { p_candidatura_id: info.candidaturaId, p_empresa_id: empresaId });
+    if (error) { toast(mensagemErro(error), 'erro'); return; }
+
+    const tel = normalizaTelefone(loja.gerente_whatsapp);
+    if (tel) window.open(`https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent($('#eg-msg').value)}`, '_blank');
+    else toast('Candidato encaminhado, mas o WhatsApp da loja não pôde ser lido', 'erro');
+
+    fecharModal('modal-encaminhar-gerente');
+    fecharDrawer();
+    toast(`Encaminhado ao gerente da ${loja.sigla}`);
+    await recarregarTelaDeCandidaturas();
+  } finally {
+    encaminhandoGerente = false;
+    btn.disabled = false;
+  }
 }
 
 async function aprovarCandidaturaGerentePorId(id, nome) {
