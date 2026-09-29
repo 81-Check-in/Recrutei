@@ -62,7 +62,7 @@ const CONFIG_INFO = {
     ajuda: 'Cada motivo vale pontos; a soma define a prioridade da sugestão: alta se chegar a limite_alta, média se chegar a limite_media, senão baixa. Mexa só se souber o que está fazendo (o peso baixa_aderencia não tem efeito, pelo mesmo motivo da regra de nota baixa).' },
 
   mensagem_convocacao_padrao: { tipo: 'mensagem', titulo: 'Mensagem de convocação do WhatsApp',
-    ajuda: 'Texto sugerido ao agendar a entrevista (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {gestor}, {data} e {hora}: eles são trocados pelos dados da entrevista.' },
+    ajuda: 'Texto sugerido ao agendar a entrevista (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {gestor}, {data}, {dia} (dia da semana e data), {hora} e {vaga}: eles são trocados pelos dados da entrevista.' },
   mensagem_gerente_padrao: { tipo: 'mensagem', titulo: 'Mensagem ao encaminhar pro gerente',
     ajuda: 'Texto sugerido ao encaminhar um candidato ao gerente (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {vaga} e {link}: eles são trocados pelo nome do candidato, o título da vaga e o link do currículo. Nas vagas de Loja só abre o WhatsApp sozinho se a loja escolhida tiver um WhatsApp de gerente cadastrado (abaixo, "WhatsApp do gerente de cada loja"); nas vagas do CR, se o campo "WhatsApp do gerente do CR" logo abaixo estiver preenchido.' },
   gerente_whatsapp_cr: { tipo: 'texto', titulo: 'WhatsApp do gerente do CR',
@@ -534,9 +534,9 @@ async function salvarConfig(chave) {
     return;
   }
   if (info.tipo === 'mensagem') {
-    const desconhecido = [...raw.matchAll(/\{([^}]*)\}/g)].map(m => m[1]).find(k => !['nome', 'gestor', 'data', 'hora'].includes(k));
+    const desconhecido = [...raw.matchAll(/\{([^}]*)\}/g)].map(m => m[1]).find(k => !['nome', 'gestor', 'data', 'dia', 'hora', 'vaga'].includes(k));
     if (!raw.trim() || desconhecido !== undefined) {
-      toast(!raw.trim() ? 'A mensagem não pode ficar vazia' : `Marcador {${desconhecido}} desconhecido. Use {nome}, {gestor}, {data} e {hora}`, 'erro');
+      toast(!raw.trim() ? 'A mensagem não pode ficar vazia' : `Marcador {${desconhecido}} desconhecido. Use {nome}, {gestor}, {data}, {dia}, {hora} e {vaga}`, 'erro');
       return;
     }
   }

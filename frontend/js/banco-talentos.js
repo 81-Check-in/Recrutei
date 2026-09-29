@@ -120,6 +120,7 @@ function limparCamposAvancados() {
 // nível e sexo, que ficam na barra, continuam.
 function limparFiltrosAvancados() {
   $('#filtro-b-cidade').value = '';
+  atualizarResumoCidades();
   $('#filtro-b-status').value = 'ativo';
   limparCamposAvancados();
   return carregarBanco();
@@ -130,6 +131,7 @@ function limparFiltrosAvancados() {
 function limparTodosFiltrosBanco(manterOrdem = false) {
   ['#busca-banco', '#filtro-b-cidade', '#filtro-b-area', '#filtro-b-cargo', '#filtro-b-nivel', '#filtro-b-sexo']
     .forEach(s => { $(s).value = ''; });
+  atualizarResumoCidades();
   $('#filtro-b-status').value = 'ativo';
   if (!manterOrdem) $('#ordem-banco').value = 'entrada';
   limparCamposAvancados();                                  // termina atualizando o selo e o botão "Limpar filtros"
@@ -178,9 +180,12 @@ function aplicarColunasAvancadas(q, c) {
   return q;
 }
 
+// "Cidade onde mora" aceita várias, separadas por vírgula (basta morar em uma): cada pedaço é o começo do nome da cidade
+const cidadesDoFiltro = () => $('#filtro-b-cidade').value.split(',').map(p => normBusca(p.trim())).filter(Boolean);
+
 function montarConsultaBanco() {
   const nome    = normBusca($('#busca-banco').value.trim());
-  const cidade  = normBusca($('#filtro-b-cidade').value.trim());
+  const cidades = cidadesDoFiltro();
   const area    = $('#filtro-b-area').value;
   const cargo   = $('#filtro-b-cargo').value;
   const nivel   = $('#filtro-b-nivel').value;
@@ -195,7 +200,9 @@ function montarConsultaBanco() {
     : db.from('vw_banco_talentos').select('*', { count: 'exact' });
 
   if (nome)   q = q.like('nome_norm', `%${escaparLike(nome)}%`);       // parcial; índice trigrama
-  if (cidade) q = q.like('cidade_norm', `${escaparLike(cidade)}%`);    // prefixo; índice (cidade_norm, …)
+  if (cidades.length === 1) q = q.like('cidade_norm', `${escaparLike(cidades[0])}%`);    // prefixo; índice (cidade_norm, …)
+  else if (cidades.length > 1)                                                          // vírgula/parêntese/aspas fora, para não quebrar o or()
+    q = q.or(cidades.map(c => `cidade_norm.like."${escaparLike(c).replace(/[",()\\]/g, m => m === '\\' ? '\\\\' : '')}*"`).join(','));
   if (area)   q = q.eq('area_sugerida', area);
   if (cargo)  q = q.eq('cargo_sugerido', cargo);
   if (nivel)  q = q.eq('nivel_sugerido', nivel);
@@ -233,7 +240,58 @@ async function carregarOpcoesBanco(forcar = false) {
   opcoesBancoCarregadas = true;
 }
 
-// ── Autocomplete de cidade (Cidade onde mora / Endereço-bairro contém / Exceto quem mora em) ──
+// ── "Cidade onde mora": caixa com marcadores. O valor fica no campo escondido #filtro-b-cidade, com os nomes separados por vírgula
+// (é o que o resto do painel lê); marcar ou desmarcar dispara o mesmo evento "input" de antes.
+const cidadesMarcadas = () => $('#filtro-b-cidade').value.split(',').map(p => p.trim()).filter(Boolean);
+
+function atualizarResumoCidades() {
+  const n = cidadesMarcadas();
+  const el = $('#cid-resumo');
+  if (el) el.textContent = !n.length ? 'Todas as cidades' : n.length <= 2 ? n.join(', ') : `${n.length} cidades selecionadas`;
+}
+
+function ligarSeletorCidades() {
+  const botao = $('#cid-botao'), painel = $('#cid-painel'), busca = $('#cid-busca'), lista = $('#cid-lista'), campo = $('#filtro-b-cidade');
+  if (!botao) return;
+
+  // As marcadas ficam sempre no topo (mesmo que a busca não as case); depois vêm as que casam com a busca, da mais comum à menos
+  const desenhar = () => {
+    const marcadas = new Set(cidadesMarcadas().map(normBusca));
+    const termo = normBusca(busca.value.trim());
+    const dela = o => marcadas.has(normBusca(o.valor));
+    const itens = [...opcoesCidades.filter(dela), ...opcoesCidades.filter(o => !dela(o) && (!termo || normBusca(o.valor).includes(termo)))];
+    lista.innerHTML = itens.length ? itens.slice(0, 150).map(o =>
+      `<label class="cid-item"><input type="checkbox" value="${escapeHtml(o.valor)}" ${dela(o) ? 'checked' : ''}>
+        <span>${escapeHtml(o.valor)}</span><small>${o.total}</small></label>`).join('')
+      : '<div class="cid-vazio">Nenhuma cidade encontrada</div>';
+  };
+  const mudou = () => {
+    atualizarResumoCidades();
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const abrir = aberto => {
+    painel.classList.toggle('aberto', aberto);
+    botao.setAttribute('aria-expanded', aberto);
+    if (aberto) { busca.value = ''; desenhar(); busca.focus(); }
+  };
+
+  botao.addEventListener('click', () => abrir(!painel.classList.contains('aberto')));
+  busca.addEventListener('input', desenhar);
+  lista.addEventListener('change', ev => {
+    const nome = ev.target.value, chave = normBusca(nome);
+    const resto = cidadesMarcadas().filter(c => normBusca(c) !== chave);
+    campo.value = (ev.target.checked ? [...resto, nome] : resto).join(', ');   // a lista não é redesenhada: o item não pula de lugar
+    mudou();
+  });
+  $('#cid-limpar').addEventListener('click', () => { campo.value = ''; desenhar(); mudou(); });
+  document.addEventListener('mousedown', ev => {
+    if (painel.classList.contains('aberto') && !ev.target.closest('#cid-painel, #cid-botao')) abrir(false);
+  });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && painel.classList.contains('aberto')) abrir(false); });
+  atualizarResumoCidades();
+}
+
+// ── Autocomplete de cidade (Endereço/bairro contém / Endereço-bairro contém / Exceto quem mora em) ──
 // Não existe bairro normalizado (é texto livre no currículo); a sugestão é sempre de CIDADE, a partir de quem
 // já está no banco (vw_banco_opcoes, tipo "cidade" — mesma fonte de Área/Cargo). `multiplo` = campo com vários
 // valores por vírgula: o clique completa só o pedaço que está sendo digitado, sem apagar o resto.
@@ -290,7 +348,7 @@ function htmlTagsCandidato(c) {
   if (c.reanalise_solicitada_em)
     t.push('<span class="tag-mini" title="A IA vai (re)analisar este currículo na próxima execução da rotina">IA analisando…</span>');
   if (c.sanitizacao_pendente)
-    t.push('<span class="tag-mini roxo" title="Está na lista de sugestões de sanitização">Sugerido p/ limpeza</span>');
+    t.push('<span class="tag-mini roxo" title="Está na fila de inativados">Na fila de inativados</span>');
   if (c.total_reprovacoes > 0)
     t.push(`<span class="tag-mini vermelho" title="Reprovações anteriores em vagas">↺ ${c.total_reprovacoes} reprovaç${c.total_reprovacoes > 1 ? 'ões' : 'ão'}</span>`);
   if (c.total_historico > 0)
@@ -433,11 +491,15 @@ async function siglasDasLojasDaVaga(vagaId) {
 }
 
 // Desenha os chips das lojas (uma por loja + TODAS). `marcadas` = siglas que começam marcadas; nenhuma → todas.
-// Loja com padrao_distancia=false (ex.: Capital Atacadista) só entra na lista quando a própria vaga está
+// Loja com padrao_distancia=false (ex.: Capital) só entra na lista quando a própria vaga está
 // vinculada a ela — as lojas de sempre (padrao_distancia=true) continuam aparecendo sempre, como já era.
 function montarLojasRanking(marcadas = []) {
   const alvo = new Set(marcadas.map(x => String(x).toUpperCase()));
-  const visiveis = app.cache.empresas.filter(e => e.padrao_distancia || alvo.has(String(e.sigla).toUpperCase()));
+  const daVaga = app.cache.empresas.filter(e => alvo.has(String(e.sigla).toUpperCase()));
+  // vaga só de lojas fora do padrão (ex.: só da Capital): o filtro mostra apenas a região delas
+  const soForaDoPadrao = daVaga.length > 0 && daVaga.every(e => !e.padrao_distancia);
+  const visiveis = soForaDoPadrao ? daVaga
+    : app.cache.empresas.filter(e => e.padrao_distancia || alvo.has(String(e.sigla).toUpperCase()));
   const comLocal = visiveis.filter(lojaTemLocal);
   const iniciais = comLocal.some(e => alvo.has(String(e.sigla).toUpperCase()))
     ? comLocal.filter(e => alvo.has(String(e.sigla).toUpperCase())) : comLocal;
@@ -446,9 +508,9 @@ function montarLojasRanking(marcadas = []) {
     const ok = lojaTemLocal(e);
     return `<label class="chk-empresa" title="${ok ? `Medir a distância até a ${escapeHtml(e.sigla)}` : `A ${escapeHtml(e.sigla)} ainda não tem região cadastrada: não dá para medir a distância até ela`}">
       <input type="checkbox" data-loja value="${escapeHtml(e.sigla)}" ${ok ? '' : 'disabled'} ${marcada.has(e.id) ? 'checked' : ''}> ${escapeHtml(e.sigla)}</label>`;
-  }).join('') + `
+  }).join('') + (visiveis.length < 2 ? '' : `
     <label class="chk-empresa chk-todas" title="Medir a distância até a loja mais próxima entre todas as lojas">
-      <input type="checkbox" id="rk-lojas-todas"> TODAS</label>`;
+      <input type="checkbox" id="rk-lojas-todas"> TODAS</label>`);
   $('#rk-lojas').onchange = ev => {
     if (ev.target.id === 'rk-lojas-todas') {
       $$('#rk-lojas input[data-loja]:not(:disabled)').forEach(c => { c.checked = ev.target.checked; });
@@ -463,7 +525,8 @@ function montarLojasRanking(marcadas = []) {
 function atualizarLojasRanking() {
   const itens = [...$$('#rk-lojas input[data-loja]:not(:disabled)')];
   const marcadas = itens.filter(c => c.checked);
-  $('#rk-lojas-todas').checked = itens.length > 0 && marcadas.length === itens.length;
+  const todas = $('#rk-lojas-todas');   // não existe quando só há uma loja
+  if (todas) todas.checked = itens.length > 0 && marcadas.length === itens.length;
   $('#rk-lojas-nota').textContent = !marcadas.length ? 'Nenhuma marcada: vale a loja mais próxima entre todas'
     : marcadas.length === 1 ? 'Distância até essa loja'
     : marcadas.length === itens.length ? 'Distância até a loja mais próxima de todas'
@@ -508,7 +571,7 @@ async function carregarRankingVaga() {
 
   const km = $('#rk-km').value;
   const sexo = $('#rk-sexo').value;
-  const cidade = normBusca($('#filtro-b-cidade').value.trim());
+  const cidade = cidadesDoFiltro().map(escaparLike).join('|');
   // Ordem, sexo, distância, cidade ou "Mais filtros" mudou: volta para a 1ª página (senão "carregar mais" pularia
   // direto para o meio de uma lista diferente da que a pessoa vê agora)
   paginaInicialSeFiltroMudou(estadoBanco,
@@ -693,8 +756,8 @@ function desenharTalento(c, hist) {
        · não recebe vagas nem e-mails</div></div>` : '';
   $('#t-btn-negra').style.display = c.lista_negra || c.status_banco === 'expurgado' ? 'none' : 'flex';
   $('#t-btn-liberar').style.display = c.lista_negra ? 'flex' : 'none';
-  st.innerHTML = c.status_banco === 'inativo'
-    ? '<i class="ti ti-user-check"></i>Reativar' : '<i class="ti ti-user-off"></i>Inativar';
+  // Inativar direto saiu: quem está ativo vai para a fila de inativados (botão abaixo). Só resta Reativar, para quem já está inativo.
+  st.style.display = c.status_banco === 'inativo' ? 'flex' : 'none';
   // Sanitizar: qualquer usuário; só para quem está ATIVO (quem já está inativo tem os dados apagados sozinho depois do prazo);
   // não vale para quem está em processo, é contratado (retenção permanente) ou já foi excluído
   $('#t-btn-sanitizar').style.display = c.status_banco === 'ativo' && !c.retencao_permanente ? 'flex' : 'none';
@@ -973,20 +1036,20 @@ async function alternarInativo() {
   await recarregarTalento();
 }
 
-// O RH não inativa em massa nem apaga direto: manda o candidato para a fila da Sanitização, onde a decisão fica registrada
+// O RH não inativa em massa nem apaga direto: manda o candidato para a fila de inativados, onde a decisão fica registrada
 // (manter ou inativar; quem fica inativo tem os dados apagados sozinho depois do prazo — backend/sql/047)
 async function sanitizarCandidato() {
   const c = app.talentoAberto;
   if (!c) return;
   if (!await confirmar({
-    titulo: 'Enviar para a sanitização', rotulo: 'Enviar para a sanitização', perigo: false,
-    mensagem: `Mandar ${c.nome || 'este candidato'} para a fila de Sanitização?\n\n` +
+    titulo: 'Enviar para a fila de inativação', rotulo: 'Enviar para a fila', perigo: false,
+    mensagem: `Mandar ${c.nome || 'este candidato'} para a fila de inativados?\n\n` +
               'Nada é apagado agora: ele entra na lista com prioridade alta e lá se decide se mantém no banco ou inativa.'
   })) return;
   const { data, error } = await db.rpc('sanitizacao_enviar_candidato', { p_candidato_id: c.id });
   if (error) { toast(mensagemErro(error), 'erro'); return; }
   fecharDrawer();
-  toast(data.ja_na_lista ? 'Este candidato já está na fila de Sanitização' : 'Enviado para a fila de Sanitização');
+  toast(data.ja_na_lista ? 'Este candidato já está na fila de inativados' : 'Enviado para a fila de inativados');
   carregarResumoSanitizacao();                       // atualiza o selo do menu
 }
 

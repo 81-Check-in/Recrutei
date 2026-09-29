@@ -236,7 +236,7 @@ def email_ja_processado(message_id: str) -> bool:
 # ─────────────────────────────────────────────
 CAMPOS_CANDIDATO = ("id,nome,sexo,data_nascimento,idade_informada,cidade,uf,telefone,telefone_e164,email,"
                     "escolaridade,anos_experiencia,cnh,status_banco,retencao_permanente,lista_negra,"
-                    "regiao_id,regiao_origem,sexo_origem,analise_atual_id,reanalise_solicitada_em")
+                    "regiao_id,regiao_origem,sexo_origem,analise_atual_id,reanalise_solicitada_em,inativado_em")
 
 
 def buscar_candidato_existente(hash_identidade: Optional[str], email: Optional[str],

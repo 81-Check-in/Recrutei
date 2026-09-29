@@ -41,6 +41,14 @@ MIGRACOES=(
   056_message_id_sem_controle.sql
   057_encaminhar_gerente_cr.sql
   058_gerente_nome.sql
+  059_sigla_capital.sql
+  060_mensagem_gerente_quebra_linha.sql
+  061_operador_empilhadeira.sql
+  062_selecao_varias_cidades.sql
+  063_dashboard_cvs_por_regiao.sql
+  064_dashboard_cvs_serie.sql
+  065_dashboard_entrevistas_contratacoes.sql
+  066_revisao_sem_nivel_vira_junior.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(

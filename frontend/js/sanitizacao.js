@@ -81,10 +81,12 @@ function montarConsultaSanitizacao() {
   const decididas = $('#san-visao').value === 'decididas';
   const prioridade = $('#san-prioridade').value;
   const busca = $('#san-busca').value.trim();
+  const origem = $('#san-origem').value;
 
   let q = db.from('vw_sanitizacao_sugestoes').select('*', { count: 'exact' });
   q = decididas ? q.neq('status', 'pendente') : q.eq('status', 'pendente');
   if (prioridade && !decididas) q = q.eq('prioridade', prioridade);
+  if (origem) q = q.eq('sugestao_origem', origem);
   if (busca) q = q.ilike('nome', `%${busca}%`);
   return decididas
     ? q.order('decidido_em', { ascending: false })
@@ -104,7 +106,7 @@ async function desenharListaSanitizacao() {
   $('#san-btn-gerar').style.display = ehAdministrador() ? 'inline-flex' : 'none';
   $('#san-sel-alta').style.display = decididas ? 'none' : 'inline-flex';
 
-  const chave = JSON.stringify([$('#san-visao').value, $('#san-prioridade').value, $('#san-busca').value]);
+  const chave = JSON.stringify([$('#san-visao').value, $('#san-origem').value, $('#san-prioridade').value, $('#san-busca').value]);
   paginaInicialSeFiltroMudou(estadoSanitizacao, chave);
   if (estadoSanitizacao.limite === estadoSanitizacao.tamanhoPagina) {
     el.innerHTML = '<tr><td colspan="7"><div class="estado-vazio"><i class="ti ti-loader-2 girando"></i><p>Carregando...</p></div></td></tr>';
@@ -124,7 +126,7 @@ async function desenharListaSanitizacao() {
   if (!data.length) {
     el.innerHTML = `<tr><td colspan="7"><div class="estado-vazio"><i class="ti ti-circle-check"></i>
       <p>${decididas ? 'Nenhuma decisão registrada ainda' : 'Nenhuma sugestão pendente'}</p>
-      <span>${decididas ? '' : 'Quem completar 1 mês sem alteração, ou for enviado pelo botão Sanitizar, aparece aqui'}</span></div></td></tr>`;
+      <span>${decididas ? '' : 'Quem completar 1 mês sem alteração, ou for enviado pelo RH, aparece aqui'}</span></div></td></tr>`;
     atualizarBarraLote();
     return;
   }

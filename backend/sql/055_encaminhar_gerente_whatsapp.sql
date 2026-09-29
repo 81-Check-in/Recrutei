@@ -85,6 +85,6 @@ grant execute on function public.encaminhar_ao_gerente(uuid, uuid) to service_ro
 -- ───────────────────────────────────────────────────────────────────────
 insert into public.configuracoes (chave, valor, descricao) values
   ('mensagem_gerente_padrao', to_jsonb(
-    'Olá! Segue o currículo de {nome} para a vaga de {vaga}. Dá uma olhada e me fala o que achou:\n{link}'::text),
+    E'Olá! Segue o currículo de {nome} para a vaga de {vaga}. Dá uma olhada e me fala o que achou:\n{link}'::text),
    'Mensagem sugerida ao encaminhar um candidato ao gerente da loja (o RH ainda pode editar antes de enviar). Marcadores: {nome}, {vaga}, {link}.')
 on conflict (chave) do nothing;

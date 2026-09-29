@@ -247,7 +247,8 @@ const MENSAGEM_GERENTE_DE_FABRICA =
 
 function montarMensagemGerente(dados) {
   const modelo = app.cache?.config?.mensagem_gerente_padrao;
-  const texto = typeof modelo === 'string' && modelo.trim() ? modelo : MENSAGEM_GERENTE_DE_FABRICA;
+  // "\n" digitado/gravado como dois caracteres (a 055 gravou assim) vira quebra de linha de verdade
+  const texto = (typeof modelo === 'string' && modelo.trim() ? modelo : MENSAGEM_GERENTE_DE_FABRICA).replace(/\\n/g, '\n');
   return texto.replace(/\{(nome|vaga|link)\}/g, (_, chave) => dados[chave]);
 }
 

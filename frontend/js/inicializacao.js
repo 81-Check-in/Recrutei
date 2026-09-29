@@ -63,12 +63,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     $('#'+id).addEventListener('change', carregarBanco));
   const recarregarBanco = debounce(carregarBanco);
   ['busca-banco','filtro-b-cidade'].forEach(id => $('#'+id).addEventListener('input', recarregarBanco));
-  ligarAutocompleteLocal('#filtro-b-cidade', '#filtro-b-cidade-lista');
+  ligarSeletorCidades();
   ligarAutocompleteLocal('#av-local', '#av-local-lista');
   ligarAutocompleteLocal('#av-excluir-locais', '#av-excluir-locais-lista', true);
 
   // Sanitização: trocar de visão descarta a seleção (as linhas são outras)
   $('#san-visao').addEventListener('change', () => { selecaoSanitizacao.clear(); carregarSanitizacao(); });
+  $('#san-origem').addEventListener('change', carregarSanitizacao);
   $('#san-prioridade').addEventListener('change', carregarSanitizacao);
   $('#san-busca').addEventListener('input', debounce(carregarSanitizacao));
 

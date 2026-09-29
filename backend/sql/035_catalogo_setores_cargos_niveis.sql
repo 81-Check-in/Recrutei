@@ -113,6 +113,7 @@ select s.id, f.cargo, f.iniciante
     ('Loja',          'Gerente de Loja',             false),
     ('Logística',     'Auxiliar',                    true),
     ('Logística',     'Auxiliar de Serviços Gerais', false),
+    ('Logística',     'Operador de Empilhadeira',    false),
     ('Logística',     'Encarregado',                 false),
     ('Logística',     'Supervisor',                  false),
     ('Logística',     'Gerente',                     false),

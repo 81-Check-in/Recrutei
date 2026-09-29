@@ -270,15 +270,32 @@ class TestNormalizacaoDaAnalise(unittest.TestCase):
         self.assertEqual(analisar("Logística", "Auxiliar", "jovem_aprendiz"), ("Logística", "Auxiliar", "jovem_aprendiz"))
         self.assertEqual(analisar("Loja", "Repositor", "Trainee"), ("Loja", "Repositor", "trainee"))
         self.assertEqual(analisar("Loja", "Repositor", "Estagiário"), ("Loja", "Repositor", "trainee"))       # estágio é trainee
-        # nos outros cargos o nível não vale (vira "revisão manual"), mesmo que setor e cargo estejam certos
-        self.assertEqual(analisar("Loja", "Vendedor", "trainee"), ("Loja", "Vendedor", None))
-        self.assertEqual(analisar("Logística", "Supervisor", "jovem_aprendiz"), ("Logística", "Supervisor", None))
-        self.assertEqual(analisar("Financeiro", "Auxiliar", "trainee"), ("Financeiro", "Auxiliar", None))     # "Auxiliar" só aceita em Logística/DP/RH
+        # nos outros cargos esse nível não vale e o currículo fica como Júnior (não vai para a revisão manual)
+        self.assertEqual(analisar("Loja", "Vendedor", "trainee"), ("Loja", "Vendedor", "junior"))
+        self.assertEqual(analisar("Logística", "Supervisor", "jovem_aprendiz"), ("Logística", "Supervisor", "junior"))
+        self.assertEqual(analisar("Financeiro", "Auxiliar", "trainee"), ("Financeiro", "Auxiliar", "junior"))     # "Auxiliar" só aceita em Logística/DP/RH
         # júnior, pleno e sênior valem em qualquer cargo
         self.assertEqual(analisar("Loja", "Vendedor", "senior"), ("Loja", "Vendedor", "senior"))
+        # sem nível nenhum, mas com função: Júnior. Sem função não há o que nivelar
+        self.assertEqual(analisar("Loja", "Vendedor", None), ("Loja", "Vendedor", "junior"))
+        self.assertEqual(analisar(None, None, None), (None, None, None))
         # sem a lista de cargos que aceitam, nenhum aceita
         a = ia._normalizar_analise({"setor_adequado": "Loja", "funcao_setor": "Repositor", "nivel_funcao": "trainee"}, AREAS, FUNCOES, NIVEIS)
-        self.assertIsNone(a["nivel_sugerido"])
+        self.assertEqual(a["nivel_sugerido"], "junior")
+
+    def test_setor_nao_identificado_vai_para_vendas_ou_logistica_pela_experiencia(self):
+        vendas = "Atendente de loja por 3 anos. Vendedor no varejo, atendimento ao cliente, operador de caixa."
+        logistica = "Auxiliar de estoque e almoxarifado. Conferente de carga e descarga, separação e expedição, empilhadeira."
+        self.assertEqual(ia.area_pela_experiencia(vendas, FUNCOES), ("Loja", "Vendedor"))
+        self.assertEqual(ia.area_pela_experiencia(logistica, FUNCOES), ("Logística", "Auxiliar"))
+        # o que pesa é o que predomina
+        self.assertEqual(ia.area_pela_experiencia(logistica + " Uma vez atendente.", FUNCOES), ("Logística", "Auxiliar"))
+        # empate, nada parecido ou texto vazio: fica na revisão manual
+        self.assertIsNone(ia.area_pela_experiencia("Cozinheira e garçom em restaurante.", FUNCOES))
+        self.assertIsNone(ia.area_pela_experiencia("Vendedor de carros e estoquista.", FUNCOES))
+        self.assertIsNone(ia.area_pela_experiencia("", FUNCOES))
+        # só devolve função que existe no catálogo
+        self.assertIsNone(ia.area_pela_experiencia(vendas, {"Loja": ["Repositor"]}))
 
     def test_vocabulario_manda_escolher_a_funcao_pela_experiencia_que_predomina(self):
         # Caso Yala: 6 anos como operadora de caixa e 1 ano como fiscal de loja virava "Fiscal de Loja" (o cargo mais alto)
@@ -301,9 +318,9 @@ class TestNormalizacaoDaAnalise(unittest.TestCase):
         self.assertNotIn("jovem_aprendiz", texto)
         self.assertNotIn("SÓ podem ser usados", texto)
         self.assertIn("Gerente, encarregado e supervisor são funções, não níveis.", texto)
-        # e se a IA responder um nível desabilitado, ele não é aceito (o currículo vai para revisão manual)
+        # e se a IA responder um nível desabilitado, ele não é aceito (o currículo fica como Júnior)
         r = {"setor_adequado": "Loja", "funcao_setor": "Repositor", "nivel_funcao": "trainee"}
-        self.assertIsNone(ia._normalizar_analise(r, AREAS, FUNCOES, sem_trainee, INICIANTES)["nivel_sugerido"])
+        self.assertEqual(ia._normalizar_analise(r, AREAS, FUNCOES, sem_trainee, INICIANTES)["nivel_sugerido"], "junior")
         self.assertEqual(ia._normalizar_analise(r, AREAS, FUNCOES, NIVEIS, INICIANTES)["nivel_sugerido"], "trainee")
         r["nivel_funcao"] = "jovem_aprendiz"
         self.assertEqual(ia._normalizar_analise(r, AREAS, FUNCOES, sem_trainee, INICIANTES)["nivel_sugerido"], "jovem_aprendiz")
@@ -1035,6 +1052,23 @@ class TestEntradaNoBanco(unittest.TestCase):
         self.assertIn("29 dia", r["ignorado"])
         bd.salvar_curriculo.assert_not_called()
 
+    def test_os_30_dias_contam_da_saida_do_banco_e_nao_da_importacao(self):
+        agora = datetime.now(timezone.utc)
+        for situacao in ("inativo", "expurgado"):
+            with self.subTest(situacao=situacao):
+                # importado há 200 dias, mas saiu do banco há 5: ainda espera
+                bd = _bd_falso(buscar_candidato_existente={"id": "c", "status_banco": situacao, "analise_atual_id": "a",
+                                                           "inativado_em": (agora - timedelta(days=5)).isoformat()},
+                               ultima_importacao=agora - timedelta(days=200))
+                r = self.entrar(bd)
+                self.assertIn("saiu do banco há 5 dia", r["ignorado"])
+                bd.salvar_curriculo.assert_not_called()
+        # saiu há 31 dias: liberado
+        bd = _bd_falso(buscar_candidato_existente={"id": "c", "status_banco": "inativo", "analise_atual_id": None,
+                                                   "inativado_em": (agora - timedelta(days=31)).isoformat()},
+                       ultima_importacao=agora - timedelta(days=200))
+        self.assertNotIn("ignorado", self.entrar(bd))
+
     def test_sanitizado_ha_30_dias_ou_mais_e_lido_de_novo_e_volta_a_ativo(self):
         for situacao in ("inativo", "expurgado"):
             with self.subTest(situacao=situacao):
@@ -1573,7 +1607,8 @@ class TestProcessarMensagem(unittest.TestCase):
 
     def test_leu_mas_nao_conseguiu_classificar_fica_no_banco_como_revisao_manual_sem_excecao(self):
         sem_classificacao = {**ANALISE, "area_sugerida": None, "cargo_sugerido": None, "nivel_sugerido": None, "nota": 40}
-        lido, bd, stats = self.rodar(self.msg(), IDENT, sem_classificacao)
+        with patch.object(pipeline.ia, "area_pela_experiencia", return_value=None):      # nada lembra Vendas nem Logística
+            lido, bd, stats = self.rodar(self.msg(), IDENT, sem_classificacao)
         self.assertTrue(lido)
         bd.registrar_excecao.assert_not_called()                          # não é problema de leitura: não vai para a fila
         bd.criar_candidato.assert_called_once()                           # o candidato ENTRA no banco
@@ -1584,6 +1619,14 @@ class TestProcessarMensagem(unittest.TestCase):
         # a nota calculada e o currículo ficam gravados; sem setor/função/nível ele só não aparece na seleção de nenhuma vaga
         bd.atualizar_curriculo.assert_called_once_with(
             "cv-1", {"setor_adequado": None, "funcao_setor": None, "nivel_funcao": None, "nota_classificacao": 40})
+
+    def test_ia_sem_setor_vai_para_vendas_ou_logistica_pela_experiencia_e_como_junior(self):
+        sem_classificacao = {**ANALISE, "area_sugerida": None, "cargo_sugerido": None, "nivel_sugerido": None}
+        lido, bd, stats = self.rodar(self.msg(), IDENT, sem_classificacao)      # TEXTO_CV: "conferente em centro de distribuição"
+        analise = bd.salvar_analise.call_args.args[0]
+        self.assertEqual((analise["area_sugerida"], analise["cargo_sugerido"], analise["nivel_sugerido"]),
+                         ("Logística", "Auxiliar", "junior"))
+        self.assertFalse(analise["revisao_manual"])
 
     def test_ia_sem_resposta_nao_manda_para_a_fila_o_candidato_espera_a_reanalise(self):
         lido, bd, stats = self.rodar(self.msg(), IDENT, analise=None)

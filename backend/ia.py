@@ -736,6 +736,10 @@ def _normalizar_analise(r: Dict, areas: List[str], funcoes: Optional[Dict[str, L
     nivel = _normalizar_nivel(r.get("nivel_funcao"), [n["codigo"] for n in niveis] if niveis else None)
     if nivel in NIVEIS_INICIANTES and cargo not in (iniciantes or {}).get(setor, []):
         nivel = None                   # Jovem Aprendiz e Trainee só existem em alguns cargos: nos outros o nível não vale
+    # Setor e função identificados, mas sem nível (a IA não decidiu, ou pediu Trainee/Jovem Aprendiz onde não existe): Júnior,
+    # em vez de mandar o currículo para a revisão manual. Sem função não há o que nivelar.
+    if nivel is None and cargo and (not niveis or any(n["codigo"] == "junior" for n in niveis)):
+        nivel = "junior"
     return {
         "pontos_positivos": base["pontos_fortes"],
         "pontos_negativos": base["lacunas"],
@@ -747,6 +751,37 @@ def _normalizar_analise(r: Dict, areas: List[str], funcoes: Optional[Dict[str, L
         "nota": _nota_0_100(r.get("nota")),
         "palavras_chave": _normalizar_palavras_chave(r.get("palavras_chave")),
     }
+
+
+# Termos (sem acento, minúsculos) que ligam a experiência do currículo a Vendas ou a Logística. Só para quando a IA não
+# conseguiu identificar o setor: o palpite nunca olha sexo, idade ou qualquer dado pessoal, só o que a pessoa já fez.
+_TERMOS_VENDAS = ("vendedor", "vendedora", "vendas", "venda", "atendimento", "atendente", "balconista", "caixa",
+                  "promotor", "promotora", "comercial", "varejo", "consultor de vendas", "consultora de vendas")
+_TERMOS_LOGISTICA = ("estoque", "estoquista", "almoxarifado", "almoxarife", "expedicao", "separador", "separadora",
+                     "separacao", "conferente", "conferencia", "motorista", "entregador", "entregadora", "entregas",
+                     "carga", "descarga", "empilhadeira", "deposito", "armazem", "logistica")
+
+
+def area_pela_experiencia(texto: str, funcoes: Optional[Dict[str, List[str]]] = None) -> Optional[Tuple[str, str]]:
+    """
+    Setor e função para o currículo que a IA não soube classificar: Vendas (Loja / Vendedor) ou Logística (Logística / Auxiliar),
+    o que mais se parecer com as experiências descritas (mais menções aos termos de cada um). Empate ou nenhuma menção = None
+    (fica na revisão manual). Só devolve o que existe no catálogo de funções.
+    """
+    corpo = normalizar_texto(texto or "")
+    if not corpo:
+        return None
+
+    def pontos(termos):
+        return sum(len(re.findall(r"\b" + re.escape(t) + r"\b", corpo)) for t in termos)
+
+    vendas, logistica = pontos(_TERMOS_VENDAS), pontos(_TERMOS_LOGISTICA)
+    if vendas == logistica:
+        return None
+    setor, funcao = ("Loja", "Vendedor") if vendas > logistica else ("Logística", "Auxiliar")
+    if funcoes is not None and funcao not in funcoes.get(setor, []):
+        return None
+    return setor, funcao
 
 
 def avaliar_necessidade_revisao(analise: Dict, confianca_minima: int) -> Tuple[bool, Optional[str]]:

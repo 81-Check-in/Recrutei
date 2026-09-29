@@ -115,7 +115,7 @@
       <button type="button" class="nav-item" title="Em processo" data-tela="candidatos" onclick="irPara('candidatos',this)"><i class="ti ti-user-check" aria-hidden="true"></i><span class="nav-label">Em processo</span></button>
       <button type="button" class="nav-item" title="Entrevistas" data-tela="entrevistas" onclick="irPara('entrevistas',this)"><i class="ti ti-calendar-event" aria-hidden="true"></i><span class="nav-label">Entrevistas</span></button>
       <button type="button" class="nav-item" title="Histórico do candidato" data-tela="historico" onclick="irPara('historico',this)"><i class="ti ti-history" aria-hidden="true"></i><span class="nav-label">Histórico do candidato</span></button>
-      <button type="button" class="nav-item" title="Sanitização" data-tela="sanitizacao" onclick="irPara('sanitizacao',this)"><i class="ti ti-recycle" aria-hidden="true"></i><span class="nav-label">Sanitização</span><span class="nav-badge" id="nav-san-badge" style="display:none" aria-label="sugestões pendentes">0</span></button>
+      <button type="button" class="nav-item" title="Fila de inativados" data-tela="sanitizacao" onclick="irPara('sanitizacao',this)"><i class="ti ti-recycle" aria-hidden="true"></i><span class="nav-label">Fila de inativados</span><span class="nav-badge" id="nav-san-badge" style="display:none" aria-label="sugestões pendentes">0</span></button>
       <button type="button" class="nav-item" title="Bloqueios" data-tela="listanegra" onclick="irPara('listanegra',this)"><i class="ti ti-ban" aria-hidden="true"></i><span class="nav-label">Bloqueios</span></button>
       <button type="button" class="nav-item" id="nav-status" title="Status do robô" data-tela="status" onclick="irPara('status',this)"><i class="ti ti-activity" aria-hidden="true"></i><span class="nav-label">Status</span><span class="nav-luz sem-dados" id="nav-status-luz" role="img" aria-label="Estado do robô: carregando"></span></button>
       <button type="button" class="nav-item" id="nav-config" title="Configurações" data-tela="config" onclick="irPara('config',this)" style="display:none"><i class="ti ti-settings" aria-hidden="true"></i><span class="nav-label">Configurações</span></button>
@@ -172,7 +172,7 @@
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--purple-light);color:var(--purple)"><i class="ti ti-briefcase"></i></div></div>
             <div class="card-val" id="m-vagas">—</div>
-            <div class="card-lbl">Setores com vagas abertas</div>
+            <div class="card-lbl" id="m-vagas-lbl">Vagas abertas</div>
           </div>
         </div>
 
@@ -193,8 +193,8 @@
               </div>
               <div class="exc-row" onclick="irPara('sanitizacao')" style="cursor:pointer">
                 <i class="ti ti-recycle" style="color:var(--purple);font-size:19px"></i>
-                <div style="flex:1"><div class="exc-email">Sugestões de sanitização</div>
-                  <div class="exc-meta">Candidatos sugeridos para limpeza aguardando a sua decisão</div></div>
+                <div style="flex:1"><div class="exc-email">Fila de inativados</div>
+                  <div class="exc-meta">Candidatos na fila de inativação aguardando a sua decisão</div></div>
                 <span class="pill pill-purple" id="m-sanitizacao">0</span>
               </div>
               <div class="exc-row" onclick="irParaFilaDeExcecoes()" style="cursor:pointer">
@@ -207,9 +207,41 @@
           </div>
         </div>
 
+        <div class="painel">
+          <div class="painel-hd"><div><div class="painel-tit">
+            <i class="ti ti-chart-line" style="color:var(--blue);margin-right:5px;font-size:15px"></i>Entrevistas x contratações</div>
+            <div class="painel-sub">Por mês · entrevistas = quem compareceu · contratações = aprovados</div></div>
+            <div class="periodo" id="ec-meses" role="group" aria-label="Período">
+              <button type="button" class="active" data-meses="6" onclick="setEntrevistasContratacoes(6)">6 meses</button>
+              <button type="button" data-meses="12" onclick="setEntrevistasContratacoes(12)">12 meses</button>
+            </div></div>
+          <div class="linhas-legenda"><span><i style="background:var(--ec-entrevistas)"></i>Entrevistas</span>
+            <span><i style="background:var(--ec-contratacoes)"></i>Contratações</span></div>
+          <div id="ec-grafico"></div>
+        </div>
+
+        <div class="painel">
+          <div class="painel-hd"><div><div class="painel-tit">
+            <i class="ti ti-chart-bar" style="color:var(--blue);margin-right:5px;font-size:15px"></i>CVs recebidos</div>
+            <div class="painel-sub" id="serie-sub">Últimos 14 dias</div></div>
+            <div class="periodo" id="serie-agrupar" role="group" aria-label="Agrupar por">
+              <button type="button" class="active" data-agrupar="dia" onclick="setSerieCvs('dia')">Dia</button>
+              <button type="button" data-agrupar="semana" onclick="setSerieCvs('semana')">Semana</button>
+              <button type="button" data-agrupar="mes" onclick="setSerieCvs('mes')">Mês</button>
+            </div></div>
+          <div class="serie" id="serie-cvs"></div>
+        </div>
+
+        <div class="painel">
+          <div class="painel-hd"><div><div class="painel-tit">
+            <i class="ti ti-map-pin" style="color:var(--blue);margin-right:5px;font-size:15px"></i>CVs por região</div>
+            <div class="painel-sub" id="regiao-sub">De onde vêm os currículos recebidos</div></div></div>
+          <div class="funil" id="cvs-regiao"></div>
+        </div>
+
         <div class="sec-hd"><div class="sec-tit">Vagas abertas</div>
           <button class="link" onclick="irPara('vagas')">Ver todas</button></div>
-        <div class="duas-col" id="vagas-resumo"></div>
+        <div class="tabela" id="vagas-resumo"></div>
 
         <div class="painel">
           <div class="painel-hd"><div class="painel-tit">
@@ -310,10 +342,9 @@
         </div>
 
         <div class="painel-av" id="painel-filtros-av" style="display:none">
-          <div class="av-grid">
-            <div class="f-campo"><label for="filtro-b-cidade">Cidade onde mora</label>
-              <input id="filtro-b-cidade" type="text" placeholder="ex.: Ceilândia" autocomplete="off">
-              <div class="local-lista" id="filtro-b-cidade-lista"></div></div>
+          <div class="av-grupos">
+          <div class="av-grupo"><div class="av-grupo-tit">Situação</div>
+            <div class="av-grid">
             <div class="f-campo" id="campo-status-banco"><label for="filtro-b-status">Situação no banco</label>
               <select class="sel" id="filtro-b-status" style="width:100%">
                 <option value="ativo">Disponíveis</option>
@@ -321,36 +352,37 @@
                 <option value="em_processo">Em processo</option>
                 <option value="inativo">Inativos</option>
               </select></div>
-            <div class="f-campo av-span2"><label for="av-cargos-exp">Cargos com experiência</label>
-              <input id="av-cargos-exp" type="text" placeholder="ex.: repositor, operador de caixa (separe por vírgula)"
-                title="Quem tem experiência em qualquer um destes cargos. Não diferencia maiúsculas nem acentos. Procura no currículo a partir de &quot;Experiência profissional&quot; (objetivo e resumo não contam); sem esse título, procura no currículo todo"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
-            <div class="f-campo"><label for="av-email">E-mail</label>
-              <input id="av-email" type="text" inputmode="email" autocomplete="off" placeholder="ex.: maria@gmail.com ou parte dele"
-                title="Procura no e-mail do currículo e no e-mail de quem enviou o currículo. Pode digitar só um pedaço"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
-            <div class="f-campo"><label for="av-telefone">Telefone</label>
-              <input id="av-telefone" type="text" inputmode="tel" autocomplete="off" placeholder="ex.: (61) 99999-1234 ou só o final"
-                title="Só os números contam (parênteses, espaço e hífen são ignorados). Pode digitar só um pedaço, com pelo menos 3 números"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
-            <div class="f-campo av-span2"><label for="av-palavras">Palavras-chave</label>
-              <input id="av-palavras" type="text" placeholder="ex.: empilhadeira, cnh b (separe por vírgula)"
-                title="Acha quem tem qualquer uma das palavras (separadas por vírgula), no currículo ou na análise da IA"></div>
+            <label class="av-check" title="Já tem registro no Histórico do candidato (entrevista, não compareceu, sem interesse...), pelo cadastro, nome ou telefone">
+              <input type="checkbox" id="av-historico"> Com passagem pelo RH</label>
+            <label class="av-check"><input type="checkbox" id="av-revisao"> Só revisão manual necessária</label>
+            </div></div>
+          <div class="av-grupo"><div class="av-grupo-tit">Onde mora</div>
+            <div class="av-grid">
+            <div class="f-campo"><label id="filtro-b-cidade-rotulo">Cidade onde mora</label>
+              <input id="filtro-b-cidade" type="hidden">
+              <button type="button" class="cid-botao sel" id="cid-botao" aria-haspopup="true" aria-expanded="false" aria-labelledby="filtro-b-cidade-rotulo cid-botao">
+                <span id="cid-resumo">Todas as cidades</span><i class="ti ti-chevron-down"></i></button>
+              <div class="cid-painel" id="cid-painel">
+                <input type="text" id="cid-busca" placeholder="Buscar cidade..." autocomplete="off" aria-label="Buscar cidade">
+                <div class="cid-lista" id="cid-lista"></div>
+                <div class="cid-rodape"><button type="button" class="btn-sm" id="cid-limpar">Limpar</button></div>
+              </div></div>
             <div class="f-campo"><label for="av-local">Endereço/bairro contém</label>
               <input id="av-local" type="text" placeholder="cidade ou bairro (busca no currículo)" autocomplete="off">
               <div class="local-lista" id="av-local-lista"></div></div>
             <div class="f-campo"><label for="av-excluir-locais">Exceto quem mora em</label>
               <input id="av-excluir-locais" type="text" placeholder="separe por vírgula" autocomplete="off">
               <div class="local-lista" id="av-excluir-locais-lista"></div></div>
-            <div class="f-campo"><label for="av-escolaridade">Escolaridade mínima</label>
-              <select class="sel" id="av-escolaridade" style="width:100%">
-                <option value="">Qualquer</option>
-                <option value="fundamental">Fundamental</option>
-                <option value="medio">Médio</option>
-                <option value="tecnico">Técnico</option>
-                <option value="superior">Superior</option>
-                <option value="pos">Pós-graduação</option>
-              </select></div>
+            </div></div>
+          <div class="av-grupo"><div class="av-grupo-tit">Experiência e habilidades</div>
+            <div class="av-grid">
+            <div class="f-campo av-span2"><label for="av-cargos-exp">Cargos com experiência</label>
+              <input id="av-cargos-exp" type="text" placeholder="ex.: repositor, operador de caixa (separe por vírgula)"
+                title="Quem tem experiência em qualquer um destes cargos. Não diferencia maiúsculas nem acentos. Procura no currículo a partir de &quot;Experiência profissional&quot; (objetivo e resumo não contam); sem esse título, procura no currículo todo"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
+            <div class="f-campo av-span2"><label for="av-palavras">Palavras-chave</label>
+              <input id="av-palavras" type="text" placeholder="ex.: empilhadeira, cnh b (separe por vírgula)"
+                title="Acha quem tem qualquer uma das palavras (separadas por vírgula), no currículo ou na análise da IA"></div>
             <div class="f-campo"><label for="av-experiencia">Experiência mínima (anos)</label>
               <input id="av-experiencia" type="number" min="0" max="60" step="0.5" placeholder="ex.: 2"></div>
             <div class="f-campo"><label for="av-rotatividade">Rotatividade</label>
@@ -360,16 +392,37 @@
                 <option value="baixa">Só baixa rotatividade</option>
                 <option value="alta">Só alta rotatividade</option>
               </select></div>
+            </div></div>
+          <div class="av-grupo"><div class="av-grupo-tit">Perfil</div>
+            <div class="av-grid">
+            <div class="f-campo"><label for="av-escolaridade">Escolaridade mínima</label>
+              <select class="sel" id="av-escolaridade" style="width:100%">
+                <option value="">Qualquer</option>
+                <option value="fundamental">Fundamental</option>
+                <option value="medio">Médio</option>
+                <option value="tecnico">Técnico</option>
+                <option value="superior">Superior</option>
+                <option value="pos">Pós-graduação</option>
+              </select></div>
             <div class="f-campo"><label for="av-idade-min">Idade mínima</label>
               <input id="av-idade-min" type="number" min="14" max="85" placeholder="anos"></div>
             <div class="f-campo"><label for="av-idade-max">Idade máxima</label>
               <input id="av-idade-max" type="number" min="14" max="85" placeholder="anos"></div>
-            <label class="av-check"><input type="checkbox" id="av-revisao"> Só revisão manual necessária</label>
-            <label class="av-check" title="Já tem registro no Histórico do candidato (entrevista, não compareceu, sem interesse...), pelo cadastro, nome ou telefone">
-              <input type="checkbox" id="av-historico"> Com passagem pelo RH</label>
             <label class="av-check"><input type="checkbox" id="av-sem-info" checked>
               Incluir quem não informou idade/escolaridade/experiência</label>
-          </div>
+            </div></div>
+          <div class="av-grupo"><div class="av-grupo-tit">Contato</div>
+            <div class="av-grid">
+            <div class="f-campo"><label for="av-email">E-mail</label>
+              <input id="av-email" type="text" inputmode="email" autocomplete="off" placeholder="ex.: maria@gmail.com ou parte dele"
+                title="Procura no e-mail do currículo e no e-mail de quem enviou o currículo. Pode digitar só um pedaço"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
+            <div class="f-campo"><label for="av-telefone">Telefone</label>
+              <input id="av-telefone" type="text" inputmode="tel" autocomplete="off" placeholder="ex.: (61) 99999-1234 ou só o final"
+                title="Só os números contam (parênteses, espaço e hífen são ignorados). Pode digitar só um pedaço, com pelo menos 3 números"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarFiltrosAvancados()}"></div>
+            </div></div>
+        </div>
           <p class="av-dica">Cidade e situação valem na hora. Os demais campos valem ao clicar em <b>Aplicar filtros</b>.</p>
           <div class="av-acoes">
             <button type="button" class="btn-cancel" onclick="limparFiltrosAvancados()"
@@ -554,11 +607,11 @@
         </table></div>
       </div>
 
-      <!-- ══ SANITIZAÇÃO ══ -->
+      <!-- ══ FILA DE INATIVADOS (sanitização) ══ -->
       <div class="screen" id="screen-sanitizacao">
         <div class="painel san-info">
           <div class="painel-hd" style="margin-bottom:8px">
-            <div><div class="painel-tit"><i class="ti ti-recycle" style="margin-right:6px;color:var(--purple)"></i>Sugestões de sanitização</div>
+            <div><div class="painel-tit"><i class="ti ti-recycle" style="margin-right:6px;color:var(--purple)"></i>Fila de inativados</div>
               <div class="painel-sub" id="san-ciclo">Carregando…</div></div>
             <button type="button" class="btn-sm azul" id="san-btn-gerar" style="display:none" onclick="gerarSugestoesAgora()"
               title="Só administrador: gera a lista agora, sem esperar o próximo ciclo">
@@ -569,6 +622,11 @@
           <select class="sel" id="san-visao" aria-label="Mostrar">
             <option value="pendente">Pendentes de decisão</option>
             <option value="decididas">Já decididas</option>
+          </select>
+          <select class="sel" id="san-origem" aria-label="Quem enviou">
+            <option value="">Todos os envios</option>
+            <option value="manual">Enviados pelo RH</option>
+            <option value="automatica">Enviados pelo sistema</option>
           </select>
           <select class="sel" id="san-prioridade" aria-label="Prioridade">
             <option value="">Todas as prioridades</option>
@@ -761,12 +819,12 @@
     <button class="btn-drawer" onclick="registrarContato()" title="Marca que você falou com o candidato (conta como movimentação)">
       <i class="ti ti-phone-call"></i>Registrei contato</button>
     <button class="btn-drawer" onclick="abrirEdicaoCandidato()"><i class="ti ti-pencil"></i>Editar dados</button>
-    <button class="btn-drawer" id="t-btn-status" onclick="alternarInativo()"><i class="ti ti-user-off"></i>Inativar</button>
+    <button class="btn-drawer" id="t-btn-status" style="display:none" onclick="alternarInativo()"><i class="ti ti-user-check"></i>Reativar</button>
     <button class="btn-drawer vermelho" id="t-btn-negra" onclick="abrirBloqueioCandidato()"
       title="Bloqueia o e-mail dele, cancela as candidaturas abertas e nunca mais o atribui a uma vaga"><i class="ti ti-ban"></i>Bloquear</button>
     <button class="btn-drawer" id="t-btn-liberar" style="display:none" onclick="tirarCandidatoDaListaNegra()"><i class="ti ti-ban"></i>Remover bloqueio</button>
     <button class="btn-drawer" id="t-btn-sanitizar" style="display:none" onclick="sanitizarCandidato()"
-      title="Manda o candidato para a fila de Sanitização, onde se decide manter no banco ou inativar"><i class="ti ti-recycle"></i>Sanitizar</button>
+      title="Manda o candidato para a fila de inativados, onde se decide manter no banco ou inativar"><i class="ti ti-recycle"></i>Enviar para a fila de inativação</button>
   </div>
 </div>
 
@@ -831,12 +889,12 @@
       <i class="ti ti-brand-whatsapp"></i>Abrir WhatsApp e registrar</button></div>
 </div></div>
 
-<div class="modal-overlay" id="modal-encaminhar-gerente"><div class="modal">
+<div class="modal-overlay" id="modal-encaminhar-gerente"><div class="modal" style="width:640px">
   <div class="modal-hd"><div class="modal-tit">
     <i class="ti ti-brand-whatsapp" style="color:var(--green)"></i>Encaminhar ao gerente</div>
     <button class="modal-x" onclick="fecharModal('modal-encaminhar-gerente')"><i class="ti ti-x"></i></button></div>
   <div class="f-campo"><label>Candidato</label><input id="eg-nome" type="text" readonly></div>
-  <div class="f-campo"><label>Destino <span style="font-weight:400;color:var(--gray-text)">(loja vinculada à vaga, ou o CR, com WhatsApp do gerente cadastrado)</span></label>
+  <div class="f-campo"><label>Destino</label>
     <select id="eg-loja"></select></div>
   <div class="f-campo"><label>Mensagem <span style="font-weight:400;color:var(--gray-text)">(editável)</span></label>
     <textarea id="eg-msg" oninput="previewMensagemGerente()"></textarea></div>
@@ -1038,11 +1096,6 @@
   <div class="modal-hd"><div class="modal-tit">
     <i class="ti ti-upload" style="color:var(--blue)"></i>Enviar currículo</div>
     <button class="modal-x" onclick="fecharModal('modal-upload-manual')"><i class="ti ti-x"></i></button></div>
-  <p style="font-size:12.5px;color:var(--gray-text);margin-bottom:15px">
-    Para um currículo recebido fora do e-mail (WhatsApp, indicação, entrega em mão). Ele entra no
-    <strong>Banco de Talentos</strong> e a IA o analisa, como os e-mails. Se você já sabe a vaga, escolha-a: o candidato
-    é atribuído a ela e o currículo fica com o <strong>setor, a função e o nível dessa vaga</strong> (você já decidiu que ele serve);
-    senão, deixe "só Banco de Talentos" e a IA classifica.</p>
   <div class="f-campo"><label for="up-vaga">Vaga <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
     <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
   <div class="f-campo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC ou DOCX — até 10 MB cada; pode escolher vários de uma vez)</span></label>

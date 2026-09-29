@@ -686,10 +686,11 @@ async function carregarUploadsManuais() {
 
   const { data, error } = await db.from('uploads_manuais')
     .select('id,nome_arquivo,status,detalhe_erro,enviado_em,vagas(titulo)')
-    .order('enviado_em', { ascending: false }).limit(8);
+    .gte('enviado_em', new Date(Date.now() - 60 * 60 * 1000).toISOString())      // só a última hora
+    .order('enviado_em', { ascending: false }).limit(5);
 
   if (error) { el.innerHTML = ''; return; }   // tabela pode não existir ainda — não trava o modal
-  if (!data.length) { el.innerHTML = '<p class="sem-dados">Nenhum envio ainda</p>'; return; }
+  if (!data.length) { el.innerHTML = '<p class="sem-dados">Nenhum envio na última hora</p>'; return; }
 
   const CFG = {
     pendente:   ['ti-clock', 'Pendente', 'yellow'],

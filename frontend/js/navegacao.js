@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // Ordem de exibição das lojas; siglas novas (fora da lista) vão para o fim
-const ORDEM_EMPRESAS = ['CFS', 'CFR', 'CFVP', 'CFC', 'CFW3', 'CFT', 'CFG', 'CFJB', 'CFPA', 'CFBS', 'ATACADISTA'];
+const ORDEM_EMPRESAS = ['CFS', 'CFR', 'CFVP', 'CFC', 'CFW3', 'CFT', 'CFG', 'CFJB', 'CFPA', 'CFBS', 'CAPITAL', 'ATACADISTA'];
 const posicaoEmpresa = sigla => {
   const i = ORDEM_EMPRESAS.indexOf(String(sigla).toUpperCase());
   return i === -1 ? ORDEM_EMPRESAS.length : i;
@@ -47,7 +47,7 @@ async function carregarBase() {
 const TITULOS = {
   dashboard: 'Dashboard', vagas: 'Vagas',
   banco: 'Banco de Talentos', candidatos: 'Candidatos em processo',
-  entrevistas: 'Entrevistas', historico: 'Histórico do candidato', sanitizacao: 'Sanitização', listanegra: 'Bloqueios', status: 'Status do robô', config: 'Configurações'
+  entrevistas: 'Entrevistas', historico: 'Histórico do candidato', sanitizacao: 'Fila de inativados', listanegra: 'Bloqueios', status: 'Status do robô', config: 'Configurações'
 };
 
 let navAnterior = -1;   // posição do item de menu anterior, para a direção da animação

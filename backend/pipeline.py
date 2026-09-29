@@ -446,6 +446,16 @@ def _analisar_e_salvar(candidato_id: str, curriculo_id: Optional[str], texto: st
             if qualificacao_forcada.get(chave):
                 analise[campo] = qualificacao_forcada[chave]
 
+    # A IA não soube o setor: fica com Vendas ou Logística, o que mais se parecer com as experiências do currículo (sem olhar
+    # sexo nem dado pessoal). Sem semelhança clara com nenhum dos dois, segue para a revisão manual.
+    if not analise.get("area_sugerida") and not qualificacao_forcada:
+        palpite = ia.area_pela_experiencia(texto, vocabulario["funcoes"])
+        if palpite:
+            analise["area_sugerida"], analise["cargo_sugerido"] = palpite
+            if not analise.get("nivel_sugerido") and any(n["codigo"] == "junior" for n in vocabulario["niveis"]):
+                analise["nivel_sugerido"] = "junior"
+            log.info(f"  IA sem setor: encaminhado por semelhança com a experiência → {palpite[0]} / {palpite[1]}")
+
     revisao, motivo = ia.avaliar_necessidade_revisao(analise, confianca_minima(cfg))
     confianca = analise["confianca"]
     log.info(f"  Qualificação{' (setor/função/nível da vaga)' if qualificacao_forcada else ''}: "
@@ -534,14 +544,25 @@ def _motivo_para_nao_reler(candidato: Dict) -> Optional[str]:
     # "não reler". Sem esta saída o e-mail reenviado seria ignorado como "já está no banco" e a pessoa ficaria sem currículo para sempre.
     if candidato.get("status_banco") == "ativo" and not bd.obter_curriculo_atual(candidato["id"]):
         return None
-    ultima = bd.ultima_importacao(candidato["id"])
-    dias = (datetime.now(timezone.utc) - ultima).days if ultima else None
     if candidato.get("status_banco") not in ("inativo", "expurgado"):
-        lido = f" (lido há {dias} dia(s))" if dias is not None else ""
+        ultima = bd.ultima_importacao(candidato["id"])
+        lido = f" (lido há {(datetime.now(timezone.utc) - ultima).days} dia(s))" if ultima else ""
         return f"já está no banco{lido}; só é relido depois de sanitizado"
+    # Os 30 dias contam da SAÍDA do banco (inativação; o expurgo mantém essa data). Sem ela, da última importação.
+    saida = _como_data(candidato.get("inativado_em")) or bd.ultima_importacao(candidato["id"])
+    dias = (datetime.now(timezone.utc) - saida).days if saida else None
     if dias is not None and dias < REENVIO_DIAS_MINIMO:
-        return f"lido há {dias} dia(s); só é relido depois de {REENVIO_DIAS_MINIMO} dias"
+        return f"saiu do banco há {dias} dia(s); só é relido depois de {REENVIO_DIAS_MINIMO} dias"
     return None
+
+
+def _como_data(valor) -> Optional[datetime]:
+    """Data que veio do banco (texto ISO) ou já pronta; None se vazia."""
+    if not valor:
+        return None
+    if isinstance(valor, datetime):
+        return valor
+    return datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
 
 
 def _entrar_no_banco(texto: str, ident: Dict, cfg: Dict, areas: List[str], stats: Estatisticas, *,

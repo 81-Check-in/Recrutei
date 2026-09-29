@@ -187,16 +187,27 @@ function abrirAgendamento(candidaturaId, nome, telefone, entrevistaAnteriorId) {
   $('#ag-local').value = '';
   atualizarMensagem();
   abrirModal('modal-agendar');
+  // A vaga entra na mensagem ({vaga}); busca pelo id da candidatura e refaz o texto quando chegar
+  db.from('vw_candidaturas').select('vaga_titulo').eq('id', candidaturaId).maybeSingle().then(({ data }) => {
+    if (app.entrevistaAberta?.candidaturaId !== candidaturaId) return;
+    app.entrevistaAberta.vaga = data?.vaga_titulo || '';
+    atualizarMensagem();
+  });
 }
 
-// Texto de fábrica; vale quando Configurações (mensagem_convocacao_padrao) está vazia. Marcadores aceitos: {nome} {gestor} {data} {hora}.
+// Texto de fábrica; vale quando Configurações (mensagem_convocacao_padrao) está vazia. Marcadores aceitos: {nome} {gestor} {data} {dia} {hora} {vaga}.
 const MENSAGEM_CONVOCACAO_DE_FABRICA =
-  'Olá {nome}, meu nome é {gestor} e você terá uma entrevista no dia {data} às {hora}.\nConfirme essa mensagem por favor.';
+  'Olá!\nSou do RH da Home Center Castelo Forte.\n\n' +
+  'Recebi seu currículo e estamos com vagas em aberto para {vaga}. Você tem interesse em participar de uma entrevista?\n\n' +
+  'Caso tenha interesse, comparecer *{dia}* ({hora}), na loja da Samambaia Sul.\n\n' +
+  'Localização: https://g.co/kgs/aCQqY2\n\n' +
+  'Trazer RG e Reservista, ir para a recepção e avisar que veio para a entrevista.\n\n' +
+  'Favor, confirmar a presença em caso de interesse.';
 
 function montarMensagemConvocacao(dados) {
   const modelo = app.cache?.config?.mensagem_convocacao_padrao;
   const texto = typeof modelo === 'string' && modelo.trim() ? modelo : MENSAGEM_CONVOCACAO_DE_FABRICA;
-  return texto.replace(/\{(nome|gestor|data|hora)\}/g, (_, chave) => dados[chave]);
+  return texto.replace(/\{(nome|gestor|data|dia|hora|vaga)\}/g, (_, chave) => dados[chave]);
 }
 
 function atualizarMensagem() {
@@ -206,8 +217,12 @@ function atualizarMensagem() {
     : '[data]';
   const hora = $('#ag-hora').value || '[hora]';
   const gestor = app.perfil?.nome || 'RH';
+  const dia = $('#ag-data').value
+    ? `${new Date($('#ag-data').value+'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' })}, ${data}`
+    : '[dia]';
+  const vaga = app.entrevistaAberta?.vaga || '[vaga]';
 
-  const msg = montarMensagemConvocacao({ nome, gestor, data, hora });
+  const msg = montarMensagemConvocacao({ nome, gestor, data, dia, hora, vaga });
   $('#ag-msg').value = msg;
   $('#ag-preview').textContent = msg;
 }
