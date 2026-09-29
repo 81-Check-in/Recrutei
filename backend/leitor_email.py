@@ -132,8 +132,17 @@ def _assinatura_confere(tipo: str, conteudo: bytes) -> bool:
     return False
 
 
-def _extrair_anexos(msg: email.message.Message) -> List[Dict]:
-    """Retorna apenas anexos em formato aceito e dentro do limite."""
+def _tipo_real_da_imagem(conteudo: bytes) -> Optional[str]:
+    """JPEG ou PNG pelos primeiros bytes. O celular costuma declarar um e mandar o outro (foto .png que é JPEG); None = nenhum dos dois."""
+    if conteudo[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if conteudo[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    return None
+
+
+def _extrair_anexos(msg: email.message.Message, grandes: Optional[List[Dict]] = None) -> List[Dict]:
+    """Retorna apenas anexos em formato aceito e dentro do limite. Os grandes demais são anotados em `grandes` (nome e tamanho)."""
     anexos = []
     for parte in msg.walk():
         if len(anexos) >= MAX_ANEXOS_POR_EMAIL:
@@ -166,8 +175,13 @@ def _extrair_anexos(msg: email.message.Message) -> List[Dict]:
             else:
                 continue
 
+        if tipo.startswith("image/"):
+            tipo = _tipo_real_da_imagem(conteudo) or tipo   # o tipo declarado errado não pode reprovar uma imagem legítima
+
         if len(conteudo) > TAMANHO_MAXIMO_ANEXO:
             log.warning("  Anexo excede o limite de tamanho — ignorado")
+            if grandes is not None:
+                grandes.append({"nome": nome, "tamanho": len(conteudo)})
             continue
 
         anexos.append({
@@ -234,6 +248,8 @@ def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
     except Exception:
         recebido = None
 
+    anexos_grandes: List[Dict] = []
+    anexos = _extrair_anexos(msg, anexos_grandes)
     return {
         "uid": uid,
         "message_id": _message_id_seguro(msg.get("Message-ID")),
@@ -243,7 +259,8 @@ def _mensagem_de_uid(conn: imaplib.IMAP4_SSL, uid) -> Optional[Dict]:
         "corpo_texto": _extrair_corpo_texto(msg),
         "corpo_com_links": _extrair_corpo_texto(msg, com_links=True),
         "recebido_em": recebido,
-        "anexos": _extrair_anexos(msg),
+        "anexos": anexos,
+        "anexos_grandes": anexos_grandes,
     }
 
 

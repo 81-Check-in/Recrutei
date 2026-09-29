@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // Ordem de exibição das lojas; siglas novas (fora da lista) vão para o fim
-const ORDEM_EMPRESAS = ['CFS', 'CFR', 'CFVP', 'CFC', 'CFW3', 'CFT', 'CFG', 'CFJB', 'CFPA', 'CFBS'];
+const ORDEM_EMPRESAS = ['CFS', 'CFR', 'CFVP', 'CFC', 'CFW3', 'CFT', 'CFG', 'CFJB', 'CFPA', 'CFBS', 'ATACADISTA'];
 const posicaoEmpresa = sigla => {
   const i = ORDEM_EMPRESAS.indexOf(String(sigla).toUpperCase());
   return i === -1 ? ORDEM_EMPRESAS.length : i;
@@ -12,7 +12,7 @@ const posicaoEmpresa = sigla => {
 // Devolve true/false: iniciarSessao() usa o resultado para decidir se mostra a
 // tela cheia de "API fora do ar" (sem os setores/empresas, o app não funciona).
 // Configurações (tabela configuracoes) que o próprio painel usa, além do robô: telefone e mensagem do WhatsApp
-const CHAVES_CONFIG_DO_PAINEL = ['ddi_padrao', 'ddd_padrao', 'mensagem_convocacao_padrao', 'mensagem_gerente_padrao'];
+const CHAVES_CONFIG_DO_PAINEL = ['ddi_padrao', 'ddd_padrao', 'mensagem_convocacao_padrao', 'mensagem_gerente_padrao', 'gerente_whatsapp_cr', 'gerente_nome_cr'];
 
 async function carregarBase() {
   try {
@@ -79,6 +79,45 @@ function irPara(tela, el) {
      banco: carregarBanco, candidatos: carregarCandidatos,
      entrevistas: carregarEntrevistas, historico: carregarHistorico, sanitizacao: carregarSanitizacao, listanegra: carregarListaNegra,
      status: carregarStatus, config: carregarConfig }[tela])?.();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TEMPO REAL — a cada TEMPO_REAL_CADA_S segundos a tela aberta é recarregada em silêncio, para mostrar o que outras
+//  pessoas e o robô fizeram. Não recarrega (para não atrapalhar quem está usando): aba escondida, janela aberta,
+//  campo em edição, ou telas com seleção/edição em andamento (sanitização, histórico, configurações).
+// ═══════════════════════════════════════════════════════════
+
+const TEMPO_REAL_CADA_S = 5;
+const TELAS_TEMPO_REAL = {
+  dashboard: () => carregarDashboard(), vagas: () => carregarVagas(), banco: () => carregarBanco(),
+  candidatos: () => carregarCandidatos(), entrevistas: () => carregarEntrevistas(), listanegra: () => carregarListaNegra()
+};
+let tempoReal = null;
+let recarregandoEmTempoReal = false;
+
+function usuarioEstaInteragindo() {
+  if ($('.modal-overlay.show, #drawer-overlay.show')) return true;
+  const foco = document.activeElement;
+  return !!foco && /^(INPUT|TEXTAREA|SELECT)$/.test(foco.tagName);
+}
+
+async function tickTempoReal() {
+  const recarregar = TELAS_TEMPO_REAL[app.telaAtual];
+  if (!app.usuario || !recarregar || document.hidden || recarregandoEmTempoReal || usuarioEstaInteragindo()) return;
+  recarregandoEmTempoReal = true;
+  recargaSilenciosa = true;
+  try { await recarregar(); } catch { /* sem rede por um instante: fica o que estava */ }
+  finally { recargaSilenciosa = false; recarregandoEmTempoReal = false; }
+}
+
+function iniciarTempoReal() {
+  pararTempoReal();
+  tempoReal = setInterval(tickTempoReal, TEMPO_REAL_CADA_S * 1000);
+}
+
+function pararTempoReal() {
+  if (tempoReal) clearInterval(tempoReal);
+  tempoReal = null;
 }
 
 // A setinha ao lado do título só aparece quando a tela atual "veio de" outra — hoje só a seleção de CVs (dentro do

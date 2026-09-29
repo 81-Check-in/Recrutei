@@ -1307,9 +1307,9 @@ test('status do robô: o RH lê a linha, a tela mostra os números e o ponto do 
   const texto = seletor => beto.$(seletor).textContent.replace(/\s+/g, ' ').trim();
   try {
     marcar(limpo);
-    // o item do menu é de todo o RH (Configurações é só do administrador)
+    // os itens do menu são de todo o RH (em Configurações o gerente de RH só vê os gerentes; o resto é do administrador)
     assert.notEqual(beto.$('#nav-status').style.display, 'none');
-    assert.equal(beto.$('#nav-config').style.display, 'none');
+    assert.notEqual(beto.$('#nav-config').style.display, 'none');
 
     // ocioso, com contagem e próxima leitura
     marcar(`nao_lidos = 7, nao_lidos_em = now(), proxima_leitura_em = now() + interval '5 minutes'`);
@@ -1445,7 +1445,10 @@ test('configurações: nomes claros, aviso "Sem efeito hoje" nos campos de enfei
     const total = itens().length;
     ana.define('#config-busca', 'WHATSAPP'); ana.w.filtrarConfig();
     assert.ok(itens().length >= 3 && itens().length < total);
-    assert.ok(itens().every(i => /whatsapp|ddi|ddd|convoca/i.test(i.textContent)), 'só o que tem a ver com WhatsApp');
+    // "WhatsApp do gerente de cada loja" é outro grupo (fora do catálogo) com "WhatsApp" no título: filtrarConfig() mostra o
+    // grupo inteiro quando o título bate, então uma loja (ex.: "CFS") pode aparecer aqui sem a palavra "whatsapp" no próprio texto
+    assert.ok(itens().every(i => /whatsapp|ddi|ddd|convoca/i.test(i.textContent) || /whatsapp/i.test(i.closest('.config-grupo')?.querySelector('h3')?.textContent || '')),
+      'só o que tem a ver com WhatsApp (ou está num grupo cujo título bate)');
     assert.equal(ana.$('#cfg-grupo-limpeza').style.display, 'none', 'grupo sem resultado some');
     ana.define('#config-busca', 'confianca'); ana.w.filtrarConfig();         // sem acento acha "confiança"
     assert.ok(itens().some(i => i.querySelector('#cfg-ia_confianca_minima')));

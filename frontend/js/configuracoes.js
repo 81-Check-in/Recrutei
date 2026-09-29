@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-//  CONFIGURAÇÕES (somente administrador)
+//  CONFIGURAÇÕES (administrador vê tudo; gerente de RH só os WhatsApp dos gerentes)
 // ═══════════════════════════════════════════════════════════
 
 // ── Catálogo da tela: nome claro, explicação em linguagem simples e o que cada campo realmente faz ──
@@ -18,7 +18,7 @@ const GRUPOS_CONFIG = [
              'sanitizacao_reprovacoes_max', 'sanitizacao_confianca_min', 'sanitizacao_detectar_duplicidade',
              'sanitizacao_adiar_meses', 'sanitizacao_emails_aviso', 'sanitizacao_pesos'] },
   { id: 'whatsapp', atalho: 'WhatsApp e telefones', titulo: 'WhatsApp e telefones',
-    descricao: 'Mensagem de convocação para entrevista, mensagem ao encaminhar pro gerente da loja e como os telefones são completados.',
+    descricao: 'Mensagem de convocação para entrevista, mensagem ao encaminhar pro gerente e como os telefones são completados. Os números dos gerentes ficam em "WhatsApp dos gerentes", mais abaixo.',
     chaves: ['mensagem_convocacao_padrao', 'mensagem_gerente_padrao', 'ddi_padrao', 'ddd_padrao'] }
 ];
 
@@ -63,8 +63,10 @@ const CONFIG_INFO = {
 
   mensagem_convocacao_padrao: { tipo: 'mensagem', titulo: 'Mensagem de convocação do WhatsApp',
     ajuda: 'Texto sugerido ao agendar a entrevista (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {gestor}, {data} e {hora}: eles são trocados pelos dados da entrevista.' },
-  mensagem_gerente_padrao: { tipo: 'mensagem', titulo: 'Mensagem ao encaminhar pro gerente da loja',
-    ajuda: 'Texto sugerido ao encaminhar um candidato ao gerente (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {vaga} e {link}: eles são trocados pelo nome do candidato, o título da vaga e o link do currículo. Só abre o WhatsApp sozinho se a loja escolhida tiver um WhatsApp de gerente cadastrado logo abaixo.' },
+  mensagem_gerente_padrao: { tipo: 'mensagem', titulo: 'Mensagem ao encaminhar pro gerente',
+    ajuda: 'Texto sugerido ao encaminhar um candidato ao gerente (o RH ainda pode editar antes de enviar). Use os marcadores {nome}, {vaga} e {link}: eles são trocados pelo nome do candidato, o título da vaga e o link do currículo. Nas vagas de Loja só abre o WhatsApp sozinho se a loja escolhida tiver um WhatsApp de gerente cadastrado (abaixo, "WhatsApp do gerente de cada loja"); nas vagas do CR, se o campo "WhatsApp do gerente do CR" logo abaixo estiver preenchido.' },
+  gerente_whatsapp_cr: { tipo: 'texto', titulo: 'WhatsApp do gerente do CR',
+    ajuda: 'Usado pelo botão "Encaminhar ao gerente" nas vagas do setor CR (não há "lojas" no CR, por isso um único número serve para todas as vagas dele). Vazio: o botão continua marcando o encaminhamento normalmente, só não abre o WhatsApp sozinho.' },
   ddi_padrao: { tipo: 'digitos', digitos: [1, 3], titulo: 'Código do país dos telefones (DDI)',
     ajuda: 'Acrescentado aos telefones que vêm sem ele (55 = Brasil), ao ler currículos e ao abrir o WhatsApp. De 1 a 3 números.' },
   ddd_padrao: { tipo: 'digitos', digitos: [2, 2], titulo: 'DDD assumido quando o telefone vem sem DDD',
@@ -123,6 +125,12 @@ function htmlItemConfig(c) {
 async function carregarConfig() {
   const el = $('#config-lista');
   loading(el);
+
+  if (!ehAdministrador()) {          // gerente de RH: só os números dos gerentes (o resto o banco também recusa)
+    el.innerHTML = '';
+    await carregarGerentesLojaConfig(el);
+    return;
+  }
 
   const { data, error } = await db.from('configuracoes').select('*').order('chave');
   if (error) { erro(el, error.message); return; }
@@ -340,32 +348,75 @@ async function salvarNivel(codigo) {
   toast('Nível salvo');
 }
 
-// ── WhatsApp do gerente de cada loja ──
+// ── WhatsApp dos gerentes (CR e cada loja) ──
 // Usado por "Encaminhar ao gerente" (candidatos.js) para abrir o WhatsApp já com o currículo do candidato.
-// Loja sem número cadastrado: o botão continua funcionando, só não abre o WhatsApp sozinho (backend/sql/055).
+// Sem número cadastrado: o botão continua funcionando, só não abre o WhatsApp sozinho (backend/sql/055 e 057).
+// Quem edita é o RH (gerente de RH e administrador): empresas.gerente_whatsapp e a chave gerente_whatsapp_cr do banco.
+const FORMATO_WHATSAPP_GERENTE = /^([0-9+() -]{8,20})?$/;     // o mesmo que o trigger da 057 exige para o CR
+
 async function carregarGerentesLojaConfig(el) {
-  const { data, error } = await db.from('empresas').select('id,sigla,nome,gerente_whatsapp').eq('ativo', true).order('sigla');
-  if (error || !data?.length) return;
-  el.insertAdjacentHTML('beforeend', `<div class="config-grupo" id="config-gerentes-loja" data-atalho="WhatsApp dos gerentes">
-    <h3>WhatsApp do gerente de cada loja</h3>
-    <div class="config-desc" style="margin:-6px 0 8px">Usado pelo botão "Encaminhar ao gerente" (Candidatos, vagas do setor Loja) para abrir o
-      WhatsApp do gerente com o currículo do candidato já prontos. Loja sem número: o botão continua marcando o encaminhamento normalmente, só
-      não abre o WhatsApp sozinho.</div>
-    ${data.map(e => `<div class="config-item">
-        <div class="config-info"><div class="config-chave">${escapeHtml(e.sigla)} <span style="font-weight:400;color:var(--gray-text)">(${escapeHtml(e.nome)})</span></div></div>
-        <input class="config-input" id="gerente-tel-${e.id}" type="text" placeholder="Ex.: (61) 99999-1234" value="${escapeHtml(e.gerente_whatsapp || '')}">
+  const [empresas, cr] = await Promise.all([
+    db.from('empresas').select('id,sigla,nome,gerente_nome,gerente_whatsapp').eq('ativo', true).order('sigla'),
+    db.from('configuracoes').select('chave,valor').in('chave', ['gerente_whatsapp_cr', 'gerente_nome_cr'])
+  ]);
+  if (empresas.error) { if (!ehAdministrador()) erro(el, empresas.error.message); return; }
+  const data = empresas.data || [];
+  const cfgCr = Object.fromEntries((cr.data || []).map(c => [c.chave, typeof c.valor === 'string' ? c.valor : '']));
+  const linhaCr = 'gerente_whatsapp_cr' in cfgCr ? `<div class="config-item">
+        <div class="config-info"><div class="config-chave">CR
+          <input class="config-input" id="gerente-nome-cr" type="text" maxlength="80" placeholder="Nome do gerente" aria-label="Nome do gerente do CR" value="${escapeHtml(cfgCr.gerente_nome_cr || '')}" style="margin-left:6px;width:220px">
+          <span style="font-weight:400;color:var(--gray-text)">(um gerente atende todas as vagas do CR)</span></div></div>
+        <input class="config-input" id="gerente-tel-cr" type="text" placeholder="Ex.: (61) 99999-1234" aria-label="WhatsApp do gerente do CR" value="${escapeHtml(cfgCr.gerente_whatsapp_cr)}">
+        <button class="btn-sm azul" onclick="salvarGerenteCr()">Salvar</button>
+      </div>` : '';
+  if (!linhaCr && !data.length) return;
+  // Mesma ordem das lojas no resto do painel (ORDEM_EMPRESAS); o CR não é uma loja: entra entre CFG e CFJB
+  const linhas = data.map(e => ({
+    ordem: posicaoEmpresa(e.sigla), sigla: e.sigla,
+    html: `<div class="config-item">
+        <div class="config-info"><div class="config-chave">${escapeHtml(e.sigla)}
+          <input class="config-input" id="gerente-nome-${e.id}" type="text" maxlength="80" placeholder="Nome do gerente" aria-label="Nome do gerente de ${escapeHtml(e.nome)}" value="${escapeHtml(e.gerente_nome || '')}" style="margin-left:6px;width:220px">
+          <span style="font-weight:400;color:var(--gray-text)">${escapeHtml(e.nome)}</span></div></div>
+        <input class="config-input" id="gerente-tel-${e.id}" type="text" placeholder="Ex.: (61) 99999-1234" aria-label="WhatsApp do gerente de ${escapeHtml(e.nome)}" value="${escapeHtml(e.gerente_whatsapp || '')}">
         <button class="btn-sm azul" onclick="salvarGerenteLoja('${e.id}')">Salvar</button>
-      </div>`).join('')}
+      </div>`
+  }));
+  if (linhaCr) linhas.push({ ordem: posicaoEmpresa('CFG') + 0.5, sigla: 'CR', html: linhaCr });
+  linhas.sort((a, b) => a.ordem - b.ordem || a.sigla.localeCompare(b.sigla));
+  el.insertAdjacentHTML('beforeend', `<div class="config-grupo" id="config-gerentes-loja" data-atalho="WhatsApp dos gerentes">
+    <h3>Gerentes: nome e WhatsApp</h3>
+    <div class="config-desc" style="margin:-6px 0 8px">Usado pelo botão "Encaminhar ao gerente" (Candidatos) para abrir o
+      WhatsApp do gerente com o currículo do candidato já prontos. Sem número: o botão continua marcando o encaminhamento normalmente, só
+      não abre o WhatsApp sozinho.</div>
+    ${linhas.map(l => l.html).join('')}
   </div>`);
 }
 
 async function salvarGerenteLoja(empresaId) {
   const valor = $(`#gerente-tel-${empresaId}`).value.trim();
-  const { error } = await db.from('empresas').update({ gerente_whatsapp: valor || null }).eq('id', empresaId);
+  const nome = $(`#gerente-nome-${empresaId}`).value.trim();
+  const { error } = await db.from('empresas').update({ gerente_nome: nome || null, gerente_whatsapp: valor || null }).eq('id', empresaId);
   if (error) { toast(mensagemErro(error), 'erro'); return; }
   const cache = app.cache.empresas?.find(e => e.id === empresaId);
-  if (cache) cache.gerente_whatsapp = valor || null;
-  toast('WhatsApp do gerente salvo');
+  if (cache) { cache.gerente_nome = nome || null; cache.gerente_whatsapp = valor || null; }
+  toast('Gerente salvo');
+}
+
+async function salvarGerenteCr() {
+  const valor = $('#gerente-tel-cr').value.trim();
+  if (!FORMATO_WHATSAPP_GERENTE.test(valor)) {
+    toast('Número inválido: use só dígitos, +, espaço, parênteses e hífen (8 a 20 caracteres)', 'erro');
+    return;
+  }
+  // .select() confirma que a linha mudou de fato: sem permissão o banco não dá erro, só não altera nada
+  const nome = $('#gerente-nome-cr').value.trim();
+  for (const [chave, novo] of [['gerente_nome_cr', nome], ['gerente_whatsapp_cr', valor]]) {
+    const { data, error } = await db.from('configuracoes')
+      .update({ valor: novo, updated_by: app.usuario.id }).eq('chave', chave).select('valor');
+    if (error || !data?.length) { toast(error ? mensagemErro(error) : 'Não foi possível salvar o gerente do CR', 'erro'); return; }
+    app.cache.config[chave] = novo;                           // vale já nesta sessão, sem recarregar
+  }
+  toast('Gerente do CR salvo');
 }
 
 // Preços por 1M tokens (US$). Manter igual a PRECOS em backend/config.py.

@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const SINAL_VELHO_MIN = 6;                // o robô dá sinal a cada ~1 min (a cada 5 no modo cron): sem sinal por mais que isto, parou
-const MONITOR_CADA_S = 15;
+const MONITOR_CADA_S = 5;
 let monitorDoRobo = null;
 let statusAtual = null;                   // {linha, excecoes, config} da última consulta
 
@@ -217,11 +217,13 @@ async function tickDoMonitor() {
 
 function iniciarMonitorDoRobo() {
   pararMonitorDoRobo();
+  iniciarTempoReal();
   tickDoMonitor();
   monitorDoRobo = setInterval(tickDoMonitor, MONITOR_CADA_S * 1000);
 }
 
 function pararMonitorDoRobo() {
+  pararTempoReal();
   if (monitorDoRobo) clearInterval(monitorDoRobo);
   monitorDoRobo = null;
   statusAtual = null;

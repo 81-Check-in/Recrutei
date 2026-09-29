@@ -55,7 +55,7 @@ async function carregarCandidatos() {
   atualizarModoVaga();
   paginaInicialSeFiltroMudou(estadoCandidatos, JSON.stringify([status, sexo, busca, vagaEmProcesso?.id || null]));
 
-  if (estadoCandidatos.limite === estadoCandidatos.tamanhoPagina) {
+  if (!recargaSilenciosa && estadoCandidatos.limite === estadoCandidatos.tamanhoPagina) {
     el.innerHTML = '<tr><td colspan="6"><div class="estado-vazio"><i class="ti ti-loader-2 girando"></i><p>Carregando...</p></div></td></tr>';
   }
 
@@ -91,11 +91,13 @@ async function carregarCandidatos() {
     return;
   }
 
+  const comConsid = await candidatosComConsideracao(data.map(c => c.candidato_id));
+  if (versao !== estadoCandidatos.versao) return;
   el.innerHTML = data.map(c => {
     const [cls, lbl] = STATUS_CANDIDATURA[c.status] || ['pill-gray', c.status];
     const aberta = !c.encerrada_em;
     const precisaAgendar = PRECISA_AGENDAR.includes(c.status);
-    const ehLoja = c.setor_nome === 'Loja';
+    const encaminhaGerente = c.setor_nome === 'Loja' || c.setor_nome === 'CR';
     const aguardandoGerente = c.status === 'aguardando_gerente';
     const nota = c.nota_curriculo ?? c.nota;               // a nota que a IA deu ao currículo (não há mais avaliação da IA por vaga)
     const pillNota = nota == null ? 'pill-gray'
@@ -104,7 +106,7 @@ async function carregarCandidatos() {
     return `<tr>
       <td><div class="cand-row">
         <div class="cand-av">${iniciais(c.nome)}</div>
-        <div><div class="cand-nome">${escapeHtml(c.nome || '—')}</div>
+        <div><div class="cand-nome">${escapeHtml(c.nome || '—')}${comConsid.has(c.candidato_id) ? PONTO_CONSIDERACAO : ''}</div>
              <div class="cand-tel">${escapeHtml(c.telefone || '—')}</div></div>
       </div></td>
       ${vagaEmProcesso
@@ -119,12 +121,12 @@ async function carregarCandidatos() {
         ${precisaAgendar
           ? `<button class="btn-sm azul" data-id="${c.id}" data-nome="${escapeHtml(c.nome)}" data-tel="${escapeHtml(c.telefone_e164 || '')}" onclick="abrirAgendamento(this.dataset.id, this.dataset.nome, this.dataset.tel)"><i class="ti ti-brand-whatsapp"></i>Agendar</button>`
           : ''}
-        ${ehLoja && precisaAgendar
-          ? `<button class="btn-sm" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="encaminharAoGerentePorId(this.dataset.id, this.dataset.nome)" title="Marca que o currículo foi mandado ao gerente da loja (fora do sistema) e espera a decisão dele"><i class="ti ti-building-store"></i>Encaminhar ao gerente</button>`
+        ${encaminhaGerente && precisaAgendar
+          ? `<button class="btn-sm" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="encaminharAoGerentePorId(this.dataset.id, this.dataset.nome)" title="Marca que o currículo foi mandado ao gerente (fora do sistema) e espera a decisão dele"><i class="ti ti-building-store"></i>Encaminhar ao gerente</button>`
           : ''}
         ${aguardandoGerente
-          ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="aprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente da loja aprovou este candidato"><i class="ti ti-check"></i>Aprovado</button>
-             <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente da loja reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
+          ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="aprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente aprovou este candidato"><i class="ti ti-check"></i>Aprovado</button>
+             <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
           : ''}
         ${aberta
           ? `<button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="devolverAoBancoPorId(this.dataset.id, this.dataset.nome)" title="Cancelar a seleção: o candidato volta ao Banco de Talentos, com a qualificação que já tem"><i class="ti ti-arrow-back-up"></i>${vagaEmProcesso ? 'Cancelar seleção' : ''}</button>`
@@ -175,31 +177,37 @@ async function reprovarCandidatura() {
   await recarregarTelaDeCandidaturas();
 }
 
-// ── Vagas do setor Loja: triagem final com o gerente (a IA/o RH não entrevista; o RH manda o currículo por
-// fora do sistema e registra aqui a decisão dele). Ver backend/sql/051_gerente_loja.sql e 055 (WhatsApp). ──
-// Uma vaga do setor Loja normalmente vale pra várias lojas: se alguma delas tem WhatsApp do gerente cadastrado
-// (Configurações → WhatsApp e telefones), abre um modal pra escolher a loja e manda o currículo já pronto. Sem
-// nenhuma loja com número, cai no fluxo simples de sempre (só marca o encaminhamento, o RH manda por fora).
+// ── Vagas dos setores Loja e CR: triagem final com o gerente (a IA/o RH não entrevista; o RH manda o
+// currículo por fora do sistema e registra aqui a decisão dele). Ver backend/sql/051_gerente_loja.sql, 055
+// (WhatsApp) e 057 (CR). ──
+// Loja: a vaga normalmente vale pra várias lojas — se alguma delas tem WhatsApp do gerente cadastrado
+// (Configurações → WhatsApp e telefones), abre um modal pra escolher a loja e manda o currículo já pronto.
+// CR: não há "lojas", um único gerente atende todas as vagas do setor — o número vem direto de
+// configuracoes.gerente_whatsapp_cr. Sem nenhum número cadastrado (loja ou CR), cai no fluxo simples de
+// sempre: só marca o encaminhamento, o RH manda por fora.
 async function encaminharAoGerentePorId(id, nome) {
   const { data: c } = await db.from('vw_candidaturas')
-    .select('vaga_id,vaga_titulo,storage_path,nome').eq('id', id).maybeSingle();
-  const lojas = await lojasComGerenteDaVaga(c?.vaga_id);
+    .select('vaga_id,vaga_titulo,storage_path,nome,setor_nome').eq('id', id).maybeSingle();
+  const ehCR = c?.setor_nome === 'CR';
+  const destinos = ehCR
+    ? (app.cache?.config?.gerente_whatsapp_cr ? [{ id: null, sigla: 'CR', nome: 'CR', gerente_nome: app.cache.config.gerente_nome_cr, gerente_whatsapp: app.cache.config.gerente_whatsapp_cr }] : [])
+    : await lojasComGerenteDaVaga(c?.vaga_id);
 
-  if (!lojas.length) {
+  if (!destinos.length) {
     if (!await confirmar({
       titulo: 'Encaminhar ao gerente', rotulo: 'Encaminhar', perigo: false,
-      mensagem: `Encaminhar ${nome || 'este candidato'} ao gerente da loja?\n\nO currículo continua sendo enviado por fora do sistema ` +
+      mensagem: `Encaminhar ${nome || 'este candidato'} ao gerente ${ehCR ? 'do CR' : 'da loja'}?\n\nO currículo continua sendo enviado por fora do sistema ` +
                 '(WhatsApp, e-mail...): isto só marca que a candidatura está aguardando a decisão dele.'
     })) return;
     const { error } = await db.rpc('encaminhar_ao_gerente', { p_candidatura_id: id });
     if (error) { toast(mensagemErro(error), 'erro'); return; }
     fecharDrawer();
-    toast(`${nome || 'Candidato'} encaminhado ao gerente da loja`);
+    toast(`${nome || 'Candidato'} encaminhado ao gerente ${ehCR ? 'do CR' : 'da loja'}`);
     await recarregarTelaDeCandidaturas();
     return;
   }
 
-  await abrirModalEncaminharGerente(id, nome || c.nome, c, lojas);
+  await abrirModalEncaminharGerente(id, nome || c.nome, c, destinos);
 }
 
 async function encaminharAoGerente() {
@@ -209,7 +217,7 @@ async function encaminharAoGerente() {
 
 async function lojasComGerenteDaVaga(vagaId) {
   if (!vagaId) return [];
-  const { data } = await db.from('vaga_empresas').select('empresas(id,sigla,nome,gerente_whatsapp)').eq('vaga_id', vagaId);
+  const { data } = await db.from('vaga_empresas').select('empresas(id,sigla,nome,gerente_nome,gerente_whatsapp)').eq('vaga_id', vagaId);
   return (data || []).map(r => r.empresas).filter(e => e?.gerente_whatsapp);
 }
 
@@ -228,7 +236,7 @@ async function abrirModalEncaminharGerente(candidaturaId, nome, c, lojas) {
     })
   };
   $('#eg-nome').value = nome || '';
-  $('#eg-loja').innerHTML = lojas.map(l => `<option value="${l.id}">${escapeHtml(l.sigla)} — ${escapeHtml(l.nome)}</option>`).join('');
+  $('#eg-loja').innerHTML = lojas.map(l => `<option value="${l.id || ''}">${escapeHtml(l.sigla)} — ${escapeHtml(l.gerente_nome || l.nome)}</option>`).join('');
   $('#eg-msg').value = encaminharGerenteInfo.msg;
   $('#eg-preview').textContent = encaminharGerenteInfo.msg;
   abrirModal('modal-encaminhar-gerente');
@@ -252,8 +260,8 @@ let encaminhandoGerente = false;
 async function confirmarEncaminharGerente() {
   const info = encaminharGerenteInfo;
   if (!info || encaminhandoGerente) return;
-  const empresaId = $('#eg-loja').value;
-  const loja = info.lojas.find(l => l.id === empresaId);
+  const empresaId = $('#eg-loja').value || null;
+  const loja = info.lojas.find(l => (l.id || null) === empresaId);
   if (!loja) { toast('Escolha a loja', 'erro'); return; }
 
   encaminhandoGerente = true;
@@ -264,12 +272,12 @@ async function confirmarEncaminharGerente() {
     if (error) { toast(mensagemErro(error), 'erro'); return; }
 
     const tel = normalizaTelefone(loja.gerente_whatsapp);
-    if (tel) window.open(`https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent($('#eg-msg').value)}`, '_blank');
-    else toast('Candidato encaminhado, mas o WhatsApp da loja não pôde ser lido', 'erro');
+    if (tel) window.open(`https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent($('#eg-msg').value)}`, '_blank', 'noopener,noreferrer');
+    else toast('Candidato encaminhado, mas o WhatsApp não pôde ser lido', 'erro');
 
     fecharModal('modal-encaminhar-gerente');
     fecharDrawer();
-    toast(`Encaminhado ao gerente da ${loja.sigla}`);
+    toast(`Encaminhado ao gerente — ${loja.sigla}`);
     await recarregarTelaDeCandidaturas();
   } finally {
     encaminhandoGerente = false;
@@ -280,7 +288,7 @@ async function confirmarEncaminharGerente() {
 async function aprovarCandidaturaGerentePorId(id, nome) {
   if (!await confirmar({
     titulo: 'Aprovar candidato', rotulo: 'Aprovar', perigo: false,
-    mensagem: `Marcar ${nome || 'este candidato'} como aprovado pelo gerente da loja?`
+    mensagem: `Marcar ${nome || 'este candidato'} como aprovado pelo gerente?`
   })) return;
   const { error } = await db.rpc('aprovar_candidatura_gerente', { p_candidatura_id: id });
   if (error) { toast(mensagemErro(error), 'erro'); return; }
@@ -297,9 +305,9 @@ async function aprovarPeloGerente() {
 async function reprovarCandidaturaGerentePorId(id, nome) {
   if (!await confirmar({
     titulo: 'Reprovar candidato', rotulo: 'Reprovar', perigo: true,
-    mensagem: `Marcar ${nome || 'este candidato'} como reprovado pelo gerente da loja?\n\nA candidatura é encerrada e o candidato volta ao Banco de Talentos.`
+    mensagem: `Marcar ${nome || 'este candidato'} como reprovado pelo gerente?\n\nA candidatura é encerrada e o candidato volta ao Banco de Talentos.`
   })) return;
-  if (!await encerrarCandidatura(id, 'reprovado', 'Reprovado pelo gerente da loja')) return;
+  if (!await encerrarCandidatura(id, 'reprovado', 'Reprovado pelo gerente')) return;
   fecharDrawer();
   toast(`${nome || 'Candidato'} reprovado — volta ao Banco de Talentos`);
   await recarregarTelaDeCandidaturas();
@@ -359,7 +367,7 @@ async function abrirCandidatura(id) {
   $('#d-btn-devolver').style.display  = aberta ? 'flex' : 'none';
   $('#d-btn-reprovar').style.display  = aberta ? 'flex' : 'none';
   $('#d-btn-agendar').style.display   = PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
-  $('#d-btn-encaminhar-gerente').style.display = c.setor_nome === 'Loja' && PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
+  $('#d-btn-encaminhar-gerente').style.display = (c.setor_nome === 'Loja' || c.setor_nome === 'CR') && PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
   $('#d-btn-aprovar-gerente').style.display    = c.status === 'aguardando_gerente' && aberta ? 'flex' : 'none';
   $('#d-btn-curriculo').style.display = c.storage_path ? 'flex' : 'none';
   $('#d-sem-arquivo').style.display   = c.storage_path ? 'none' : 'flex';

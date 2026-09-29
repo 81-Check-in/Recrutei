@@ -17,7 +17,7 @@ import sanitizacao
 import agenda
 import status_robo
 from config import (
-    FORMATOS_ACEITOS, TAMANHO_MINIMO_ANEXO, TAMANHO_MINIMO_DOCUMENTO, LIMITE_EMAILS, REENVIO_DIAS_MINIMO,
+    FORMATOS_ACEITOS, TAMANHO_MAXIMO_ANEXO, TAMANHO_MINIMO_ANEXO, TAMANHO_MINIMO_DOCUMENTO, LIMITE_EMAILS, REENVIO_DIAS_MINIMO,
     MODO_SIMULACAO, MODELO_CLASSIFICACAO_PADRAO, MODELO_AVALIACAO_PADRAO,
     CONFIANCA_MINIMA_PADRAO, VERSAO_PROMPT_ANALISE, PORTAIS_DE_CURRICULO, ASSUNTOS_BLOQUEADOS, log,
 )
@@ -117,6 +117,13 @@ def _registrar_excecao(msg: Dict, tipo: str, detalhe: str,
         **extra,
     })
     stats.excecoes_geradas += 1
+
+
+def _detalhe_nao_curriculo(ident: Dict) -> str:
+    """Motivo mostrado na fila. Quando a IA reconhece o tipo do anexo (laudo, pagamento, phishing...), o texto começa com
+    "Anexo de ..." — o painel usa esse início para destacar o aviso (frontend/js/vagas.js, avisoDoAnexo)."""
+    tipo = ia.TIPOS_DOCUMENTO.get(ident.get("tipo_documento"))
+    return f"Anexo de {tipo} — não é currículo" if tipo else "Conteúdo não identificado como currículo"
 
 
 def _corpo_para_exibir(msg: Dict) -> Optional[str]:
@@ -266,6 +273,14 @@ def _obter_texto_de_arquivo(msg: Dict, cfg: Optional[Dict] = None) -> tuple:
             "formato_invalido",
             f"Anexo muito pequeno ({msg['anexos'][0]['tamanho']} bytes)"
         )
+
+    # Anexo em formato aceito, mas maior que o limite: não é "sem anexo" (o RH abre o arquivo no e-mail)
+    grandes = msg.get("anexos_grandes")
+    if grandes:
+        g = grandes[0]
+        return None, False, None, None, (
+            "formato_invalido",
+            f"Anexo '{g['nome']}' grande demais ({g['tamanho'] / 1024 / 1024:.0f} MB; o limite é {TAMANHO_MAXIMO_ANEXO // 1024 // 1024} MB)")
 
     return None, False, None, None, ("sem_anexo", "E-mail sem anexo nem link de currículo")
 
@@ -710,8 +725,7 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
         return _marcar_lido()
 
     if not ident.get("e_curriculo"):
-        _registrar_excecao(msg, "nao_e_curriculo",
-                           "Conteúdo não identificado como currículo", stats,
+        _registrar_excecao(msg, "nao_e_curriculo", _detalhe_nao_curriculo(ident), stats,
                            excecao_id=excecao_id, texto=texto)
         return _marcar_lido()
 

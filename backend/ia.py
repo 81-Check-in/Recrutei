@@ -93,6 +93,19 @@ def _inteiro_0_100(valor) -> int:
         return 0
 
 
+# O que a IA diz que o anexo é, quando não é currículo. Só esses valores valem; o painel avisa o RH nos que pedem atenção.
+TIPOS_DOCUMENTO = {
+    "laudo": "laudo ou atestado médico", "pagamento": "boleto, comprovante ou cobrança de pagamento",
+    "phishing": "possível golpe (phishing)", "documento_pessoal": "documento pessoal (RG, CPF, comprovante)",
+    "propaganda": "propaganda ou divulgação", "outro": None,
+}
+
+
+def _tipo_documento(r: Dict) -> Optional[str]:
+    tipo = normalizar_texto(str(r.get("tipo_documento") or "")).replace(" ", "_")
+    return tipo if tipo in TIPOS_DOCUMENTO and tipo != "outro" else None
+
+
 def _normalizar_identificacao(r: Dict, regioes: Optional[List[str]] = None) -> Dict:
     """
     regioes: nomes do vocabulário (regioes_df). "regiao" só vale se for EXATAMENTE um deles (sem depender de caixa ou
@@ -104,6 +117,7 @@ def _normalizar_identificacao(r: Dict, regioes: Optional[List[str]] = None) -> D
         bairro = None
     return {
         "e_curriculo": r.get("e_curriculo") is True,
+        "tipo_documento": _tipo_documento(r) if r.get("e_curriculo") is not True else None,
         "nome_candidato": _texto_curto(r.get("nome_candidato"), 120),
         "cidade": _texto_curto(r.get("cidade"), 80),
         "regiao": por_nome.get(normalizar_texto(str(r.get("regiao") or ""))),
@@ -387,6 +401,7 @@ Um currículo contém elementos como: nome, contato, experiência profissional, 
 Responda SOMENTE com JSON válido, sem markdown e sem texto adicional:
 {
   "e_curriculo": true,
+  "tipo_documento": "se NÃO for currículo, o que é: laudo, pagamento, phishing, documento_pessoal, propaganda ou outro; se for currículo, null",
   "nome_candidato": "nome completo ou null",
   "cidade": "cidade onde o candidato MORA, com a UF quando informada (ex.: Brasília/DF), ou null",
   "regiao": "a região da lista REGIÕES onde o candidato MORA, exatamente como escrita na lista, ou null",

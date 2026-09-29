@@ -426,13 +426,15 @@ async function carregarExcecoes() {
       : `<button class="btn-sm" onclick="verEmailExcecao('${e.id}')" title="Ver o e-mail original">
            <i class="ti ti-mail"></i>Ver e-mail</button>
          ${botaoReprocessar}`;
-    return `<div class="exc-full">
-      <div class="exc-icon-box pill-${cor}"><i class="ti ${ic}"></i></div>
+    // "Anexo de laudo/pagamento/golpe..." (backend/pipeline.py, _detalhe_nao_curriculo): a IA reconheceu o que o anexo é. Destaca em vermelho.
+    const avisoAnexo = e.tipo === 'nao_e_curriculo' && /^Anexo de /.test(e.detalhe_erro || '');
+    return `<div class="exc-full${avisoAnexo ? ' exc-alerta' : ''}">
+      <div class="exc-icon-box pill-${avisoAnexo ? 'red' : cor}"><i class="ti ${avisoAnexo ? 'ti-alert-octagon' : ic}"></i></div>
       <div class="exc-info">
         <div class="exc-email">${escapeHtml(e.email_remetente)}</div>
-        <div class="exc-meta">${tempoRelativo(e.recebido_em)} · ${escapeHtml(e.detalhe_erro || lbl)}</div>
+        <div class="exc-meta">${tempoRelativo(e.recebido_em)} · ${avisoAnexo ? '<strong>Atenção:</strong> ' : ''}${escapeHtml(e.detalhe_erro || lbl)}</div>
       </div>
-      <span class="pill pill-${cor}">${lbl}</span>
+      <span class="pill pill-${avisoAnexo ? 'red' : cor}">${avisoAnexo ? 'Atenção: anexo' : lbl}</span>
       <div class="exc-btns">
         ${botoesDeLeitura}
         <button class="btn-sm" onclick="resolverExcecao('${e.id}','revisado')">Revisar</button>

@@ -17,6 +17,17 @@ async function buscarConsideracoes(candidatoId) {
   return data || [];
 }
 
+// Quais destes candidatos têm consideração do RH: Set de candidato_id. Falha em silêncio (o ponto é só um aviso).
+async function candidatosComConsideracao(ids) {
+  const unicos = [...new Set((ids || []).filter(Boolean))];
+  if (!unicos.length) return new Set();
+  const { data } = await db.from('vw_consideracoes').select('candidato_id').in('candidato_id', unicos);
+  return new Set((data || []).map(n => n.candidato_id));
+}
+
+// Ponto azul ao lado do nome: este candidato tem observação do RH
+const PONTO_CONSIDERACAO = '<span class="ponto-consid" title="Este candidato tem consideração do RH" aria-label="Tem consideração do RH"></span>';
+
 function htmlConsideracoes(lista) {
   if (!lista.length) return '<span class="sem-dados">Nenhuma consideração ainda</span>';
   return lista.map(n => {

@@ -176,7 +176,12 @@ function mensagemErro(error) {
 
 const ehAdministrador = () => app.perfil?.perfil === 'administrador';
 
+// Verdadeiro durante a atualização automática (tempo real, navegacao.js): a lista é redesenhada sem piscar
+// "Carregando..." nem trocar o que está na tela por um erro passageiro.
+let recargaSilenciosa = false;
+
 function loading(container, msg = 'Carregando...') {
+  if (recargaSilenciosa) return;
   container.innerHTML =
     `<div class="estado-vazio"><i class="ti ti-loader-2 girando"></i><p>${msg}</p></div>`;
 }
@@ -188,6 +193,7 @@ function vazio(container, icone, msg, sub = '') {
 }
 
 function erro(container, msg) {
+  if (recargaSilenciosa) return;
   container.innerHTML = `<div class="estado-vazio erro">
     <i class="ti ti-alert-triangle"></i><p>Erro ao carregar</p>
     <span>${escapeHtml(msg)}</span></div>`;

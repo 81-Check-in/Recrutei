@@ -2978,5 +2978,44 @@ class TestDddEDdiDePainel(unittest.TestCase):
             self.assertEqual(bd.criar_candidato.call_args.args[0]["telefone_e164"], esperado, cfg)
 
 
+class TesteTipoRealDaImagem(unittest.TestCase):
+    """leitor_email._extrair_anexos: imagem com o tipo declarado trocado (.png que é JPEG e vice-versa) não é "formato inválido"."""
+
+    def _anexos(self, tipo_declarado, conteudo):
+        import email.message
+        import leitor_email
+        msg = email.message.EmailMessage()
+        msg.set_content("oi")
+        maintype, subtype = tipo_declarado.split("/")
+        msg.add_attachment(conteudo, maintype=maintype, subtype=subtype, filename="foto")
+        return leitor_email._extrair_anexos(msg)
+
+    def test_imagem_com_tipo_trocado_e_aceita_e_corrigida(self):
+        jpeg = b"\xff\xd8\xff\xe1" + b"x" * 300
+        png = b"\x89PNG\r\n\x1a\n" + b"x" * 300
+        for declarado, conteudo, real in (("image/png", jpeg, "image/jpeg"), ("image/jpeg", png, "image/png"),
+                                          ("image/png", png, "image/png")):
+            with self.subTest(declarado=declarado, real=real):
+                anexos = self._anexos(declarado, conteudo)
+                self.assertEqual(len(anexos), 1)
+                self.assertEqual(anexos[0]["tipo_mime"], real)
+                self.assertTrue(anexos[0]["assinatura_ok"])
+
+    def test_imagem_com_conteudo_estranho_continua_invalida(self):
+        anexos = self._anexos("image/png", b"MZ" + b"x" * 300)
+        self.assertFalse(anexos[0]["assinatura_ok"])
+
+    def test_anexo_grande_demais_nao_vira_sem_anexo(self):
+        import pipeline
+        msg = {"remetente": "a@b.com", "corpo": "", "anexos": [],
+               "anexos_grandes": [{"nome": "cv.pdf", "tamanho": 26 * 1024 * 1024}]}
+        _, _, _, _, erro = pipeline._obter_texto_de_arquivo(msg, {})
+        self.assertEqual(erro[0], "formato_invalido")
+        self.assertIn("grande demais", erro[1])
+        self.assertIn("26 MB", erro[1])
+        msg["anexos_grandes"] = []
+        self.assertEqual(pipeline._obter_texto_de_arquivo(msg, {})[4][0], "sem_anexo")
+
+
 if __name__ == "__main__":
     unittest.main()

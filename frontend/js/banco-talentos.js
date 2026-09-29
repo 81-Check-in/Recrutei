@@ -339,7 +339,7 @@ function htmlCartaoBanco(c, extra = {}) {
       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();abrirTalento('${c.id}')}">
     <div class="curr-ini">${iniciais(c.nome)}</div>
     <div class="curr-info">
-      <div class="curr-nome">${escapeHtml(c.nome || 'Nome não extraído')} ${htmlTagsCandidato(c)}</div>
+      <div class="curr-nome">${escapeHtml(c.nome || 'Nome não extraído')}${extra.consid ? PONTO_CONSIDERACAO : ''} ${htmlTagsCandidato(c)}</div>
       <div class="curr-resumo">${escapeHtml(resumo)}</div>
       <div class="curr-meta">
         ${sugestao ? `<span title="Sugestão da IA: área / cargo / nível"><i class="ti ti-sparkles"></i>${escapeHtml(sugestao)}</span>` : ''}
@@ -381,7 +381,8 @@ async function carregarBanco() {
   atualizarPaginacao($('#banco-mais'), estadoBanco, $('#banco-total'), ' candidatos');
   if (!resultado.data.length) return;
 
-  el.innerHTML = resultado.data.map(c => htmlCartaoBanco(c)).join('');
+  const comConsid = await candidatosComConsideracao(resultado.data.map(c => c.id));
+  el.innerHTML = resultado.data.map(c => htmlCartaoBanco(c, { consid: comConsid.has(c.id) })).join('');
 }
 
 // Atalhos de outras telas: partem de uma lista limpa (uma busca antiga esquecida não pode esconder os candidatos)
@@ -541,6 +542,7 @@ async function carregarRankingVaga() {
   const porId = new Map((cartoes || []).map(c => [c.id, c]));
 
   atualizarPaginacao($('#banco-mais'), estadoBanco, $('#banco-total'), ' currículos');
+  const comConsid = await candidatosComConsideracao(ranking.map(r => r.candidato_id));
   el.innerHTML = ranking.map((r, i) => {
     const c = porId.get(r.candidato_id);
     if (!c) return '';
@@ -550,7 +552,7 @@ async function carregarRankingVaga() {
     const meta = r.km_mais_proxima != null
       ? `<span title="Distância em linha reta até a loja mais próxima entre as escolhidas (estimativa)"><i class="ti ti-route"></i>${formatarKm(r.km_mais_proxima)} da ${escapeHtml(r.loja_mais_proxima)}</span>`
       : `<span class="sem-dados" title="Sem região identificada não dá para estimar a distância. Informe em Editar dados"><i class="ti ti-route"></i>região não identificada</span>`;
-    return htmlCartaoBanco(c, { selo, termos, meta });
+    return htmlCartaoBanco(c, { selo, termos, meta, consid: comConsid.has(c.id) });
   }).join('');
 }
 

@@ -75,9 +75,8 @@ async function iniciarSessao(user) {
   $('#user-cargo').textContent = perfil.cargo;
   $('#user-av').textContent = perfil.iniciais || iniciais(perfil.nome);
 
-  // Administrador vê o item de Configurações
-  $('#nav-config').style.display =
-    perfil.perfil === 'administrador' ? 'flex' : 'none';
+  // Configurações abre para todo o RH: o administrador vê tudo, o gerente de RH só os WhatsApp dos gerentes (CR e lojas)
+  $('#nav-config').style.display = 'flex';
 
   db.from('usuarios').update({ ultimo_acesso: new Date().toISOString() })
     .eq('id', user.id).then(() => {});

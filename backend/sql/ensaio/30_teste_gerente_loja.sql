@@ -1,4 +1,4 @@
--- Testes de "Encaminhar ao gerente" (vagas do setor Loja) — 050/051. Roda depois de 020–051.
+-- Testes de "Encaminhar ao gerente" (vagas dos setores Loja e CR) — 050/051/057. Roda depois de 020–057.
 -- Tudo dentro de uma transação que termina em ROLLBACK: não deixa nada no banco.
 \set ON_ERROR_STOP on
 begin;
@@ -25,31 +25,45 @@ end $$;
 do $$
 declare
   beto        constant uuid := '00000000-0000-0000-0000-0000000000b1';
-  loja        uuid; logistica uuid;
-  vaga_loja   uuid; vaga_outra uuid;
-  cand1 uuid; cand2 uuid; cand3 uuid;
-  c1 uuid; c2 uuid; c3 uuid;
+  loja        uuid; logistica uuid; cr uuid;
+  vaga_loja   uuid; vaga_outra uuid; vaga_cr uuid;
+  cand1 uuid; cand2 uuid; cand3 uuid; cand4 uuid;
+  c1 uuid; c2 uuid; c3 uuid; c4 uuid;
   s text;
 begin
   select id into loja      from setores where nome = 'Loja';
   select id into logistica from setores where nome = 'Logística';
+  select id into cr        from setores where nome = 'CR';
 
   insert into vagas (setor_id, titulo, quantidade, funcao_setor, nivel_funcao)
     values (loja, 'V-Gerente Repositor', 1, 'Repositor', 'junior') returning id into vaga_loja;
   insert into vagas (setor_id, titulo, quantidade, funcao_setor, nivel_funcao)
     values (logistica, 'V-Gerente Logistica', 1, 'Auxiliar', 'junior') returning id into vaga_outra;
+  insert into vagas (setor_id, titulo, quantidade, funcao_setor, nivel_funcao)
+    values (cr, 'V-Gerente CR', 1, 'Encarregado', 'junior') returning id into vaga_cr;
 
   insert into candidatos (nome, cidade, uf, hash_identidade) values ('Teste Gerente Um',   'Brasília', 'DF', 'hash-gerente-1') returning id into cand1;
   insert into candidatos (nome, cidade, uf, hash_identidade) values ('Teste Gerente Dois',  'Brasília', 'DF', 'hash-gerente-2') returning id into cand2;
   insert into candidatos (nome, cidade, uf, hash_identidade) values ('Teste Gerente Tres',  'Brasília', 'DF', 'hash-gerente-3') returning id into cand3;
+  insert into candidatos (nome, cidade, uf, hash_identidade) values ('Teste Gerente Quatro', 'Brasília', 'DF', 'hash-gerente-4') returning id into cand4;
 
   perform pg_temp.como(beto);
   c1 := atribuir_candidato_vaga(cand1, vaga_loja);
   c2 := atribuir_candidato_vaga(cand2, vaga_loja);
   c3 := atribuir_candidato_vaga(cand3, vaga_outra);
+  c4 := atribuir_candidato_vaga(cand4, vaga_cr);
 
-  -- só vale para vagas do setor Loja
+  -- só vale para vagas dos setores Loja ou CR
   perform pg_temp.deve_falhar(format($f$select encaminhar_ao_gerente(%L)$f$, c3), 'setor Loja');
+
+  -- vaga do CR: encaminha sem escolher loja (não há vaga_empresas nem gerente por loja; p_empresa_id fica null)
+  perform encaminhar_ao_gerente(c4);
+  select status::text || '/' || (encaminhado_gerente_empresa_id is null)
+    into s from candidaturas where id = c4;
+  assert s = 'aguardando_gerente/true', 'encaminhar do CR não exige loja, got ' || s;
+  perform aprovar_candidatura_gerente(c4);
+  select status::text || '/' || resultado_final into s from candidaturas where id = c4;
+  assert s = 'aprovado/Aprovado pelo gerente', 'aprovar do CR, got ' || s;
 
   -- aprovar antes de encaminhar: não está aguardando o gerente
   perform pg_temp.deve_falhar(format($f$select aprovar_candidatura_gerente(%L)$f$, c1), 'aguardando a decisão do gerente');
@@ -68,14 +82,14 @@ begin
   perform aprovar_candidatura_gerente(c1);
   select status::text || '/' || (encerrada_em is null) || '/' || resultado_final
     into s from candidaturas where id = c1;
-  assert s = 'aprovado/true/Aprovado pelo gerente da loja', 'aprovar pelo gerente, got ' || s;
+  assert s = 'aprovado/true/Aprovado pelo gerente', 'aprovar pelo gerente, got ' || s;
 
   -- reprovar (depois de encaminhado) usa a mesma encerrar_candidatura de sempre: fecha e devolve ao banco
   perform encaminhar_ao_gerente(c2);
-  perform encerrar_candidatura(c2, 'reprovado', 'Reprovado pelo gerente da loja');
+  perform encerrar_candidatura(c2, 'reprovado', 'Reprovado pelo gerente');
   select ca.status::text || '/' || (ca.encerrada_em is not null) || '/' || ca.resultado_final || '/' || c.status_banco::text
     into s from candidaturas ca join candidatos c on c.id = ca.candidato_id where ca.id = c2;
-  assert s = 'reprovado/true/Reprovado pelo gerente da loja/ativo', 'reprovar pelo gerente devolve ao banco, got ' || s;
+  assert s = 'reprovado/true/Reprovado pelo gerente/ativo', 'reprovar pelo gerente devolve ao banco, got ' || s;
 
   raise notice 'gerente_loja: ok';
 end $$;
