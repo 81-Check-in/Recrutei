@@ -15,6 +15,7 @@ function abrirCandidatosDaVaga(vagaId, titulo, pronta = true) {
   $('#busca-candidatos').value = '';
   $('#filtro-cand-status').value = '';
   $('#filtro-cand-sexo').value = '';
+  $('#filtro-cand-setor').value = '';
   estadoCandidatos.limite = estadoCandidatos.tamanhoPagina;
   irPara('candidatos');
 }
@@ -46,14 +47,35 @@ function maisCandidatos() {
   return carregarCandidatos();
 }
 
+// O filtro de setor só lista os setores que têm alguém em processo (na vaga aberta, se for o caso)
+async function atualizarOpcoesSetorEmProcesso() {
+  const sel = $('#filtro-cand-setor');
+  const setores = new Set();
+  for (let de = 0; ; de += 1000) {
+    let q = db.from('vw_candidatos').select('setor_nome').range(de, de + 999);
+    if (vagaEmProcesso) q = q.eq('vaga_id', vagaEmProcesso.id);
+    const { data, error } = await q;
+    if (error) return;                                   // mantém as opções que já estavam
+    data.forEach(c => c.setor_nome && setores.add(c.setor_nome));
+    if (data.length < 1000) break;
+  }
+  const atual = sel.value;
+  const nomes = [...setores].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  sel.innerHTML = '<option value="">Todos os setores</option>' +
+    nomes.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  sel.value = nomes.includes(atual) ? atual : '';
+}
+
 async function carregarCandidatos() {
   const el = $('#candidatos-body');
 
+  if (estadoCandidatos.limite === estadoCandidatos.tamanhoPagina) await atualizarOpcoesSetorEmProcesso();
+  const setor  = $('#filtro-cand-setor').value;
   const status = $('#filtro-cand-status').value;
   const sexo   = $('#filtro-cand-sexo').value;
   const busca  = $('#busca-candidatos').value.trim();
   atualizarModoVaga();
-  paginaInicialSeFiltroMudou(estadoCandidatos, JSON.stringify([status, sexo, busca, vagaEmProcesso?.id || null]));
+  paginaInicialSeFiltroMudou(estadoCandidatos, JSON.stringify([status, setor, sexo, busca, vagaEmProcesso?.id || null]));
 
   if (!recargaSilenciosa && estadoCandidatos.limite === estadoCandidatos.tamanhoPagina) {
     el.innerHTML = '<tr><td colspan="6"><div class="estado-vazio"><i class="ti ti-loader-2 girando"></i><p>Carregando...</p></div></td></tr>';
@@ -62,6 +84,7 @@ async function carregarCandidatos() {
   let q = db.from('vw_candidatos').select('*', { count: 'exact' });
   if (status === 'aguardando') q = q.in('status', ['aguardando', 'selecionado']);
   else if (status) q = q.eq('status', status);
+  if (setor) q = q.eq('setor_nome', setor);
   if (sexo) q = sexo === 'nao_informado' ? q.is('sexo', null) : q.eq('sexo', sexo);
   if (busca) q = q.ilike('nome', `%${busca}%`);
   if (vagaEmProcesso) q = q.eq('vaga_id', vagaEmProcesso.id);

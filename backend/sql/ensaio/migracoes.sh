@@ -49,6 +49,7 @@ MIGRACOES=(
   064_dashboard_cvs_serie.sql
   065_dashboard_entrevistas_contratacoes.sql
   066_revisao_sem_nivel_vira_junior.sql
+  069_caixa_emails_dia.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(

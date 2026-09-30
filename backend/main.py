@@ -120,6 +120,9 @@ def main() -> int:
                         "o RH corrige à mão e a correção nunca é refeita). Com --limite N faz só N")
     p.add_argument("--sanitizacao", action="store_true",
                    help="gera a lista de sugestões de sanitização se o intervalo venceu, e avisa o RH")
+    p.add_argument("--estatisticas-caixa", action="store_true",
+                   help="conta os e-mails da caixa por dia (total, com anexo, com PDF/DOC) e grava para o dashboard; só leitura na caixa. "
+                        "Sem --desde conta a caixa toda; a rotina diária já refaz os últimos 7 dias sozinha")
     p.add_argument("--forcar", action="store_true",
                    help="com --sanitizacao: gera a lista agora, mesmo antes do prazo")
     args = p.parse_args()
@@ -151,6 +154,17 @@ def main() -> int:
         sanitizacao.registrar_expurgo(r.get("expurgo"))
         log.info(f"Arquivos removidos do Storage: {r.get('arquivos_removidos', 0)} | "
                  f"Sugestões de sanitização pendentes: {r.get('sanitizacao_pendentes', 0)}")
+        return 0
+
+    if args.estatisticas_caixa:
+        import database as bd
+        import leitor_email as mail
+        from datetime import date
+        from config import log
+        linhas = mail.estatisticas_caixa(date.fromisoformat(args.desde) if args.desde else None)
+        log.info(f"Dias contados: {len(linhas)} | e-mails: {sum(l['emails'] for l in linhas)} | "
+                 f"com PDF/DOC: {sum(l['com_documento'] for l in linhas)}")
+        log.info(f"Dias gravados no banco: {bd.gravar_estatisticas_caixa(linhas)}")
         return 0
 
     if args.sanitizacao:

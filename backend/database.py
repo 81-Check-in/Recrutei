@@ -47,6 +47,17 @@ def obter_cursor_imap() -> Tuple[int, int]:
     return int(v.get(CHAVE_CURSOR_UID) or 0), int(v.get(CHAVE_CURSOR_VALIDADE) or 0)
 
 
+def gravar_estatisticas_caixa(linhas: List[Dict]) -> int:
+    """Grava (ou corrige) a contagem diária de e-mails da caixa (tabela caixa_emails_dia, só números). Devolve quantos dias gravou."""
+    if MODO_SIMULACAO or not linhas:
+        return 0
+    agora_iso = agora()
+    registros = [{**l, "atualizado_em": agora_iso} for l in linhas]
+    for i in range(0, len(registros), 200):
+        conectar().table("caixa_emails_dia").upsert(registros[i:i + 200], on_conflict="dia").execute()
+    return len(registros)
+
+
 def salvar_cursor_imap(ultimo_uid: int, uidvalidity: int) -> None:
     if MODO_SIMULACAO:
         return

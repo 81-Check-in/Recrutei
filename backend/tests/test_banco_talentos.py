@@ -1783,6 +1783,7 @@ class TestExecucaoDiaria(unittest.TestCase):
         bd.listar_uploads_manuais_pendentes.return_value = []
         with patch.object(pipeline, "bd", bd), patch.object(pipeline.mail, "buscar_novos", return_value=([], 7)), \
              patch.object(pipeline.sanitizacao, "verificar_e_gerar"), \
+             patch.object(pipeline.mail, "estatisticas_caixa", return_value=[]), \
              patch.object(pipeline, "reavaliar_pendentes") as reavaliar:
             pipeline.executar()
         reavaliar.assert_not_called()
@@ -2491,6 +2492,7 @@ class TestPausaDaIA(unittest.TestCase):
              patch.object(pipeline.mail, "marcar_como_lidas") as marcar, \
              patch.object(pipeline, "processar_mensagem", side_effect=tratar), \
              patch.object(pipeline, "_registrar_excecao") as excecao, \
+             patch.object(pipeline.mail, "estatisticas_caixa", return_value=[]), \
              patch.object(pipeline.sanitizacao, "verificar_e_gerar"):
             pipeline.executar()
         return busca, marcar, excecao

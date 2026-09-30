@@ -326,6 +326,50 @@ def contar_nao_lidos(apos_uid: int = 0, uidvalidity_salvo: int = 0) -> int:
         return len([u for u in dados[0].split() if int(u) > apos_uid])          # "UID n:*" sempre inclui o maior UID da caixa
 
 
+_EXT_DOCUMENTO = re.compile(r"\.(pdf|docx?|odt|rtf)$")
+_EXT_ANEXO = re.compile(r"\.(pdf|docx?|odt|rtf|jpe?g|png|gif|heic|webp|xlsx?|zip)$")
+
+
+def estatisticas_caixa(desde: Optional[date] = None) -> List[Dict]:
+    """
+    Quantos e-mails chegaram por dia na caixa de entrada: total, com anexo e com PDF/DOC/DOCX (o mais próximo de "e-mail com
+    currículo"). Lê só a estrutura de cada mensagem (INTERNALDATE + BODYSTRUCTURE) em modo somente leitura: não baixa anexos e não
+    marca nada como lido. desde = só de então em diante (None = a caixa toda). Devolve [{"dia", "emails", "com_anexo", "com_documento"}].
+    O dia é o do horário da própria caixa (o mesmo do servidor). Levanta exceção se a caixa não responder.
+    """
+    por_dia: Dict[str, Dict] = {}
+    with conexao_imap() as conn:
+        conn.select(IMAP_PASTA_ENTRADA, readonly=True)
+        criterio: tuple = ("ALL",)
+        if desde:
+            criterio += ("SINCE", f"{desde.day:02d}-{_MESES_IMAP[desde.month - 1]}-{desde.year}")
+        status, dados = conn.search(None, *criterio)
+        if status != "OK":
+            raise RuntimeError("Falha ao listar as mensagens da caixa")
+        ids = dados[0].split()
+        for i in range(0, len(ids), 500):
+            status, blocos = conn.fetch(b",".join(ids[i:i + 500]), "(INTERNALDATE BODYSTRUCTURE)")
+            if status != "OK":
+                raise RuntimeError("Falha ao ler a estrutura das mensagens")
+            for item in blocos:
+                bruto = item[0] if isinstance(item, tuple) else item
+                if not isinstance(bruto, (bytes, bytearray)):
+                    continue
+                texto = bruto.decode("latin-1", "ignore")
+                m = re.search(r'INTERNALDATE "(\d+)-(\w{3})-(\d{4})', texto)
+                if not m or m.group(2).title() not in _MESES_IMAP:
+                    continue
+                dia = date(int(m.group(3)), _MESES_IMAP.index(m.group(2).title()) + 1, int(m.group(1))).isoformat()
+                nomes = [a or b for a, b in re.findall(r'"name" "([^"]+)"|"filename" "([^"]+)"', texto.lower())]
+                linha = por_dia.setdefault(dia, {"dia": dia, "emails": 0, "com_anexo": 0, "com_documento": 0})
+                linha["emails"] += 1
+                if any(_EXT_ANEXO.search(n) for n in nomes) or '"attachment"' in texto.lower():
+                    linha["com_anexo"] += 1
+                if any(_EXT_DOCUMENTO.search(n) for n in nomes):
+                    linha["com_documento"] += 1
+    return sorted(por_dia.values(), key=lambda r: r["dia"])
+
+
 def buscar_por_message_id(message_id: str) -> Optional[Dict]:
     """
     Busca de novo uma mensagem específica pelo cabeçalho Message-ID — usada para

@@ -229,6 +229,10 @@
               <button type="button" data-agrupar="semana" onclick="setSerieCvs('semana')">Semana</button>
               <button type="button" data-agrupar="mes" onclick="setSerieCvs('mes')">Mês</button>
             </div></div>
+          <div class="linhas-legenda" id="serie-legenda">
+            <span class="so-caixa"><i style="background:#94A3B8"></i>E-mails recebidos</span>
+            <span class="so-caixa"><i style="background:#93C5FD"></i>Com PDF/DOC anexo</span>
+            <span><i style="background:#3B82F6"></i>CVs no banco</span></div>
           <div class="serie" id="serie-cvs"></div>
         </div>
 
@@ -554,6 +558,9 @@
             <option value="reprovado">Reprovado</option>
             <option value="nao_compareceu">Não compareceu</option>
             <option value="contratado">Contratado</option>
+          </select>
+          <select class="sel" id="filtro-cand-setor" aria-label="Setor">
+            <option value="">Todos os setores</option>
           </select>
           <select class="sel" id="filtro-cand-sexo" aria-label="Sexo">
             <option value="">Qualquer sexo</option>
@@ -1098,9 +1105,9 @@
     <button class="modal-x" onclick="fecharModal('modal-upload-manual')"><i class="ti ti-x"></i></button></div>
   <div class="f-campo"><label for="up-vaga">Vaga <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
     <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
-  <div class="f-campo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC ou DOCX — até 10 MB cada; pode escolher vários de uma vez)</span></label>
+  <div class="f-campo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC, DOCX, JPG ou PNG — até 10 MB cada; pode escolher vários de uma vez)</span></label>
     <input id="up-arquivo" type="file" multiple
-      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></div>
+      accept=".pdf,.doc,.docx,.jpg,.jpeg,.jfif,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"></div>
   <div class="modal-acoes">
     <button class="btn-cancel" onclick="fecharModal('modal-upload-manual')">Cancelar</button>
     <button class="btn-primary" id="up-btn-enviar" onclick="enviarUploadManual()">
@@ -1148,6 +1155,18 @@
   <div class="modal-acoes">
     <button type="button" class="btn-cancel" id="confirmar-cancelar" onclick="responderConfirmacao(false)">Cancelar</button>
     <button type="button" class="btn-primary" id="confirmar-ok" onclick="responderConfirmacao(true)">Confirmar</button>
+  </div>
+</div></div>
+
+<!-- Entrevista agendada por engano: voltar o candidato para Em processo ou (só administrador) apagar a entrevista -->
+<div class="modal-overlay" id="modal-voltar-entrevista"><div class="modal" style="width:440px">
+  <div class="modal-hd"><div class="modal-tit">
+    <i class="ti ti-arrow-back-up" style="color:var(--blue)"></i><span>Voltar entrevista</span></div></div>
+  <p id="voltar-ent-msg" style="font-size:13px;color:var(--text-2);line-height:1.65"></p>
+  <div class="modal-acoes" style="flex-wrap:wrap">
+    <button type="button" class="btn-cancel" onclick="fecharModal('modal-voltar-entrevista')">Cancelar</button>
+    <button type="button" class="btn-primary btn-perigo" id="voltar-ent-apagar" onclick="voltarEntrevista(true)"><i class="ti ti-trash"></i>Apagar entrevista</button>
+    <button type="button" class="btn-primary" onclick="voltarEntrevista(false)"><i class="ti ti-arrow-back-up"></i>Voltar para Em processo</button>
   </div>
 </div></div>
 

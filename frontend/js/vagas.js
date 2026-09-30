@@ -546,8 +546,17 @@ async function reprocessarTudo() {
 const FORMATOS_UPLOAD_MANUAL = {
   'application/pdf': '.pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-  'application/msword': '.doc'
+  'application/msword': '.doc',
+  'image/jpeg': '.jpg',          // foto do currículo (o robô lê o texto da imagem); .jfif e .jpeg também são JPEG
+  'image/png': '.png'
 };
+const TIPO_POR_EXTENSAO_UPLOAD = { jfif: 'image/jpeg', jpe: 'image/jpeg', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+
+// O navegador às vezes não informa o tipo (ex.: .jfif no Windows): nesse caso vale a extensão
+function tipoDoArquivoManual(arquivo) {
+  if (FORMATOS_UPLOAD_MANUAL[arquivo.type]) return arquivo.type;
+  return TIPO_POR_EXTENSAO_UPLOAD[(arquivo.name.split('.').pop() || '').toLowerCase()] || '';
+}
 const TAMANHO_MAXIMO_UPLOAD_MANUAL = 10 * 1024 * 1024;   // mesmo limite do backend (config.TAMANHO_MAXIMO_ANEXO)
 
 async function abrirModalUploadManual() {
@@ -573,12 +582,12 @@ async function enviarUploadManual() {
   const validos = [];
   let semFormato = 0, semTamanho = 0;
   for (const arquivo of arquivos) {
-    if (!FORMATOS_UPLOAD_MANUAL[arquivo.type]) { semFormato++; continue; }
+    if (!tipoDoArquivoManual(arquivo)) { semFormato++; continue; }
     if (arquivo.size > TAMANHO_MAXIMO_UPLOAD_MANUAL) { semTamanho++; continue; }
     validos.push(arquivo);
   }
   if (!validos.length) {
-    toast(semFormato ? 'Formato não aceito — envie PDF, DOC ou DOCX' : 'Arquivo maior que 10 MB', 'erro');
+    toast(semFormato ? 'Formato não aceito — envie PDF, DOC, DOCX, JPG ou PNG' : 'Arquivo maior que 10 MB', 'erro');
     return;
   }
 
@@ -613,16 +622,17 @@ async function enviarUploadManual() {
 // `registrado` = true assim que o arquivo está gravado na fila (mesmo que a análise em si falhe depois —
 // nesse caso ele continua na fila para a rotina agendada tentar de novo, e some no card "Últimos envios").
 async function enviarUmCurriculoManual(arquivo, vagaId, btn, progresso) {
-  const ext = FORMATOS_UPLOAD_MANUAL[arquivo.type];
+  const tipo = tipoDoArquivoManual(arquivo);
+  const ext = FORMATOS_UPLOAD_MANUAL[tipo];
   const caminho = `manual/${new Date().getFullYear()}/${crypto.randomUUID()}${ext}`;
   const { error: erroUpload } = await db.storage.from('curriculos')
-    .upload(caminho, arquivo, { contentType: arquivo.type, upsert: false });
+    .upload(caminho, arquivo, { contentType: tipo, upsert: false });
   if (erroUpload) return { registrado: false, tipo: 'erro', mensagem: erroUpload.message };
 
   const { data: registro, error } = await db.from('uploads_manuais').insert({
     vaga_id: vagaId || null,
     nome_arquivo: arquivo.name,
-    tipo_mime: arquivo.type,
+    tipo_mime: tipo,
     tamanho_bytes: arquivo.size,
     storage_path: caminho,
     enviado_por: app.usuario.id

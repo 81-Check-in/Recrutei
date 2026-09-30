@@ -5,7 +5,7 @@ e nota). Na vaga não há IA escolhendo currículo: o RH pede "Selecionar CVs" e
 setor, a função e o nível da vaga. A única exceção é o currículo enviado à mão a partir de uma vaga: setor, função e nível
 são os da vaga (um humano já decidiu a compatibilidade); o resto da qualificação é o de sempre.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 import uuid
 
@@ -173,6 +173,10 @@ def _prefixo_telefone(cfg: Optional[Dict]) -> Tuple[str, str]:
     return saida[0], saida[1]
 
 
+# Foto de currículo que a leitura não conseguiu ler: o RH precisa pedir outra ao candidato
+PEDIDO_NOVA_FOTO = "qualidade ruim. Peça ao candidato uma nova foto: nítida, bem iluminada, sem cortar as bordas, de frente e sem reflexo"
+
+
 def _tamanho_minimo(anexo: Dict, cfg: Optional[Dict] = None) -> int:
     """
     Imagem pequena é logotipo/ícone de assinatura de e-mail: o piso é o de Configurações (tamanho_minimo_anexo_bytes, padrão 10 KB).
@@ -257,6 +261,8 @@ def _obter_texto_de_arquivo(msg: Dict, cfg: Optional[Dict] = None) -> tuple:
     if primeira_falha:
         anexo, ocr = primeira_falha
         tipo_erro = "ocr_falhou" if ocr else "arquivo_corrompido"
+        if anexo["tipo_mime"].startswith("image/"):
+            return None, False, anexo, None, (tipo_erro, f"Foto '{anexo['nome']}' sem texto legível — {PEDIDO_NOVA_FOTO}")
         return None, False, anexo, None, (tipo_erro, f"Arquivo '{anexo['nome']}' sem texto legível")
     if link:
         return None, False, None, None, (
@@ -1204,7 +1210,10 @@ def processar_upload_manual(item: Dict, cfg: Dict, areas: List[str],
     else:
         texto, ocr = extrator.extrair(conteudo, item["tipo_mime"])
         if not texto or len(texto.strip()) < 100:
-            _falhar(f"Arquivo '{item['nome_arquivo']}' sem texto legível")
+            if item["tipo_mime"].startswith("image/"):
+                _falhar(f"Foto '{item['nome_arquivo']}' sem texto legível — {PEDIDO_NOVA_FOTO}")
+            else:
+                _falhar(f"Arquivo '{item['nome_arquivo']}' sem texto legível")
             return
         texto = limpar_texto(texto)
 
@@ -1496,6 +1505,13 @@ def executar(manutencao: bool = True, limite: Optional[int] = None) -> Dict:
             if manut:
                 sanitizacao.registrar_expurgo(manut.get("expurgo"))
                 log.info(f"  Arquivos removidos do Storage: {manut.get('arquivos_removidos', 0)}")
+
+            # Dashboard: refaz a contagem de e-mails dos últimos dias (a de dias mais antigos não muda). Nunca derruba a manutenção.
+            try:
+                dias = bd.gravar_estatisticas_caixa(mail.estatisticas_caixa(date.today() - timedelta(days=7)))
+                log.info(f"  Contagem de e-mails da caixa: {dias} dia(s) atualizados")
+            except Exception as e:
+                log.warning(f"  Não consegui contar os e-mails da caixa: {type(e).__name__}")
 
             # Sanitização: a cada 7 dias (o banco decide; chamar todo dia é seguro) sugere quem completou 1 mês sem alteração e avisa o RH
             try:

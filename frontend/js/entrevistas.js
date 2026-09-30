@@ -15,7 +15,8 @@ async function carregarCalendario() {
   const { data } = await db.from('vw_agenda_entrevistas')
     .select('data_hora')
     .gte('data_hora', ini.toISOString())
-    .lte('data_hora', fim.toISOString());
+    .lte('data_hora', fim.toISOString())
+    .neq('resultado', 'cancelada');
 
   const comEvento = new Set((data||[]).map(e => new Date(e.data_hora).getDate()));
 
@@ -74,6 +75,7 @@ async function carregarEntrevistasDia() {
     .select('*')
     .gte('data_hora', ini.toISOString())
     .lte('data_hora', fim.toISOString())
+    .neq('resultado', 'cancelada')
     .order('data_hora');
 
   if (error) { erro(el, error.message); return; }
@@ -150,8 +152,37 @@ async function carregarProximas() {
 }
 
 function botaoExcluirEntrevista(e) {
-  return `<button class="btn-sm vermelho" data-id="${e.id}" data-nome="${escapeHtml(e.candidato_nome||'')}" data-quando="${e.data_hora}" onclick="excluirEntrevista(this.dataset.id, this.dataset.nome, this.dataset.quando)" title="Excluir (agendamento feito por engano)">
-    <i class="ti ti-trash"></i></button>`;
+  return `<button class="btn-sm vermelho" data-id="${e.id}" data-nome="${escapeHtml(e.candidato_nome||'')}" data-quando="${e.data_hora}" onclick="abrirVoltarEntrevista(this.dataset.id, this.dataset.nome, this.dataset.quando)" title="Voltar para Em processo (agendamento feito por engano)">
+    <i class="ti ti-arrow-back-up"></i></button>`;
+}
+
+// "Voltar": pergunta se o candidato volta para Em processo (a entrevista fica cancelada) ou, só o administrador, se a entrevista é apagada
+let voltarEntrevistaAberta = null;
+
+function abrirVoltarEntrevista(id, nome, dataHora) {
+  voltarEntrevistaAberta = { id, nome, dataHora };
+  $('#voltar-ent-msg').textContent = `Entrevista de ${nome} em ${fmtDataHora(dataHora)}. O que fazer?`;
+  $('#voltar-ent-apagar').style.display = ehAdministrador() ? '' : 'none';
+  abrirModal('modal-voltar-entrevista');
+}
+
+async function voltarEntrevista(apagar) {
+  const info = voltarEntrevistaAberta;
+  if (!info) return;
+  fecharModal('modal-voltar-entrevista');
+  voltarEntrevistaAberta = null;
+  if (apagar) { excluirEntrevista(info.id, info.nome, info.dataHora); return; }
+
+  const { error } = await db.rpc('voltar_entrevista', { p_id: info.id });
+  if (error) {
+    // PGRST202 = função ainda não criada no banco (falta rodar backend/sql/068_voltar_entrevista.sql)
+    toast(error.code === 'PGRST202'
+      ? 'Ainda não habilitado no banco. Rode backend/sql/068_voltar_entrevista.sql.'
+      : error.message, 'erro');
+    return;
+  }
+  toast(`${info.nome} voltou para Em processo`);
+  carregarEntrevistas();
 }
 
 async function excluirEntrevista(id, nome, dataHora) {
