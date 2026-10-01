@@ -42,6 +42,10 @@ async function carregarVagas() {
           onclick="abrirCandidatosDaVaga(this.dataset.vaga, this.dataset.titulo, !!this.dataset.pronta)"
           title="Currículos selecionados para esta vaga. Clique para abrir a lista completa (ver, agendar entrevista, cancelar a seleção)"><div class="vaga-stat-val">${v.total_em_aberto}</div><div class="vaga-stat-lbl">Candidatos</div></button>
         <div class="vaga-stat"><div class="vaga-stat-val">${v.total_entrevistas}</div><div class="vaga-stat-lbl">Entrevistas</div></div>
+        <button type="button" class="vaga-stat vaga-stat-link" data-vaga="${v.id}" data-titulo="${escapeHtml(v.titulo)}"
+          data-pronta="${v.funcao_setor && v.nivel_funcao ? '1' : ''}"
+          onclick="abrirCandidatosDaVaga(this.dataset.vaga, this.dataset.titulo, !!this.dataset.pronta, 'contratado')"
+          title="Contratados nesta vaga. Clique para ver quem foi"><div class="vaga-stat-val">${v.total_contratados}</div><div class="vaga-stat-lbl">Contratados</div></button>
         <div class="vaga-stat" title="Currículos disponíveis no banco com o mesmo setor, função e nível desta vaga"><div class="vaga-stat-val">${v.compativeis_no_banco}</div><div class="vaga-stat-lbl">No banco</div></div>
       </div>
       <div class="vaga-footer">

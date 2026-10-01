@@ -927,7 +927,7 @@ test('seleção de CVs: filtra por setor + função + nível da vaga, ordena pel
   const btn = card.querySelector('.btn-triagem');
   assert.equal(btn.textContent.trim(), 'Selecionar CVs');
   assert.match(card.textContent, /Supervisor · Pleno/);
-  assert.equal(card.querySelector('.vaga-stat:nth-child(3) .vaga-stat-val').textContent, '2', 'No banco: os dois que combinam nos três campos');
+  assert.equal(card.querySelector('.vaga-stat:nth-child(4) .vaga-stat-val').textContent, '2', 'No banco: os dois que combinam nos três campos');
   const antesRanking = beto.$('#banco-lista').innerHTML;
   beto.w.verCandidatosDaVaga(btn.dataset.vaga, btn.dataset.titulo, !!btn.dataset.pronta);
   // tempo fixo é frágil aqui (a consulta da seleção varia de duração conforme a carga da máquina/volume acumulado);

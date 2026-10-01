@@ -10,10 +10,10 @@ const estadoCandidatos = novoEstadoLista(50);
 // para trabalhar: ver o currículo, agendar, cancelar a seleção). null = todos os candidatos em processo.
 let vagaEmProcesso = null;        // { id, titulo, pronta }
 
-function abrirCandidatosDaVaga(vagaId, titulo, pronta = true) {
+function abrirCandidatosDaVaga(vagaId, titulo, pronta = true, status = '') {
   vagaEmProcesso = { id: vagaId, titulo, pronta };
   $('#busca-candidatos').value = '';
-  $('#filtro-cand-status').value = '';
+  $('#filtro-cand-status').value = status;
   $('#filtro-cand-sexo').value = '';
   $('#filtro-cand-setor').value = '';
   estadoCandidatos.limite = estadoCandidatos.tamanhoPagina;
@@ -150,6 +150,9 @@ async function carregarCandidatos() {
         ${aguardandoGerente
           ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="aprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente aprovou este candidato"><i class="ti ti-check"></i>Aprovado</button>
              <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" data-tel="${escapeHtml(c.telefone_e164 || c.telefone || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome, this.dataset.tel)" title="O gerente reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
+          : ''}
+        ${c.status === 'aprovado' && aberta
+          ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="contratarCandidaturaPorId(this.dataset.id, this.dataset.nome)" title="Marca o candidato aprovado como contratado: a candidatura fecha e ele sai do Banco de Talentos"><i class="ti ti-user-check"></i>Contratado</button>`
           : ''}
         ${aberta
           ? `<button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="devolverAoBancoPorId(this.dataset.id, this.dataset.nome)" title="Cancelar a seleção: o candidato volta ao Banco de Talentos, com a qualificação que já tem"><i class="ti ti-arrow-back-up"></i>${vagaEmProcesso ? 'Cancelar seleção' : ''}</button>`
@@ -345,6 +348,25 @@ async function aprovarPeloGerente() {
   if (c) await aprovarCandidaturaGerentePorId(c.id, c.nome);
 }
 
+// ── Contratar: o aprovado vira contratado. O banco fecha a candidatura e tira o candidato do Banco de
+// Talentos (backend/sql/070_contratar_candidatura.sql). ──
+async function contratarCandidaturaPorId(id, nome) {
+  if (!await confirmar({
+    titulo: 'Contratar candidato', rotulo: 'Contratar', perigo: false,
+    mensagem: `Marcar ${nome || 'este candidato'} como contratado?\n\nA candidatura é encerrada e o candidato sai do Banco de Talentos.`
+  })) return;
+  const { error } = await db.rpc('contratar_candidatura', { p_candidatura_id: id });
+  if (error) { toast(mensagemErro(error), 'erro'); return; }
+  fecharDrawer();
+  toast(`${nome || 'Candidato'} contratado`);
+  await recarregarTelaDeCandidaturas();
+}
+
+async function contratarCandidatura() {
+  const c = app.candidatoAberto;
+  if (c) await contratarCandidaturaPorId(c.id, c.nome);
+}
+
 async function reprovarCandidaturaGerentePorId(id, nome, telefone) {
   if (!await confirmar({
     titulo: 'Reprovar candidato', rotulo: 'Reprovar', perigo: true,
@@ -413,6 +435,7 @@ async function abrirCandidatura(id) {
   $('#d-btn-agendar').style.display   = PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
   $('#d-btn-encaminhar-gerente').style.display = (c.setor_nome === 'Loja' || c.setor_nome === 'CR') && PRECISA_AGENDAR.includes(c.status) && aberta ? 'flex' : 'none';
   $('#d-btn-aprovar-gerente').style.display    = c.status === 'aguardando_gerente' && aberta ? 'flex' : 'none';
+  $('#d-btn-contratar').style.display          = c.status === 'aprovado' && aberta ? 'flex' : 'none';
   $('#d-btn-curriculo').style.display = c.storage_path ? 'flex' : 'none';
   $('#d-sem-arquivo').style.display   = c.storage_path ? 'none' : 'flex';
 
