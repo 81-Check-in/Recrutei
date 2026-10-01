@@ -563,8 +563,16 @@ function tipoDoArquivoManual(arquivo) {
 }
 const TAMANHO_MAXIMO_UPLOAD_MANUAL = 10 * 1024 * 1024;   // mesmo limite do backend (config.TAMANHO_MAXIMO_ANEXO)
 
+function alternarJaEntrevistado() {
+  const marcado = $('#up-ja-entrevistado').checked;
+  $('#up-ja-entrevistado-campos').style.display = marcado ? '' : 'none';
+  if (!marcado) $('#up-resultado').value = '';
+}
+
 async function abrirModalUploadManual() {
   $('#up-arquivo').value = '';
+  $('#up-ja-entrevistado').checked = false;
+  alternarJaEntrevistado();
   $('#up-vaga').innerHTML = '<option value="">Carregando vagas…</option>';
   abrirModal('modal-upload-manual');
 
@@ -580,7 +588,12 @@ async function abrirModalUploadManual() {
 // mostra um toast-resumo no final; o detalhe de cada um (inclusive erro de análise) fica em "Últimos envios".
 async function enviarUploadManual() {
   const vagaId = $('#up-vaga').value;
+  const resultadoEntrevista = $('#up-ja-entrevistado').checked ? $('#up-resultado').value : '';
   const arquivos = [...$('#up-arquivo').files];
+  if ($('#up-ja-entrevistado').checked && (!vagaId || !resultadoEntrevista)) {
+    toast('Para um currículo que já passou pela entrevista, escolha a vaga e o resultado', 'erro');
+    return;
+  }
   if (!arquivos.length) { toast('Escolha um arquivo', 'erro'); return; }
 
   const validos = [];
@@ -603,7 +616,7 @@ async function enviarUploadManual() {
   for (let i = 0; i < validos.length; i++) {
     const progresso = lote ? ` ${i + 1} de ${validos.length}` : '';
     btn.innerHTML = `<i class="ti ti-loader-2 girando"></i>Enviando${progresso}…`;
-    const resultado = await enviarUmCurriculoManual(validos[i], vagaId, btn, progresso);
+    const resultado = await enviarUmCurriculoManual(validos[i], vagaId, btn, progresso, resultadoEntrevista);
     if (resultado.registrado) registrados++;
     if (!lote) toast(resultado.mensagem, resultado.tipo);
   }
@@ -625,7 +638,7 @@ async function enviarUploadManual() {
 // Sobe 1 arquivo pro Storage, grava a fila e, com API_URL, já pede a análise da IA na hora.
 // `registrado` = true assim que o arquivo está gravado na fila (mesmo que a análise em si falhe depois —
 // nesse caso ele continua na fila para a rotina agendada tentar de novo, e some no card "Últimos envios").
-async function enviarUmCurriculoManual(arquivo, vagaId, btn, progresso) {
+async function enviarUmCurriculoManual(arquivo, vagaId, btn, progresso, resultadoEntrevista) {
   const tipo = tipoDoArquivoManual(arquivo);
   const ext = FORMATOS_UPLOAD_MANUAL[tipo];
   const caminho = `manual/${new Date().getFullYear()}/${crypto.randomUUID()}${ext}`;
@@ -635,6 +648,7 @@ async function enviarUmCurriculoManual(arquivo, vagaId, btn, progresso) {
 
   const { data: registro, error } = await db.from('uploads_manuais').insert({
     vaga_id: vagaId || null,
+    resultado_entrevista: resultadoEntrevista || null,
     nome_arquivo: arquivo.name,
     tipo_mime: tipo,
     tamanho_bytes: arquivo.size,

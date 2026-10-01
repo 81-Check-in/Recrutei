@@ -2,6 +2,7 @@
 import time
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 
 from config import (
@@ -416,6 +417,34 @@ def atribuir_candidato_vaga(candidato_id: str, vaga_id: str, usuario_id: str) ->
         "p_candidato_id": candidato_id, "p_vaga_id": vaga_id, "p_usuario_id": usuario_id,
     }).execute()
     return r.data
+
+
+def registrar_entrevista_externa(candidato_id: str, vaga_id: str, status: str, usuario_id: str) -> Optional[str]:
+    """Currículo enviado de quem JÁ foi entrevistado fora do sistema: grava o desfecho direto no Histórico do
+    candidato (origem 'manual'), sem candidatura nem entrevista. Repetir o mesmo envio no mesmo dia não duplica."""
+    if MODO_SIMULACAO:
+        log.info("  [simulação] histórico não gravado")
+        return "simulado"
+    cli = conectar()
+    cand = cli.table("candidatos").select("nome,telefone,telefone_e164").eq("id", candidato_id).limit(1).execute().data
+    vaga = cli.table("vagas").select("titulo,setores(nome)").eq("id", vaga_id).limit(1).execute().data
+    if not cand or not vaga:
+        raise ValueError("Candidato ou vaga não encontrados para registrar o histórico")
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date().isoformat()
+    existe = cli.table("historico_candidatos").select("id").eq("candidato_id", candidato_id).eq("vaga_id", vaga_id)\
+        .eq("status", status).eq("data_evento", hoje).eq("origem", "manual").limit(1).execute().data
+    if existe:
+        return existe[0]["id"]
+    c, v = cand[0], vaga[0]
+    r = cli.table("historico_candidatos").insert({
+        "candidato_id": candidato_id, "vaga_id": vaga_id,
+        "nome": (c.get("nome") or "Nome não informado")[:200],
+        "telefone": c.get("telefone") or c.get("telefone_e164"),
+        "data_evento": hoje, "vaga_titulo": v.get("titulo"), "setor_vaga": (v.get("setores") or {}).get("nome"),
+        "status": status, "origem": "manual", "alterado_manual": True, "registrado_por": usuario_id,
+        "observacao": "Currículo enviado de quem já foi entrevistado",
+    }).execute()
+    return r.data[0]["id"] if r.data else None
 
 
 def salvar_avaliacao(dados: Dict) -> Optional[Dict]:

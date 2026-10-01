@@ -1261,7 +1261,15 @@ def processar_upload_manual(item: Dict, cfg: Dict, areas: List[str],
     candidatura_id = None
     aviso = (f"Este currículo já estava no Banco de Talentos ({resultado['ignorado']}); a análise existente foi mantida."
              if resultado.get("ignorado") else None)
-    if item.get("vaga_id"):
+    if item.get("vaga_id") and item.get("resultado_entrevista"):
+        # Já foi entrevistado fora do sistema: não abre candidatura (nem entrevista), só grava o desfecho no Histórico
+        try:
+            bd.registrar_entrevista_externa(resultado["candidato_id"], item["vaga_id"], item["resultado_entrevista"], item["enviado_por"])
+        except Exception as e:
+            inicio = f"{aviso} Não foi possível registrar a entrevista no Histórico: " if aviso else "Entrou no Banco de Talentos, mas a entrevista não foi registrada no Histórico: "
+            aviso = (inicio + f"{getattr(e, 'message', None) or e}")[:400]
+            log.warning(f"  {aviso}")
+    elif item.get("vaga_id"):
         try:
             candidatura_id = bd.atribuir_candidato_vaga(resultado["candidato_id"], item["vaga_id"], item["enviado_por"])
         except Exception as e:

@@ -89,7 +89,9 @@ async function carregarEntrevistasDia() {
 
   const COR = { agendada:'var(--blue)', aprovado:'var(--green)',
                 reprovado:'var(--red)', nao_compareceu:'var(--purple)',
-                remarcada:'var(--yellow)' };
+                sem_interesse:'var(--gray-text)', remarcada:'var(--yellow)' };
+  const PILL = { aprovado:['pill-green', 'Aprovado'], reprovado:['pill-red', 'Reprovado'],
+                 sem_interesse:['pill-gray', 'Sem interesse'], nao_compareceu:['pill-purple', 'Não compareceu'] };
 
   el.innerHTML = data.map(e => `
     <div class="ent-item">
@@ -106,8 +108,8 @@ async function carregarEntrevistasDia() {
         ${e.resultado === 'agendada' || e.resultado === 'remarcada'
           ? `<button class="btn-sm verde" data-id="${e.id}" data-nome="${escapeHtml(e.candidato_nome)}" data-candidatura="${e.candidatura_id}" data-tel="${escapeHtml(e.candidato_telefone_e164||'')}" onclick="abrirResultado(this.dataset.id, this.dataset.nome, this.dataset.candidatura, this.dataset.tel)">
                <i class="ti ti-check"></i>Resultado</button>`
-          : `<span class="pill ${e.resultado==='aprovado'?'pill-green':e.resultado==='reprovado'?'pill-red':'pill-purple'}">
-               ${e.resultado==='aprovado'?'Aprovado':e.resultado==='reprovado'?'Reprovado':'Não compareceu'}</span>`}
+          : `<span class="pill ${(PILL[e.resultado] || PILL.nao_compareceu)[0]}">
+               ${(PILL[e.resultado] || PILL.nao_compareceu)[1]}</span>`}
       </div>
     </div>`).join('');
 }
@@ -382,7 +384,8 @@ async function registrarResultado(resultado) {
   const MSG = {
     aprovado: `${info.nome} aprovado`,
     reprovado: `Resultado registrado — ${info.nome} reprovado e de volta ao Banco de Talentos${semTelefone}`,
-    nao_compareceu: `Falta registrada — ${info.nome} não compareceu`
+    nao_compareceu: `Falta registrada — ${info.nome} não compareceu`,
+    sem_interesse: `Resultado registrado — ${info.nome} sem interesse e de volta ao Banco de Talentos`
   };
   toast(MSG[resultado] || 'Resultado registrado', semTelefone ? 'erro' : undefined);
   carregarEntrevistas();
