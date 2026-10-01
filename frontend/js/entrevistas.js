@@ -378,12 +378,13 @@ async function registrarResultado(resultado) {
   }
 
   fecharModal('modal-resultado');
+  const semTelefone = resultado === 'reprovado' ? avisarReprovacao(info.telefone) : '';
   const MSG = {
     aprovado: `${info.nome} aprovado`,
-    reprovado: `Resultado registrado — ${info.nome} reprovado e de volta ao Banco de Talentos`,
+    reprovado: `Resultado registrado — ${info.nome} reprovado e de volta ao Banco de Talentos${semTelefone}`,
     nao_compareceu: `Falta registrada — ${info.nome} não compareceu`
   };
-  toast(MSG[resultado] || 'Resultado registrado');
+  toast(MSG[resultado] || 'Resultado registrado', semTelefone ? 'erro' : undefined);
   carregarEntrevistas();
 }
 

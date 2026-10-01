@@ -149,7 +149,7 @@ async function carregarCandidatos() {
           : ''}
         ${aguardandoGerente
           ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="aprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente aprovou este candidato"><i class="ti ti-check"></i>Aprovado</button>
-             <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome)" title="O gerente reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
+             <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" data-tel="${escapeHtml(c.telefone_e164 || c.telefone || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome, this.dataset.tel)" title="O gerente reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
           : ''}
         ${aberta
           ? `<button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="devolverAoBancoPorId(this.dataset.id, this.dataset.nome)" title="Cancelar a seleção: o candidato volta ao Banco de Talentos, com a qualificação que já tem"><i class="ti ti-arrow-back-up"></i>${vagaEmProcesso ? 'Cancelar seleção' : ''}</button>`
@@ -160,6 +160,24 @@ async function carregarCandidatos() {
 }
 
 // ── Devolver ao Banco de Talentos / reprovar ──
+const MENSAGEM_REPROVACAO =
+`Olá!
+
+Agradecemos pela sua participação em nosso processo seletivo. Apreciamos muito suas vivências e experiências, mas neste momento, escolhemos outro candidato cujo perfil mais se alinhava com as necessidades da vaga.
+Agradecemos novamente por seu interesse e esforço durante o processo seletivo. Desejamos muito sucesso em sua trajetória profissional.
+Obrigada!
+
+RH - Castelo Forte`;
+
+// Reprovou: abre o WhatsApp do gestor com o retorno pronto para o candidato.
+// Devolve o complemento do aviso quando o telefone não serve para o link.
+function avisarReprovacao(telefone) {
+  const tel = normalizaTelefone(telefone);
+  if (!tel) return ' (telefone inválido: mensagem não enviada)';
+  window.open(`https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(MENSAGEM_REPROVACAO)}`, '_blank');
+  return '';
+}
+
 // O banco cuida do resto: fecha a candidatura, cancela entrevista marcada e volta o candidato para "disponível".
 async function encerrarCandidatura(id, status, motivo) {
   const { error } = await db.rpc('encerrar_candidatura', { p_candidatura_id: id, p_status: status, p_motivo: motivo || null });
@@ -196,7 +214,8 @@ async function reprovarCandidatura() {
   if (motivo === null) return;
   if (!await encerrarCandidatura(c.id, 'reprovado', motivo.trim())) return;
   fecharDrawer();
-  toast(`${c.nome || 'Candidato'} reprovado — volta ao Banco de Talentos`);
+  const semTelefone = avisarReprovacao(c.telefone_e164 || c.telefone);
+  toast(`${c.nome || 'Candidato'} reprovado — volta ao Banco de Talentos${semTelefone}`, semTelefone ? 'erro' : undefined);
   await recarregarTelaDeCandidaturas();
 }
 
@@ -326,14 +345,15 @@ async function aprovarPeloGerente() {
   if (c) await aprovarCandidaturaGerentePorId(c.id, c.nome);
 }
 
-async function reprovarCandidaturaGerentePorId(id, nome) {
+async function reprovarCandidaturaGerentePorId(id, nome, telefone) {
   if (!await confirmar({
     titulo: 'Reprovar candidato', rotulo: 'Reprovar', perigo: true,
     mensagem: `Marcar ${nome || 'este candidato'} como reprovado pelo gerente?\n\nA candidatura é encerrada e o candidato volta ao Banco de Talentos.`
   })) return;
   if (!await encerrarCandidatura(id, 'reprovado', 'Reprovado pelo gerente')) return;
   fecharDrawer();
-  toast(`${nome || 'Candidato'} reprovado — volta ao Banco de Talentos`);
+  const semTelefone = avisarReprovacao(telefone);
+  toast(`${nome || 'Candidato'} reprovado — volta ao Banco de Talentos${semTelefone}`, semTelefone ? 'erro' : undefined);
   await recarregarTelaDeCandidaturas();
 }
 
