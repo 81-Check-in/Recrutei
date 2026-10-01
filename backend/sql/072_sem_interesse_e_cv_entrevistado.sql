@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════
---  RECRUTEI — Resultado "Sem interesse" + currículo que já passou pela entrevista (071)
+--  RECRUTEI — Resultado "Sem interesse" + currículo que já passou pela entrevista (072)
 --
 --  Rodar depois da 071. Pode rodar de novo sem problema.
 --
