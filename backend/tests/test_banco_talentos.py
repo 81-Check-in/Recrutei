@@ -1223,6 +1223,43 @@ class TestProcessarMensagem(unittest.TestCase):
         bd.registrar_excecao.assert_not_called()                          # ignorar não é exceção
         self.assertEqual(stats.duplicados_detectados, 1)
 
+    def test_reenvio_de_quem_ja_esta_no_banco_paga_a_ia_uma_vez_e_fica_guardado(self):
+        """Arquivo diferente da mesma pessoa: a identificação é paga uma vez; o Message-ID fica guardado e a leitura seguinte pula de graça."""
+        stats = pipeline.Estatisticas()
+        bd = _bd_falso(email_ja_processado=False,
+                       buscar_candidato_existente={"id": "cand-9", "status_banco": "ativo"},
+                       obter_curriculo_atual={"id": "cv-9"},
+                       ultima_importacao=datetime.now(timezone.utc) - timedelta(days=3))
+        with patch.object(pipeline, "bd", bd), \
+             patch.object(pipeline.extrator, "extrair", return_value=(TEXTO_CV, False)), \
+             patch.object(pipeline.ia, "identificar_curriculo", return_value=(IDENT, USO)) as identificar:
+            lido = pipeline.processar_mensagem(self.msg(), {}, AREAS, stats)
+            self.assertTrue(lido)
+            identificar.assert_called_once()
+            bd.registrar_email_ignorado.assert_called_once()
+            self.assertEqual(bd.registrar_email_ignorado.call_args.args[0], "<m@x>")
+            self.assertIn("já está no banco", bd.registrar_email_ignorado.call_args.args[1])
+            bd.criar_candidato.assert_not_called()
+            bd.registrar_excecao.assert_not_called()
+
+            # a mesma mensagem continua não lida na caixa e volta na leitura seguinte: agora já consta como processada
+            bd.email_ja_processado.return_value = True
+            self.assertTrue(pipeline.processar_mensagem(self.msg(), {}, AREAS, stats))
+            identificar.assert_called_once()                                  # nenhuma chamada nova à IA
+
+    def test_falha_ao_guardar_o_email_ignorado_nao_derruba_a_leitura(self):
+        stats = pipeline.Estatisticas()
+        bd = _bd_falso(email_ja_processado=False,
+                       buscar_candidato_existente={"id": "cand-9", "status_banco": "ativo"},
+                       obter_curriculo_atual={"id": "cv-9"},
+                       ultima_importacao=datetime.now(timezone.utc) - timedelta(days=3))
+        bd.registrar_email_ignorado.side_effect = RuntimeError("tabela ausente")
+        with patch.object(pipeline, "bd", bd), \
+             patch.object(pipeline.extrator, "extrair", return_value=(TEXTO_CV, False)), \
+             patch.object(pipeline.ia, "identificar_curriculo", return_value=(IDENT, USO)):
+            self.assertTrue(pipeline.processar_mensagem(self.msg(), {}, AREAS, stats))
+        bd.registrar_excecao.assert_not_called()
+
     def test_mesmo_arquivo_de_candidato_sanitizado_ha_30_dias_e_lido(self):
         stats = pipeline.Estatisticas()
         bd = _bd_falso(email_ja_processado=False, obter_ou_criar_remetente={"id": "rem-1"},

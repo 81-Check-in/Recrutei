@@ -780,6 +780,11 @@ def processar_mensagem(msg: Dict, cfg: Dict, areas: List[str],
         })
     if resultado and resultado.get("ignorado"):
         log.info(f"  Nada a importar: {resultado['ignorado']}")
+        # A identificação (IA) já foi paga: guarda o e-mail para a próxima leitura pulá-lo de graça, mesmo que continue não lido
+        try:
+            bd.registrar_email_ignorado(msg.get("message_id"), resultado["ignorado"])
+        except Exception as e:                            # nunca derruba a leitura
+            log.warning(f"  Não consegui guardar o e-mail ignorado: {type(e).__name__}")
         if excecao_id:
             bd.atualizar_excecao(excecao_id, {"status": "revisado", "reprocessar_solicitado_em": None,
                                               "detalhe_erro": f"Não importado: {resultado['ignorado']}."})

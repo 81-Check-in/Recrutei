@@ -51,6 +51,7 @@ MIGRACOES=(
   066_revisao_sem_nivel_vira_junior.sql
   069_caixa_emails_dia.sql
   070_contratar_candidatura.sql
+  071_emails_ignorados.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(

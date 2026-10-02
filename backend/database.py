@@ -238,8 +238,27 @@ def email_ja_processado(message_id: str) -> bool:
     if db.table("curriculos").select("id")\
          .eq("email_message_id", message_id).limit(1).execute().data:
         return True
-    return bool(db.table("excecoes").select("id")
-                  .eq("email_message_id", message_id).limit(1).execute().data)
+    if db.table("excecoes").select("id")\
+         .eq("email_message_id", message_id).limit(1).execute().data:
+        return True
+    try:
+        return bool(db.table("emails_ignorados").select("email_message_id")
+                      .eq("email_message_id", message_id).limit(1).execute().data)
+    except Exception as e:        # tabela ainda não criada (071 não aplicada): segue como antes, sem derrubar a leitura
+        log.warning(f"Não consegui consultar os e-mails ignorados: {type(e).__name__}")
+        return False
+
+
+def registrar_email_ignorado(message_id: Optional[str], motivo: Optional[str]) -> None:
+    """
+    Guarda o Message-ID de um e-mail lido e não importado (reenvio de quem já está no banco), para email_ja_processado()
+    barrá-lo na próxima leitura antes de gastar extração e IA. Sem Message-ID não há o que guardar.
+    """
+    if MODO_SIMULACAO or not message_id:
+        return
+    conectar().table("emails_ignorados").upsert(
+        {"email_message_id": message_id, "motivo": (motivo or "")[:300] or None},
+        on_conflict="email_message_id").execute()
 
 
 # ─────────────────────────────────────────────
