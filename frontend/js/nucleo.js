@@ -123,6 +123,12 @@ function normalizaTelefone(tel) {
   return n.length >= 12 ? n : null;
 }
 
+// Candidato cadastrado à mão pelo RH, sem arquivo (backend/sql/077): o currículo é só a observação abaixo.
+// c: linha de vw_banco_talentos ou vw_candidaturas (as duas trazem storage_path e curriculo_origem).
+const OBS_SEM_ANEXO = 'Currículo enviado manualmente sem anexo';
+const cadastroSemCurriculo = c => !c?.storage_path && c?.curriculo_origem === 'upload_manual';
+const textoSemArquivo = c => cadastroSemCurriculo(c) ? OBS_SEM_ANEXO : 'Arquivo original não disponível para este candidato';
+
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g,

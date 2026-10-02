@@ -766,7 +766,7 @@
   </div>
   <div class="drawer-rodape">
     <div class="aviso-arquivo" id="d-sem-arquivo" style="display:none">
-      <i class="ti ti-info-circle"></i>Arquivo original não disponível para este candidato</div>
+      <i class="ti ti-info-circle"></i><span id="d-sem-arquivo-txt">Arquivo original não disponível para este candidato</span></div>
     <button class="btn-drawer" id="d-btn-curriculo" onclick="verCurriculo()">
       <i class="ti ti-file-text"></i>Ver currículo</button>
     <button class="btn-drawer" onclick="baixarCurriculo()" aria-label="Baixar currículo"><i class="ti ti-download"></i></button>
@@ -820,7 +820,7 @@
   </div>
   <div class="drawer-rodape">
     <div class="aviso-arquivo" id="t-sem-arquivo" style="display:none">
-      <i class="ti ti-info-circle"></i>Arquivo original não disponível para este candidato</div>
+      <i class="ti ti-info-circle"></i><span id="t-sem-arquivo-txt">Arquivo original não disponível para este candidato</span></div>
     <button class="btn-drawer verde" id="t-btn-atribuir" onclick="abrirAtribuicao()">
       <i class="ti ti-arrow-right-circle"></i>Atribuir a uma vaga</button>
     <button class="btn-drawer" id="t-btn-curriculo" onclick="verCurriculoDoCandidato()">
@@ -1112,6 +1112,29 @@
   <div class="f-campo"><label for="up-vaga">Vaga <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
     <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
   <div class="f-campo"><label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
+    <input type="checkbox" id="up-sem-curriculo" onchange="alternarSemCurriculo()" style="width:auto;margin:0">
+    Cadastrar sem currículo (digitar os dados)</label>
+    <div id="up-sem-curriculo-campos" style="display:none;margin-top:10px">
+      <div class="f-campo"><label for="up-m-nome">Nome <span style="color:var(--red)">*</span></label><input id="up-m-nome" type="text" maxlength="200"></div>
+      <div class="f-grid2">
+        <div class="f-campo"><label for="up-m-telefone">Telefone <span style="color:var(--red)">*</span></label><input id="up-m-telefone" type="text" placeholder="(61) 99999-9999"></div>
+        <div class="f-campo"><label for="up-m-email">E-mail</label><input id="up-m-email" type="email"></div>
+        <div class="f-campo"><label for="up-m-cidade">Cidade</label><input id="up-m-cidade" type="text"></div>
+        <div class="f-campo"><label for="up-m-uf">UF</label><input id="up-m-uf" type="text" maxlength="2" placeholder="DF" style="text-transform:uppercase"></div>
+        <div class="f-campo"><label for="up-m-nascimento">Data de nascimento</label><input id="up-m-nascimento" type="date"></div>
+        <div class="f-campo"><label for="up-m-sexo">Sexo</label>
+          <select id="up-m-sexo"><option value="">Não informado</option><option value="feminino">Feminino</option><option value="masculino">Masculino</option></select></div>
+        <div class="f-campo"><label for="up-m-escolaridade">Escolaridade</label>
+          <select id="up-m-escolaridade"><option value="">Não informada</option><option value="nenhuma">Sem escolaridade</option>
+            <option value="fundamental">Fundamental</option><option value="medio">Médio</option><option value="tecnico">Técnico</option>
+            <option value="superior">Superior</option><option value="pos">Pós-graduação</option></select></div>
+        <div class="f-campo"><label for="up-m-experiencia">Experiência (anos)</label><input id="up-m-experiencia" type="number" min="0" max="60" step="0.5"></div>
+        <div class="f-campo"><label for="up-m-cnh">CNH</label><input id="up-m-cnh" type="text" placeholder="ex.: B, AB" style="text-transform:uppercase"></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--gray-text)">Só nome e telefone são obrigatórios. O candidato entra no Banco de Talentos com a observação
+        "Currículo enviado manualmente sem anexo" no lugar do arquivo. Sem vaga, fica em revisão manual até ser atribuído a uma.</div>
+    </div></div>
+  <div class="f-campo" id="up-campo-ja-entrevistado"><label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
     <input type="checkbox" id="up-ja-entrevistado" onchange="alternarJaEntrevistado()" style="width:auto;margin:0">
     Este currículo já passou pela entrevista</label>
     <div id="up-ja-entrevistado-campos" style="display:none;margin-top:8px">
@@ -1124,7 +1147,7 @@
       </select>
       <div style="font-size:11.5px;color:var(--gray-text);margin-top:4px">O currículo entra no Banco de Talentos e o resultado vai direto para o Histórico. Não abre candidatura nem entrevista.</div>
     </div></div>
-  <div class="f-campo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC, DOCX, JPG ou PNG — até 10 MB cada; pode escolher vários de uma vez)</span></label>
+  <div class="f-campo" id="up-campo-arquivo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC, DOCX, JPG ou PNG — até 10 MB cada; pode escolher vários de uma vez)</span></label>
     <input id="up-arquivo" type="file" multiple
       accept=".pdf,.doc,.docx,.jpg,.jpeg,.jfif,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"></div>
   <div class="modal-acoes">

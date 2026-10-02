@@ -641,7 +641,10 @@ function htmlSugestaoIA(c) {
     aviso = `<div class="ia-alerta info"><i class="ti ti-clock"></i>
       <div>A IA vai (re)analisar este currículo na próxima execução da rotina.</div></div>`;
   }
-  if (c.revisao_manual) {
+  if (c.revisao_manual && cadastroSemCurriculo(c)) {
+    aviso += `<div class="ia-alerta"><i class="ti ti-eye-check"></i>
+      <div><strong>Cadastro manual, sem currículo.</strong> Não há análise da IA. Atribua a uma vaga para definir setor, função e nível.</div></div>`;
+  } else if (c.revisao_manual) {
     aviso += `<div class="ia-alerta"><i class="ti ti-eye-check"></i>
       <div><strong>Revisão manual necessária.</strong> ${escapeHtml(c.motivo_revisao || 'A IA não classificou com segurança.')}
       Confira o currículo antes de decidir.</div></div>`;
@@ -764,6 +767,7 @@ function desenharTalento(c, hist) {
   $('#t-btn-curriculo').style.display = c.storage_path ? 'flex' : 'none';
   $('#t-btn-baixar').style.display = c.storage_path ? 'flex' : 'none';
   $('#t-sem-arquivo').style.display = c.storage_path ? 'none' : 'flex';
+  $('#t-sem-arquivo-txt').textContent = textoSemArquivo(c);
 }
 
 function fecharDrawer() {
@@ -787,9 +791,13 @@ async function urlDoCurriculo(storagePath) {
 }
 
 async function curriculoDoCandidato(candidatoId) {
-  const { data } = await db.from('curriculos').select('storage_path,nome_arquivo,tipo_mime,texto_extraido')
+  const { data } = await db.from('curriculos').select('storage_path,nome_arquivo,tipo_mime,texto_extraido,origem')
     .eq('candidato_id', candidatoId).eq('atual', true).maybeSingle();
-  if (!data?.storage_path) { toast('Arquivo do currículo não disponível', 'erro'); return null; }
+  if (!data?.storage_path) {
+    const manual = data?.origem === 'upload_manual';         // cadastro manual sem currículo: a observação está no lugar do arquivo
+    toast(manual ? OBS_SEM_ANEXO : 'Arquivo do currículo não disponível', manual ? 'ok' : 'erro');
+    return null;
+  }
   return data;
 }
 

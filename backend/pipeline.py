@@ -571,6 +571,16 @@ def _resolver_regiao(ident: Dict, texto: str, regioes: List[Dict]) -> Dict:
     return campos
 
 
+# O que o painel grava no lugar do arquivo quando o RH cadastra o candidato à mão, sem currículo (backend/sql/077)
+OBS_SEM_ANEXO = "Currículo enviado manualmente sem anexo"
+
+
+def _so_tem_observacao(curriculo: Optional[Dict]) -> bool:
+    """O currículo atual é só a observação do cadastro manual: não há arquivo nem texto de currículo a preservar."""
+    return bool(curriculo) and not curriculo.get("storage_path") and not curriculo.get("arquivo_hash") \
+        and (curriculo.get("texto_extraido") or "").strip() == OBS_SEM_ANEXO
+
+
 def _motivo_para_nao_reler(candidato: Dict) -> Optional[str]:
     """
     Regra de reincidência: o mesmo currículo não é lido de novo, seja qual for a vaga. None = pode ler; texto = por
@@ -585,6 +595,10 @@ def _motivo_para_nao_reler(candidato: Dict) -> Optional[str]:
     # Cadastro ATIVO sem nenhum currículo é sobra de uma gravação interrompida (queda, deploy no meio do e-mail): não há currículo a
     # "não reler". Sem esta saída o e-mail reenviado seria ignorado como "já está no banco" e a pessoa ficaria sem currículo para sempre.
     if candidato.get("status_banco") == "ativo" and not bd.obter_curriculo_atual(candidato["id"]):
+        return None
+    # Cadastrado à mão sem currículo (077): o primeiro currículo de verdade que chegar entra no lugar da observação,
+    # esteja o candidato disponível ou já em processo numa vaga
+    if candidato.get("status_banco") in ("ativo", "em_processo") and _so_tem_observacao(bd.obter_curriculo_atual(candidato["id"])):
         return None
     if candidato.get("status_banco") not in ("inativo", "expurgado"):
         ultima = bd.ultima_importacao(candidato["id"])
@@ -634,7 +648,7 @@ def _entrar_no_banco(texto: str, ident: Dict, cfg: Dict, areas: List[str], stats
         return {"candidato_id": None, "novo": False, "analise": None, "ignorado": "e-mail bloqueado"}
 
     # Só reconhece a pessoa pelo hash quando há nome E telefone (nome sozinho junta homônimos)
-    existente = bd.buscar_candidato_existente(hash_id if (nome and telefone) else None, email_cand, nome)
+    existente = bd.buscar_candidato_existente(hash_id if (nome and telefone) else None, email_cand, nome, telefone)
 
     # Reincidência: quem já está no banco não é lido de novo (só depois de 30 dias E de sanitizado). Decide-se AQUI,
     # antes do perfil (outra chamada à IA), para o reenvio não custar nada.
@@ -663,6 +677,8 @@ def _entrar_no_banco(texto: str, ident: Dict, cfg: Dict, areas: List[str], stats
         refazer_analise = (not existente.get("analise_atual_id")
                            or not _mesmo_texto((atual or {}).get("texto_extraido"), texto))
         campos = dict(dados)
+        if not existente.get("hash_identidade") and nome and telefone:
+            campos["hash_identidade"] = hash_id          # cadastro manual do painel: passa a ter a identidade que o robô reconhece
         if existente["status_banco"] in ("inativo", "expurgado"):
             campos.update({"status_banco": "ativo", "inativado_em": None, "motivo_inativacao": None,
                            "expurgado_em": None, "retencao_permanente": False})

@@ -55,6 +55,7 @@ MIGRACOES=(
   074_message_id_limpo_no_banco.sql
   075_emails_tentativas.sql
   076_dashboard_cvs_por_origem.sql
+  077_cadastro_manual_sem_curriculo.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(
@@ -82,4 +83,5 @@ TESTES_SQL=(
   ensaio/34_teste_contratar.sql
   ensaio/35_teste_message_id_limpo.sql
   ensaio/36_teste_dashboard_cvs_origem.sql
+  ensaio/37_teste_cadastro_manual.sql
 )

@@ -296,15 +296,17 @@ def registrar_email_ignorado(message_id: Optional[str], motivo: Optional[str]) -
 # ─────────────────────────────────────────────
 CAMPOS_CANDIDATO = ("id,nome,sexo,data_nascimento,idade_informada,cidade,uf,telefone,telefone_e164,email,"
                     "escolaridade,anos_experiencia,cnh,status_banco,retencao_permanente,lista_negra,"
-                    "regiao_id,regiao_origem,sexo_origem,analise_atual_id,reanalise_solicitada_em,inativado_em")
+                    "regiao_id,regiao_origem,sexo_origem,analise_atual_id,reanalise_solicitada_em,inativado_em,hash_identidade")
 
 
 def buscar_candidato_existente(hash_identidade: Optional[str], email: Optional[str],
-                               nome: Optional[str]) -> Optional[Dict]:
+                               nome: Optional[str], telefone: Optional[str] = None) -> Optional[Dict]:
     """
-    A mesma pessoa já está no banco? Duas chaves, da mais forte para a mais fraca:
+    A mesma pessoa já está no banco? Três chaves, da mais forte para a mais fraca:
       1. hash de identidade (nome + telefone) — o chamador só passa o hash quando tem os dois
       2. mesmo e-mail E mesmo nome (só e-mail não basta: agência ou família dividem o endereço)
+      3. mesmo telefone E mesmo nome, só entre os cadastros SEM hash: quem o RH cadastrou à mão pelo painel (077), onde o
+         hash não é calculado (a chave fica só no robô)
     Inclui candidatos expurgados: o hash sobrevive à exclusão e o reenvio reaproveita o cadastro.
     """
     db = conectar()
@@ -316,6 +318,12 @@ def buscar_candidato_existente(hash_identidade: Optional[str], email: Optional[s
     if email and nome:
         r = db.table("candidatos").select(CAMPOS_CANDIDATO).eq("email", email.lower())\
               .eq("nome_norm", normalizar_texto(nome)).neq("status_banco", "expurgado")\
+              .order("data_entrada").limit(1).execute()
+        if r.data:
+            return r.data[0]
+    if telefone and nome:
+        r = db.table("candidatos").select(CAMPOS_CANDIDATO).eq("telefone_e164", telefone)\
+              .eq("nome_norm", normalizar_texto(nome)).is_("hash_identidade", "null").neq("status_banco", "expurgado")\
               .order("data_entrada").limit(1).execute()
         if r.data:
             return r.data[0]

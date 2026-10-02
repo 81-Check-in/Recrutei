@@ -1021,13 +1021,37 @@ class TestEntradaNoBanco(unittest.TestCase):
     def test_so_usa_o_hash_quando_ha_nome_e_telefone(self):
         bd = _bd_falso()
         self.entrar(bd)                                                   # TEXTO_CV tem telefone
-        hash_usado, email_usado, nome_usado = bd.buscar_candidato_existente.call_args.args
+        hash_usado, email_usado, nome_usado, telefone_usado = bd.buscar_candidato_existente.call_args.args
         self.assertTrue(hash_usado)
         self.assertEqual((email_usado, nome_usado), ("maria@exemplo.com", "Maria da Silva"))
+        self.assertTrue(telefone_usado)                                   # terceira chave: cadastro manual do painel, sem hash
 
         bd2 = _bd_falso()
         self.entrar(bd2, texto="Maria da Silva\nExperiência longa como conferente em depósito. " * 4)   # sem telefone
         self.assertIsNone(bd2.buscar_candidato_existente.call_args.args[0])   # homônimos não se juntam só pelo nome
+
+    # ── cadastro manual do painel, sem currículo (077): o currículo de verdade entra no lugar da observação ──
+    def test_curriculo_de_quem_foi_cadastrado_a_mao_substitui_a_observacao(self):
+        for situacao in ("ativo", "em_processo"):
+            with self.subTest(situacao=situacao):
+                self.mock_analise.reset_mock()
+                bd = _bd_falso(buscar_candidato_existente={"id": "cand-9", "status_banco": situacao, "analise_atual_id": None,
+                                                           "hash_identidade": None},
+                               obter_curriculo_atual={"id": "cv-0", "texto_extraido": pipeline.OBS_SEM_ANEXO,
+                                                      "storage_path": None, "arquivo_hash": None})
+                r = self.entrar(bd)
+                self.assertNotIn("ignorado", r)
+                self.assertEqual((r["candidato_id"], r["novo"]), ("cand-9", False))
+                bd.criar_candidato.assert_not_called()                    # não duplica a pessoa
+                self.assertEqual(bd.salvar_curriculo.call_args.args[0]["candidato_id"], "cand-9")
+                self.assertTrue(bd.atualizar_candidato.call_args.args[1]["hash_identidade"])   # passa a ter a identidade do robô
+                self.mock_analise.assert_called_once()                    # agora há currículo: a IA analisa
+
+    def test_observacao_do_cadastro_manual_so_vale_sem_arquivo(self):
+        self.assertTrue(pipeline._so_tem_observacao({"texto_extraido": " Currículo enviado manualmente sem anexo ", "storage_path": None, "arquivo_hash": None}))
+        self.assertFalse(pipeline._so_tem_observacao({"texto_extraido": pipeline.OBS_SEM_ANEXO, "storage_path": "2026/10/a.pdf", "arquivo_hash": None}))
+        self.assertFalse(pipeline._so_tem_observacao({"texto_extraido": "Maria da Silva, conferente", "storage_path": None, "arquivo_hash": None}))
+        self.assertFalse(pipeline._so_tem_observacao(None))
 
     # ── reincidência: o mesmo currículo não é lido de novo ──
     def test_reenvio_de_quem_esta_no_banco_nao_e_lido_de_novo(self):

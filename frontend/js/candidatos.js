@@ -438,6 +438,7 @@ async function abrirCandidatura(id) {
   $('#d-btn-contratar').style.display          = c.status === 'aprovado' && aberta ? 'flex' : 'none';
   $('#d-btn-curriculo').style.display = c.storage_path ? 'flex' : 'none';
   $('#d-sem-arquivo').style.display   = c.storage_path ? 'none' : 'flex';
+  $('#d-sem-arquivo-txt').textContent = textoSemArquivo(c);
 
   mostrarConsideracoes('d', c.candidato_id);
   $('#drawer').classList.add('show');
@@ -455,8 +456,12 @@ function abrirTalentoDaCandidatura() {
 async function dadosDoCurriculoDaCandidatura(candidaturaId) {
   const id = candidaturaId || app.candidatoAberto?.id;
   if (!id) return null;
-  const { data } = await db.from('vw_candidaturas').select('candidato_id,storage_path,nome_arquivo').eq('id', id).maybeSingle();
-  if (!data?.storage_path) { toast('Arquivo do currículo não disponível', 'erro'); return null; }
+  const { data } = await db.from('vw_candidaturas').select('candidato_id,storage_path,nome_arquivo,curriculo_origem').eq('id', id).maybeSingle();
+  if (!data?.storage_path) {
+    // cadastro manual sem currículo: não é erro, é a observação que está no lugar do arquivo
+    toast(cadastroSemCurriculo(data) ? OBS_SEM_ANEXO : 'Arquivo do currículo não disponível', cadastroSemCurriculo(data) ? 'ok' : 'erro');
+    return null;
+  }
   // tipo_mime/texto_extraido não estão em vw_candidaturas: uma segunda consulta, direto na tabela (mesma política de leitura)
   const { data: cv } = await db.from('curriculos').select('tipo_mime,texto_extraido')
     .eq('candidato_id', data.candidato_id).eq('atual', true).maybeSingle();

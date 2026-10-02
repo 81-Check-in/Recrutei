@@ -569,8 +569,54 @@ function alternarJaEntrevistado() {
   if (!marcado) $('#up-resultado').value = '';
 }
 
+// Cadastro manual sem currículo: o RH digita os dados (nome e telefone obrigatórios) em vez de escolher um arquivo.
+// Ver backend/sql/077_cadastro_manual_sem_curriculo.sql.
+const CAMPOS_CADASTRO_MANUAL = {
+  nome: '#up-m-nome', telefone: '#up-m-telefone', email: '#up-m-email', cidade: '#up-m-cidade', uf: '#up-m-uf',
+  data_nascimento: '#up-m-nascimento', sexo: '#up-m-sexo', escolaridade: '#up-m-escolaridade',
+  anos_experiencia: '#up-m-experiencia', cnh: '#up-m-cnh'
+};
+
+function alternarSemCurriculo() {
+  const manual = $('#up-sem-curriculo').checked;
+  $('#up-sem-curriculo-campos').style.display = manual ? '' : 'none';
+  $('#up-campo-arquivo').style.display = manual ? 'none' : '';
+  $('#up-campo-ja-entrevistado').style.display = manual ? 'none' : '';      // o resultado de entrevista acompanha um currículo enviado
+  if (manual) { $('#up-ja-entrevistado').checked = false; alternarJaEntrevistado(); }
+  $('#up-btn-enviar').innerHTML = manual ? '<i class="ti ti-user-plus"></i>Cadastrar no banco' : '<i class="ti ti-send"></i>Enviar para o banco';
+}
+
+async function enviarCadastroManual() {
+  const dados = {};
+  for (const [campo, seletor] of Object.entries(CAMPOS_CADASTRO_MANUAL)) {
+    const valor = $(seletor).value.trim();
+    if (valor) dados[campo] = valor;
+  }
+  if (!dados.nome || dados.nome.length < 3) { toast('Informe o nome do candidato', 'erro'); $('#up-m-nome').focus(); return; }
+  const e164 = normalizaTelefone(dados.telefone);
+  if (!e164) { toast('Informe um telefone válido, com DDD', 'erro'); $('#up-m-telefone').focus(); return; }
+  dados.telefone_e164 = e164;
+
+  const btn = $('#up-btn-enviar');
+  btn.disabled = true;
+  const { error } = await db.rpc('cadastrar_candidato_manual', { p_dados: dados, p_vaga_id: $('#up-vaga').value || null });
+  btn.disabled = false;
+  if (error) {
+    // PGRST202 = a função ainda não existe no banco
+    toast(error.code === 'PGRST202' ? 'Cadastro sem currículo ainda não habilitado no banco. Rode backend/sql/077_cadastro_manual_sem_curriculo.sql.'
+                                    : mensagemErro(error), 'erro');
+    return;
+  }
+  toast(`${dados.nome} cadastrado no Banco de Talentos`);
+  Object.values(CAMPOS_CADASTRO_MANUAL).forEach(seletor => { $(seletor).value = ''; });
+  if (app.telaAtual === 'banco') { opcoesBancoCarregadas = false; carregarBanco(); }
+  if (app.telaAtual === 'candidatos') carregarCandidatos();
+}
+
 async function abrirModalUploadManual() {
   $('#up-arquivo').value = '';
+  $('#up-sem-curriculo').checked = false;
+  alternarSemCurriculo();
   $('#up-ja-entrevistado').checked = false;
   alternarJaEntrevistado();
   $('#up-vaga').innerHTML = '<option value="">Carregando vagas…</option>';
@@ -587,6 +633,7 @@ async function abrirModalUploadManual() {
 // igual sempre foi. Vários: processa em sequência (o serviço da IA já avalia 1 por vez, backend/api.py) e só
 // mostra um toast-resumo no final; o detalhe de cada um (inclusive erro de análise) fica em "Últimos envios".
 async function enviarUploadManual() {
+  if ($('#up-sem-curriculo').checked) return enviarCadastroManual();
   const vagaId = $('#up-vaga').value;
   const resultadoEntrevista = $('#up-ja-entrevistado').checked ? $('#up-resultado').value : '';
   const arquivos = [...$('#up-arquivo').files];
