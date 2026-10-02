@@ -152,7 +152,7 @@ async function carregarCandidatos() {
              <button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" data-tel="${escapeHtml(c.telefone_e164 || c.telefone || '')}" onclick="reprovarCandidaturaGerentePorId(this.dataset.id, this.dataset.nome, this.dataset.tel)" title="O gerente reprovou este candidato: ele volta ao Banco de Talentos"><i class="ti ti-x"></i>Reprovado</button>`
           : ''}
         ${c.status === 'aprovado' && aberta
-          ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="contratarCandidaturaPorId(this.dataset.id, this.dataset.nome)" title="Marca o candidato aprovado como contratado: a candidatura fecha e ele sai do Banco de Talentos"><i class="ti ti-user-check"></i>Contratado</button>`
+          ? `<button class="btn-sm verde" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="contratarCandidaturaPorId(this.dataset.id, this.dataset.nome)" title="Marca o candidato aprovado como contratado: a candidatura fecha e ele sai do Banco de Talentos"><i class="ti ti-user-check"></i>Contratar</button>`
           : ''}
         ${aberta
           ? `<button class="btn-sm vermelho" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" onclick="devolverAoBancoPorId(this.dataset.id, this.dataset.nome)" title="Cancelar a seleção: o candidato volta ao Banco de Talentos, com a qualificação que já tem"><i class="ti ti-arrow-back-up"></i>${vagaEmProcesso ? 'Cancelar seleção' : ''}</button>`
