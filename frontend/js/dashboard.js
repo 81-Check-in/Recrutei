@@ -16,7 +16,7 @@ async function carregarDashboard() {
   $('#m-curriculos').textContent = data.banco_ativos.toLocaleString('pt-BR');
   $('#periodo-label').textContent = p === 7 ? 'Últimos 7 dias' : 'Mês atual';
 
-  await Promise.all([carregarFunil(data.banco_ativos), carregarEntrevistasContratacoes(), carregarSerieCvs(), carregarCvsPorRegiao(), carregarVagasResumo(), carregarExcecoesResumo()]);
+  await Promise.all([carregarFunil(data.banco_ativos), carregarEntrevistasContratacoes(), carregarSerieCvs(), carregarChegadasDeHoje(), carregarCvsPorRegiao(), carregarVagasResumo(), carregarExcecoesResumo()]);
 }
 
 // Do banco à contratação: todo o histórico, não o recorte do período (o funil não acompanha o seletor
@@ -153,44 +153,55 @@ function setSerieCvs(agrupar) {
   return carregarSerieCvs();
 }
 
+// Por onde os currículos chegaram: e-mail (só os que trouxeram um CV lido) e portal de vagas. Sem a função nova no banco
+// (migração 076 ainda não aplicada), cai na contagem antiga: todos os CVs numa barra só.
+async function buscarSerieCvs(agrupar) {
+  const r = await db.rpc('dashboard_cvs_origem_serie', { p_agrupar: agrupar });
+  if (!r.error) return { data: r.data.map(l => ({ periodo: l.periodo, email: Number(l.por_email), portal: Number(l.pelo_portal) })), porOrigem: true };
+  if (r.error.code !== 'PGRST202') return { error: r.error };
+  const antiga = await db.rpc('dashboard_cvs_serie', { p_agrupar: agrupar });
+  if (antiga.error) return { error: antiga.error };
+  return { data: antiga.data.map(l => ({ periodo: l.periodo, email: Number(l.total), portal: 0 })), porOrigem: false };
+}
+
+// Cartão do topo: quantos currículos chegaram HOJE, por e-mail e pelo portal (o último dia da série diária)
+async function carregarChegadasDeHoje() {
+  const el = $('#m-hoje');
+  const r = await buscarSerieCvs('dia');
+  if (r.error || !r.porOrigem || !r.data.length) { el.style.display = 'none'; return; }
+  const hoje = r.data[r.data.length - 1];
+  el.innerHTML = `Hoje: <strong>${hoje.email.toLocaleString('pt-BR')}</strong> por e-mail · <strong>${hoje.portal.toLocaleString('pt-BR')}</strong> pelo portal`;
+  el.style.display = '';
+}
+
 async function carregarSerieCvs() {
   const el = $('#serie-cvs');
   const agrupar = agruparSerieCvs;
-  // Os CVs gravados no banco e, ao lado, o que chegou na caixa de e-mail (contado pelo robô). Sem a contagem da caixa
-  // (migração 069 ainda não aplicada), o gráfico mostra só os CVs.
-  const [cvs, caixa] = await Promise.all([
-    db.rpc('dashboard_cvs_serie', { p_agrupar: agrupar }),
-    db.rpc('dashboard_emails_serie', { p_agrupar: agrupar })
-  ]);
+  const r = await buscarSerieCvs(agrupar);
   if (agrupar !== agruparSerieCvs) return;                 // trocou o agrupamento enquanto esperava
-  if (cvs.error) { erro(el, mensagemErro(cvs.error)); return; }
-  const emails = caixa.error ? null : new Map(caixa.data.map(r => [r.periodo, r]));
+  if (r.error) { erro(el, mensagemErro(r.error)); return; }
   // Os períodos vazios do começo (antes de o sistema receber o primeiro currículo) não entram: o gráfico começa onde há dados
-  const primeiro = cvs.data.findIndex(r => Number(r.total) > 0 || Number(emails?.get(r.periodo)?.emails) > 0);
-  const data = primeiro > 0 ? cvs.data.slice(primeiro) : cvs.data;
-  $$('#serie-legenda .so-caixa').forEach(l => { l.style.display = emails ? '' : 'none'; });
+  const primeiro = r.data.findIndex(l => l.email > 0 || l.portal > 0);
+  const data = primeiro > 0 ? r.data.slice(primeiro) : r.data;
+  $$('#serie-legenda .so-origem').forEach(l => { l.style.display = r.porOrigem ? '' : 'none'; });
 
-  const totalCvs = data.reduce((t, r) => t + Number(r.total), 0).toLocaleString('pt-BR');
-  const totalEmails = emails ? caixa.data.reduce((t, r) => t + Number(r.emails), 0).toLocaleString('pt-BR') : null;
+  const soma = campo => data.reduce((t, l) => t + l[campo], 0).toLocaleString('pt-BR');
   $('#serie-sub').textContent = { dia: 'Últimos 14 dias', semana: 'Últimas 12 semanas (semana começa na segunda)', mes: 'Últimos 12 meses' }[agrupar]
-    + ` · ${totalCvs} CVs no banco` + (totalEmails ? ` · ${totalEmails} e-mails na caixa` : '');
-  const maior = Math.max(1, ...data.map(r => Number(r.total)), ...(emails ? caixa.data.map(r => Number(r.emails)) : []));
+    + (r.porOrigem ? ` · ${soma('email')} por e-mail · ${soma('portal')} pelo portal` : ` · ${soma('email')} CVs no banco`);
+  const maior = Math.max(1, ...data.map(l => Math.max(l.email, l.portal)));
   const rotulo = iso => {
     const [a, m, d] = iso.split('-');
     return agrupar === 'mes' ? `${['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][m - 1]}/${a.slice(2)}` : `${d}/${m}`;
   };
   const un = (valor, classe) => `<div class="serie-un"><div class="serie-val">${valor}</div>
-    <div class="serie-barra ${classe}" style="height:${Math.round(Number(valor) / maior * 130)}px"></div></div>`;
-  el.innerHTML = data.map((r, i) => {
-    const c = emails?.get(r.periodo);
-    return `<div class="serie-col${i === data.length - 1 ? ' atual' : ''}"
-      title="${rotulo(r.periodo)}${c ? ` · ${c.emails} e-mails, ${c.com_documento} com PDF/DOC,` : ':'} ${r.total} CV(s) no banco">
+    <div class="serie-barra ${classe}" style="height:${Math.round(valor / maior * 130)}px"></div></div>`;
+  el.innerHTML = data.map((l, i) => `<div class="serie-col${i === data.length - 1 ? ' atual' : ''}"
+      title="${rotulo(l.periodo)}: ${l.email} CV(s) por e-mail${r.porOrigem ? `, ${l.portal} pelo portal` : ''}">
       <div class="serie-barras">
-        ${c ? un(c.emails, 'b-emails') + un(c.com_documento, 'b-docs') : ''}${un(r.total, 'b-cvs')}
+        ${un(l.email, 'b-cvs')}${r.porOrigem ? un(l.portal, 'b-portal') : ''}
       </div>
-      <div class="serie-rot">${rotulo(r.periodo)}</div>
-    </div>`;
-  }).join('');
+      <div class="serie-rot">${rotulo(l.periodo)}</div>
+    </div>`).join('');
 }
 
 async function carregarCvsPorRegiao() {

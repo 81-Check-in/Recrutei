@@ -158,6 +158,7 @@
             <div class="card-top"><div class="card-ico" style="background:var(--blue-light);color:var(--blue)"><i class="ti ti-file-text"></i></div></div>
             <div class="card-val" id="m-curriculos">—</div>
             <div class="card-lbl">Candidatos no Banco de Talentos</div>
+            <div class="card-hoje" id="m-hoje" style="display:none" title="Currículos lidos hoje, por onde chegaram"></div>
           </div>
           <div class="card">
             <div class="card-top"><div class="card-ico" style="background:var(--green-light);color:var(--green)"><i class="ti ti-user-check"></i></div></div>
@@ -230,9 +231,8 @@
               <button type="button" data-agrupar="mes" onclick="setSerieCvs('mes')">Mês</button>
             </div></div>
           <div class="linhas-legenda" id="serie-legenda">
-            <span class="so-caixa"><i style="background:#94A3B8"></i>E-mails recebidos</span>
-            <span class="so-caixa"><i style="background:#93C5FD"></i>Com PDF/DOC anexo</span>
-            <span><i style="background:#3B82F6"></i>CVs no banco</span></div>
+            <span title="E-mails que trouxeram um currículo e foram lidos pelo sistema"><i style="background:#3B82F6"></i>Por e-mail (CV lido)</span>
+            <span class="so-origem" title="Inscrições do portal de vagas que trouxeram currículo"><i style="background:#10B981"></i>Pelo portal de vagas</span></div>
           <div class="serie" id="serie-cvs"></div>
         </div>
 
