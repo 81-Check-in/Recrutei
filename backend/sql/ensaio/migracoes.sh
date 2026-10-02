@@ -52,6 +52,7 @@ MIGRACOES=(
   069_caixa_emails_dia.sql
   070_contratar_candidatura.sql
   073_emails_ignorados.sql
+  074_message_id_limpo_no_banco.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(
@@ -77,4 +78,5 @@ TESTES_SQL=(
   ensaio/32_teste_opcoes_cidade.sql
   ensaio/33_teste_message_id_seguro.sql
   ensaio/34_teste_contratar.sql
+  ensaio/35_teste_message_id_limpo.sql
 )
