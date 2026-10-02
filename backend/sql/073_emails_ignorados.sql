@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════════
---  RECRUTEI — E-mails ignorados não são lidos pela IA de novo (071)
+--  RECRUTEI — E-mails ignorados não são lidos pela IA de novo (073)
 --
---  Rodar depois da 070. Pode rodar de novo sem problema.
+--  Rodar depois da 072. Pode rodar de novo sem problema.
 --
 --  O reenvio de quem já está no Banco de Talentos é ignorado, mas só DEPOIS de a IA identificar a pessoa (uma chamada paga).
 --  Como nada era gravado, o mesmo e-mail que continuasse não lido na caixa pagava essa chamada a cada leitura (de 10 em 10

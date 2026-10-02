@@ -941,6 +941,9 @@
   <button class="res-btn res-faltou" onclick="registrarResultado('nao_compareceu')">
     <i class="ti ti-user-off" style="font-size:18px"></i>
     <div><strong>Não compareceu</strong><span>Falta registrada</span></div></button>
+  <button class="res-btn res-semint" onclick="registrarResultado('sem_interesse')">
+    <i class="ti ti-thumb-down" style="font-size:18px"></i>
+    <div><strong>Sem interesse</strong><span>Desistiu da vaga — volta ao Banco de Talentos</span></div></button>
   <button class="res-btn res-remarcar" onclick="remarcarEntrevista()">
     <i class="ti ti-clock" style="font-size:18px"></i>
     <div><strong>Remarcar</strong><span>Nova data e aviso pelo WhatsApp</span></div></button>
@@ -1108,6 +1111,19 @@
     <button class="modal-x" onclick="fecharModal('modal-upload-manual')"><i class="ti ti-x"></i></button></div>
   <div class="f-campo"><label for="up-vaga">Vaga <span style="font-weight:400;color:var(--gray-text)">(opcional)</span></label>
     <select id="up-vaga"><option value="">Carregando vagas…</option></select></div>
+  <div class="f-campo"><label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
+    <input type="checkbox" id="up-ja-entrevistado" onchange="alternarJaEntrevistado()" style="width:auto;margin:0">
+    Este currículo já passou pela entrevista</label>
+    <div id="up-ja-entrevistado-campos" style="display:none;margin-top:8px">
+      <label for="up-resultado" style="font-weight:400;color:var(--gray-text)">Resultado da entrevista <span>(escolha também a vaga acima — só vagas abertas)</span></label>
+      <select id="up-resultado">
+        <option value="">Escolha…</option>
+        <option value="aprovado">Aprovado</option>
+        <option value="reprovado">Reprovado</option>
+        <option value="sem_interesse">Sem interesse</option>
+      </select>
+      <div style="font-size:11.5px;color:var(--gray-text);margin-top:4px">O currículo entra no Banco de Talentos e o resultado vai direto para o Histórico. Não abre candidatura nem entrevista.</div>
+    </div></div>
   <div class="f-campo"><label>Arquivo(s) <span style="font-weight:400;color:var(--gray-text)">(PDF, DOC, DOCX, JPG ou PNG — até 10 MB cada; pode escolher vários de uma vez)</span></label>
     <input id="up-arquivo" type="file" multiple
       accept=".pdf,.doc,.docx,.jpg,.jpeg,.jfif,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"></div>
