@@ -53,6 +53,7 @@ MIGRACOES=(
   070_contratar_candidatura.sql
   073_emails_ignorados.sql
   074_message_id_limpo_no_banco.sql
+  075_emails_tentativas.sql
 )
 # Testes que rodam sobre o banco já migrado (cada um termina em ROLLBACK)
 TESTES_SQL=(

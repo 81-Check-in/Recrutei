@@ -938,6 +938,8 @@ def _bd_falso(**sobrescritas) -> MagicMock:
     bd.carregar_vocabulario_qualificacao.return_value = VOCABULARIO
     bd.obter_qualificacao_da_vaga.return_value = None      # sem qualificação definida pela vaga, salvo teste que diga o contrário
     bd.ia_pausada.return_value = False                     # IA liberada, salvo teste que diga o contrário
+    bd.tentativas_email.return_value = {"tentativas": 0, "descartado_em": None}   # e-mail que nunca falhou
+    bd.registrar_falha_email.return_value = (1, False)
     for nome, valor in sobrescritas.items():
         getattr(bd, nome).return_value = valor
     return bd
@@ -1825,6 +1827,74 @@ class TestExecucaoDiaria(unittest.TestCase):
             pipeline.executar()
         reavaliar.assert_not_called()
         bd.listar_reavaliacoes.assert_not_called()
+
+
+class TestTresTentativasPorEmail(unittest.TestCase):
+    """E-mail que dá erro e nem a exceção consegue ser gravada: tenta de novo até a 3ª falha, depois é descartado (marcado como lido)."""
+    MSG = {"uid": b"205000", "remetente": "c@x.test", "assunto": "CV", "corpo": "", "message_id": "abc@outlook.com",
+           "recebido_em": "2026-10-02T10:00:00+00:00",
+           "anexos": [{"nome": "cv.pdf", "tamanho": 50000, "tipo_mime": "application/pdf", "assinatura_ok": True, "conteudo": b"%PDF"}]}
+
+    def rodar(self, processar=None, **bd_kw):
+        bd = _bd_falso(**bd_kw)
+        bd.iniciar_execucao.return_value = "exec-1"
+        bd.obter_cursor_imap.return_value = (204793, 7)
+        bd.carregar_configuracoes.return_value = {}
+        bd.listar_reanalises.return_value = []
+        bd.listar_uploads_manuais_pendentes.return_value = []
+        bd.registrar_excecao.side_effect = RuntimeError("violates check constraint")    # nem a exceção grava
+        if processar is None:
+            processar = MagicMock(side_effect=RuntimeError("violates check constraint"))
+        with patch.object(pipeline, "bd", bd), patch.object(pipeline.mail, "buscar_novos", return_value=([dict(self.MSG)], 7)), \
+             patch.object(pipeline.mail, "marcar_como_lidas") as marcar, \
+             patch.object(pipeline.sanitizacao, "verificar_e_gerar"), \
+             patch.object(pipeline.mail, "estatisticas_caixa", return_value=[]), \
+             patch.object(pipeline, "processar_mensagem", processar):
+            pipeline.executar(manutencao=False)
+        return bd, marcar, processar
+
+    def test_primeira_e_segunda_falha_ficam_nao_lidas_e_contam(self):
+        bd, marcar, _ = self.rodar(registrar_falha_email=(2, False))
+        marcar.assert_called_once_with([])                                    # continua não lido
+        bd.salvar_cursor_imap.assert_not_called()                             # o marcador não passa dele
+        chave, erro, assunto, recebido, maximo = bd.registrar_falha_email.call_args.args
+        self.assertEqual((chave, assunto, recebido, maximo), ("abc@outlook.com", "CV", "2026-10-02T10:00:00+00:00", 3))
+        self.assertIn("violates check constraint", erro)
+
+    def test_terceira_falha_descarta_marca_como_lido_e_avanca_o_marcador(self):
+        bd, marcar, _ = self.rodar(registrar_falha_email=(3, True))
+        marcar.assert_called_once_with([b"205000"])
+        bd.salvar_cursor_imap.assert_called_once_with(205000, 7)
+
+    def test_ja_descartado_nao_gasta_extracao_nem_ia(self):
+        bd, marcar, processar = self.rodar(tentativas_email={"tentativas": 3, "descartado_em": "2026-10-02T10:20:00+00:00"})
+        processar.assert_not_called()
+        marcar.assert_called_once_with([b"205000"])
+        bd.salvar_cursor_imap.assert_called_once_with(205000, 7)
+        bd.registrar_falha_email.assert_not_called()
+
+    def test_sem_conseguir_gravar_a_contagem_segue_como_antes(self):
+        # o mock devolve None em vez de (total, descartado): falha ao gravar a contagem, como uma tabela ausente
+        bd2, marcar, _ = self.rodar(registrar_falha_email=None)
+        self.assertTrue(bd2.registrar_falha_email.called)
+        marcar.assert_called_once_with([])                                    # fica não lido, sem derrubar a leitura
+        bd2.salvar_cursor_imap.assert_not_called()
+
+    def test_quando_a_excecao_grava_o_email_e_lido_sem_contar_falha(self):
+        bd = _bd_falso()
+        bd.iniciar_execucao.return_value = "exec-1"
+        bd.obter_cursor_imap.return_value = (204793, 7)
+        bd.carregar_configuracoes.return_value = {}
+        bd.listar_reanalises.return_value = []
+        bd.listar_uploads_manuais_pendentes.return_value = []
+        with patch.object(pipeline, "bd", bd), patch.object(pipeline.mail, "buscar_novos", return_value=([dict(self.MSG)], 7)), \
+             patch.object(pipeline.mail, "marcar_como_lidas") as marcar, \
+             patch.object(pipeline.sanitizacao, "verificar_e_gerar"), \
+             patch.object(pipeline.mail, "estatisticas_caixa", return_value=[]), \
+             patch.object(pipeline, "processar_mensagem", side_effect=RuntimeError("erro qualquer")):
+            pipeline.executar(manutencao=False)
+        marcar.assert_called_once_with([b"205000"])                          # exceção na fila do RH: lido normalmente
+        bd.registrar_falha_email.assert_not_called()
 
 
 class TestUploadManualReincidencia(unittest.TestCase):

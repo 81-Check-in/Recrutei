@@ -18,6 +18,7 @@ import agenda
 import status_robo
 from config import (
     FORMATOS_ACEITOS, TAMANHO_MAXIMO_ANEXO, TAMANHO_MINIMO_ANEXO, TAMANHO_MINIMO_DOCUMENTO, LIMITE_EMAILS, REENVIO_DIAS_MINIMO,
+    MAX_TENTATIVAS_EMAIL,
     MODO_SIMULACAO, MODELO_CLASSIFICACAO_PADRAO, MODELO_AVALIACAO_PADRAO,
     CONFIANCA_MINIMA_PADRAO, VERSAO_PROMPT_ANALISE, PORTAIS_DE_CURRICULO, ASSUNTOS_BLOQUEADOS, log,
 )
@@ -72,6 +73,41 @@ def _finalizar_execucao(exec_id: Optional[str], stats: "Estatisticas", erro_fata
     bd.finalizar_execucao(exec_id, stats.como_dict(),
                           sucesso=erro_fatal is None and not stats.interrompida,
                           erro=erro_fatal or (MOTIVO_PAUSA if stats.interrompida else None))
+
+
+def _chave_do_email(msg: Dict, validade) -> str:
+    """Identifica o e-mail entre leituras: o Message-ID (já limpo pelo leitor) ou, sem ele, o UID dentro da caixa (UIDVALIDITY)."""
+    if msg.get("message_id"):
+        return msg["message_id"]
+    uid = msg["uid"].decode() if isinstance(msg["uid"], bytes) else msg["uid"]
+    return f"uid:{validade or 0}:{uid}"
+
+
+def _ja_descartado(msg: Dict, validade) -> bool:
+    """Já falhou MAX_TENTATIVAS_EMAIL vezes: não é lido de novo (nem extração, nem IA)."""
+    try:
+        return int(bd.tentativas_email(_chave_do_email(msg, validade)).get("tentativas") or 0) >= MAX_TENTATIVAS_EMAIL
+    except Exception:
+        return False
+
+
+def _contar_falha(msg: Dict, validade, erro: str) -> bool:
+    """
+    Registra mais uma falha de leitura deste e-mail. True = chegou a MAX_TENTATIVAS_EMAIL e foi descartado: o chamador o marca
+    como lido. Se nem a contagem puder ser gravada, o e-mail segue como antes (não lido, tenta de novo).
+    """
+    try:
+        total, descartar = bd.registrar_falha_email(_chave_do_email(msg, validade), erro, msg.get("assunto"),
+                                                    msg.get("recebido_em"), MAX_TENTATIVAS_EMAIL)
+    except Exception as e:
+        log.warning(f"  Não consegui contar a falha do e-mail: {type(e).__name__}")
+        return False
+    if descartar:
+        log.error(f"  E-mail descartado depois de {total} tentativa(s) sem conseguir ler nem registrar a exceção "
+                  f"(tabela emails_tentativas): {str(erro)[:200]}")
+    else:
+        log.warning(f"  Falha {total} de {MAX_TENTATIVAS_EMAIL} neste e-mail: fica não lido e é tentado de novo na próxima leitura")
+    return descartar
 
 
 def _registrar_excecao(msg: Dict, tipo: str, detalhe: str,
@@ -1478,6 +1514,14 @@ def executar(manutencao: bool = True, limite: Optional[int] = None) -> Dict:
                     break
                 log.info(f"[{i}/{len(mensagens)}]")
                 tratada = True
+                if _ja_descartado(msg, validade):
+                    # falhou MAX_TENTATIVAS_EMAIL vezes: não paga extração nem IA de novo; só garante que fique lido
+                    log.info(f"  E-mail descartado depois de {MAX_TENTATIVAS_EMAIL} falhas — ignorando")
+                    tratadas.append(msg["uid"])
+                    if avancar:
+                        ultimo_uid = int(msg["uid"])
+                    status_robo.avancar(i)
+                    continue
                 try:
                     if processar_mensagem(msg, cfg, areas, stats):
                         tratadas.append(msg["uid"])
@@ -1491,8 +1535,12 @@ def executar(manutencao: bool = True, limite: Optional[int] = None) -> Dict:
                         _registrar_excecao(msg, "erro_processamento", str(e)[:400], stats)
                         if _marcar_lido():
                             tratadas.append(msg["uid"])
-                    except Exception:
-                        tratada = False   # nem a exceção foi registrada: tentar de novo
+                    except Exception as e2:
+                        # nem a exceção foi registrada: tentar de novo, até MAX_TENTATIVAS_EMAIL vezes
+                        if _contar_falha(msg, validade, f"{type(e).__name__}: {e} | exceção: {type(e2).__name__}: {e2}"):
+                            tratadas.append(msg["uid"])
+                        else:
+                            tratada = False
                 if not tratada:
                     avancar = False
                 elif avancar:

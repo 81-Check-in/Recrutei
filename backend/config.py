@@ -73,6 +73,8 @@ LEITURA_FIM_PADRAO = "18:00"                # a leitura das 18:00 já não acont
 LEITURA_DIAS_PADRAO = (1, 2, 3, 4, 5, 6)    # dias ISO: 1 = segunda ... 6 = sábado, 7 = domingo
 PEDIDOS_DO_RH_CADA_S = 30                   # de quantos em quantos segundos o modo contínuo olha os pedidos do RH (tentar de novo, envio manual)
 LEASE_MINUTOS = 30                          # quanto tempo uma instância do robô "reserva" o trabalho (evita duas instâncias lendo a mesma caixa)
+# E-mail que dá erro e nem a exceção consegue ser gravada fica não lido; na N-ésima falha o robô desiste dele (marca como lido)
+MAX_TENTATIVAS_EMAIL = 3
 LIMITE_POR_LEITURA_PADRAO = 50              # e-mails por leitura no modo contínuo quando LIMITE_EMAILS não está definido (o resto fica para a leitura seguinte)
 # Reincidência: o mesmo currículo NÃO é lido de novo, seja qual for a vaga. Só volta a ser lido depois de
 # tantos dias da importação anterior E se o candidato foi sanitizado (inativo ou com os dados excluídos).

@@ -250,6 +250,35 @@ def email_ja_processado(message_id: str) -> bool:
         return False
 
 
+def tentativas_email(chave: str) -> Dict:
+    """Falhas já registradas deste e-mail: {"tentativas", "descartado_em"}. Sem a tabela (075 não aplicada), como se nunca tivesse falhado."""
+    try:
+        r = conectar().table("emails_tentativas").select("tentativas,descartado_em").eq("chave", chave).limit(1).execute()
+        return r.data[0] if r.data else {"tentativas": 0, "descartado_em": None}
+    except Exception as e:
+        log.warning(f"Não consegui consultar as tentativas do e-mail: {type(e).__name__}")
+        return {"tentativas": 0, "descartado_em": None}
+
+
+def registrar_falha_email(chave: str, erro: str, assunto: Optional[str], recebido_em: Optional[str],
+                          maximo: int) -> Tuple[int, bool]:
+    """
+    Soma uma falha de leitura ao e-mail. Ao chegar a `maximo`, marca o descarte. Devolve (total de falhas, descartado).
+    Sem atomicidade: só um robô lê a caixa por vez (lease). Levanta exceção se não conseguir gravar.
+    """
+    if MODO_SIMULACAO:
+        return 0, False
+    r = conectar().table("emails_tentativas").select("tentativas").eq("chave", chave).limit(1).execute()
+    total = (int(r.data[0]["tentativas"] or 0) if r.data else 0) + 1
+    descartado = total >= maximo
+    dados = {"chave": chave, "tentativas": total, "ultimo_erro": (erro or "")[:500] or None,
+             "assunto": (assunto or "")[:300] or None, "recebido_em": recebido_em, "ultima_falha": agora()}
+    if descartado:
+        dados["descartado_em"] = agora()
+    conectar().table("emails_tentativas").upsert(dados, on_conflict="chave").execute()
+    return total, descartado
+
+
 def registrar_email_ignorado(message_id: Optional[str], motivo: Optional[str]) -> None:
     """
     Guarda o Message-ID de um e-mail lido e não importado (reenvio de quem já está no banco), para email_ja_processado()
